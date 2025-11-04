@@ -175,6 +175,7 @@ def process_extraction_result(records: List[Dict[str, Any]], chunk_id: str) -> T
 async def extract_single_chunk(
     chunk: Dict[str, Any],
     entity_types: List[str],
+    model: str,
     use_cache: bool = True
 ) -> Tuple[List[Dict], List[Dict]]:
     """
