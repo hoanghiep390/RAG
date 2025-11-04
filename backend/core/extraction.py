@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from typing import Dict, List, Tuple, Any, Optional
+from backend.utils.llm_utils import LLM_MODEL
 
 
 TUPLE_DELIMITER = "<|>"
@@ -192,7 +193,7 @@ async def extract_single_chunk(
         else:
             prompt = create_extraction_prompt(chunk_text, entity_types)
             from backend.utils.llm_utils import call_llm_with_retry
-            result = await call_llm_with_retry(prompt, model=model, max_retries=3)
+            result = await call_llm_with_retry(prompt, model=LLM_MODEL, max_retries=3)
             if use_cache:
                 llm_response_cache[cache_key] = result
         
