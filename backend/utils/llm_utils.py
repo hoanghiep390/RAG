@@ -281,3 +281,19 @@ async def call_llm_batch(
     results = await asyncio.gather(*tasks, return_exceptions=False)
     
     return results
+async def call_llm_with_retry(
+    prompt: str,
+    max_retries: int = 3,
+    **kwargs
+) -> str:
+    """
+    Call LLM with automatic retry on failure
+    """
+    for attempt in range(max_retries):
+        try:
+            return await call_llm_async(prompt, **kwargs)
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            logger.warning(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            await asyncio.sleep(2 ** attempt) 

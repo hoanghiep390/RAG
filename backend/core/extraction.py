@@ -190,7 +190,8 @@ async def extract_single_chunk(
             result = llm_response_cache[cache_key]
         else:
             prompt = create_extraction_prompt(chunk_text, entity_types)
-            result = await use_llm_func(prompt)
+            from backend.utils.llm_utils import call_llm_with_retry
+            result = await call_llm_with_retry(prompt, model=model, max_retries=3)
             if use_cache:
                 llm_response_cache[cache_key] = result
         

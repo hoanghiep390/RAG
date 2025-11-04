@@ -7,7 +7,7 @@ import os
 import sys
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.utils.file_utils import ensure_dir
 
@@ -154,10 +154,13 @@ if 'username' not in st.session_state:
 if 'role' not in st.session_state:
     st.session_state.role = None
 if 'login_mode' not in st.session_state:
-    st.session_state.login_mode = "login"  # or "signup"
+    st.session_state.login_mode = "login" 
 
 if st.session_state.authenticated:
-    st.switch_page("pages/upload.py")
+    if st.session_state.role == 'admin':
+        st.switch_page("pages/upload.py")
+    else:
+        st.info("Tài khoản user chỉ có quyền chat. Coming soon!")
 
 with st.container():
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
