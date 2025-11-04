@@ -13,9 +13,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-# ============================================
-# === OpenAI Implementation ===
-# ============================================
+
 
 async def call_openai_async(
     prompt: str,
