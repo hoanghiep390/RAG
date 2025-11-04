@@ -1,0 +1,79 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# VS Code, PyCharm, và IDE settings
+.vscode/
+.idea/
+
+# Dữ liệu người dùng, pipeline, embedding, graph, chunk đầu ra
+backend/data/*
+!backend/data/.gitkeep
+
+# Nếu có static tài liệu mẫu lớn, output chunk, vector, graph...
+**/uploads/
+**/chunks/
+**/graphs/
+**/vectorstore/
+**/exports/
+**/output/
+*.db
+*.sqlite3
+*.jsonl
+
+# File test output, log, tài liệu sinh tự động
+*.log
+test_doc.*
+*.pdf
+*.docx
+*.pptx
+*.xlsx
+*.csv
+
+# Môi trường ảo Python
+.env/
+.venv/
+env/
+venv/
+pip-wheel-metadata/
+
+# Jupyter Notebook checkpoint
+.ipynb_checkpoints
+
+# File tạm, swap
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Streamlit cache
+.streamlit/
+.cache/
+*.pycache
+
+# Nếu dùng requirements và cài đặt (có thể include hoặc ignore)
+#requirements.txt
+# nếu muốn giữ lại requirements.txt thì không uncomment
+
+# Nếu có file config riêng tư
+config.yaml
+config.json
+
+# Ignore download hoặc export
+*.zip
+*.tar.gz
+*.tar
+
+# Ignore HTML export của graph trực quan hóa
+*.html
+
+# File backup, temp
+*.bak
+*.tmp
+
+# Nếu frontend xây dựng riêng, ignore build frontend
+/build/
+dist/
+node_modules/

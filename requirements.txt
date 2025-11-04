@@ -1,0 +1,55 @@
+# === CORE & UI ===
+streamlit>=1.38.0
+pandas>=2.0.0
+numpy>=1.24.0
+openpyxl>=3.1.0
+
+# === GRAPH & VISUALIZATION ===
+networkx>=3.1
+pyvis>=0.3.2
+
+# === EMBEDDINGS & VECTOR DB ===
+sentence-transformers>=2.5.0
+faiss-cpu>=1.8.0
+tqdm>=4.66.0
+
+# === HTTP & ASYNC ===
+httpx>=0.27.0
+nest_asyncio>=1.6.0
+
+# === DOCUMENT PROCESSING ===
+pdfplumber>=0.11.0
+python-docx>=1.1.0
+python-pptx>=0.6.23
+Pillow>=10.0.0
+
+# === LOGGING & FUZZY MATCHING ===
+loguru>=0.7.2
+fuzzywuzzy>=0.18.0
+python-Levenshtein>=0.25.0
+
+# === TYPES ===
+types-requests>=2.31.0
+types-Pillow>=10.0.0
+
+# === LLM & OPENAI ===
+openai>=1.30.0
+tiktoken>=0.7.0
+
+# === HUGGING FACE & DOC PROCESSING (DOCling) ===
+torch>=2.0.0
+transformers>=4.35.0
+huggingface_hub>=0.23.0
+hf_xet>=0.0.5                     
+
+# === DOCLING (PDF → TEXT + LAYOUT) ===
+docling>=1.3.0
+docling-parse>=1.0.0
+docling-core>=1.0.0
+
+# Tăng tốc tải model ===
+hf-transfer>=0.1.0               
+
+# === DEV TOOLS ===
+python-dotenv>=1.0.0          
+watchdog>=3.0.0                   
