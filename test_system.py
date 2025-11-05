@@ -173,7 +173,7 @@ async def test_1_file_utils(results: TestResults):
 
 async def test_2_chunking(results: TestResults):
     """Test document chunking"""
-    logger.info("\n✂️  Testing Chunking Module...")
+    logger.info("\n  Testing Chunking Module...")
     
     try:
         # Create test file
