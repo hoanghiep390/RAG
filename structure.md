@@ -1,6 +1,6 @@
 mini_lightrag_graph/
 │
-├── backend/                         # Backend xử lý logic LightRAG mini
+├── backend/                              # Backend xử lý logic LightRAG mini
 │   │
 │   ├── core/                             # Các module chính 
 │   │   ├── chunking.py                   # → Tách văn bản thành các chunk nhỏ 
@@ -22,7 +22,7 @@ mini_lightrag_graph/
 │   │   ├── file_utils.py                 # → Xử lý file 
 │   │   ├── text_utils.py                 # → Xử lý văn bản 
 │   │   ├── llm_utils.py                  # → Gọi API LLM 
-│   │   └── utils.py                  # → Ghi log hệ thống 
+│   │   └── utils.py                      # → Ghi log hệ thống 
 │   │
 │   └── data/                             # Lưu trữ dữ liệu người dùng (dạng file, cho demo)
 │       ├── uploads/                      # → Tài liệu gốc do người dùng upload
@@ -32,11 +32,11 @@ mini_lightrag_graph/
 │       ├── logs/                         # → Log ghi lại hoạt động hệ thống
 │       └── users.json                    # → File lưu thông tin người dùng (demo, không có DB)
 │
-├── frontend/                        # Frontend: giao diện người dùng bằng Streamlit
-│   ├── login.py                      # → Trang đăng nhập / đăng ký người dùng
-│   ├── upload.py                     # → Giao diện upload tài liệu và chạy pipeline xử lý
-│   ├── chat.py                       # → Giao diện chat hỏi đáp theo tài liệu đã nạp
-│   ├── graph.py                      # → Hiển thị đồ thị kiến thức (interactive graph viewer)
+├── frontend/                             # Frontend: giao diện người dùng bằng Streamlit
+│   ├── login.py                          # → Trang đăng nhập / đăng ký người dùng
+│   ├── upload.py                         # → Giao diện upload tài liệu và chạy pipeline xử lý
+│   ├── chat.py                           # → Giao diện chat hỏi đáp theo tài liệu đã nạp
+│   ├── graph.py                          # → Hiển thị đồ thị kiến thức (interactive graph viewer)
 │   └── sidebar.py                        # → Thanh menu / hiển thị user info / chuyển trang
 │
 ├── requirements.txt                      #  Danh sách thư viện cần cài đặt (streamlit, openai, faiss,…)

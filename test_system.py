@@ -142,7 +142,7 @@ class TestResults:
 # ==================== MODULE TESTS ====================
 async def test_1_file_utils(results: TestResults):
     """Test file utilities"""
-    logger.info("\n📁 Testing File Utils...")
+    logger.info("\n Testing File Utils...")
     
     try:
         # Create test directory
@@ -230,7 +230,7 @@ async def test_2_chunking(results: TestResults):
 
 async def test_3_extraction(results: TestResults):
     """Test entity and relationship extraction"""
-    logger.info("\n🔍 Testing Extraction Module...")
+    logger.info("\n Testing Extraction Module...")
     
     try:
         # Load chunks from previous test
@@ -306,7 +306,7 @@ relationship<|>Apple Inc.<|>Cupertino<|>located_in<|>0.85<|COMPLETE|>"""
 
 async def test_4_graph_builder(results: TestResults):
     """Test knowledge graph building"""
-    logger.info("\n🕸️  Testing Graph Builder...")
+    logger.info("\n  Testing Graph Builder...")
     
     try:
         # Load extraction results
@@ -352,7 +352,7 @@ async def test_4_graph_builder(results: TestResults):
 
 async def test_5_embedding(results: TestResults):
     """Test embedding generation and vector search"""
-    logger.info("\n🧮 Testing Embedding Module...")
+    logger.info("\n Testing Embedding Module...")
     
     try:
         # Load chunks
@@ -417,7 +417,7 @@ async def test_5_embedding(results: TestResults):
 
 async def test_6_pipeline_integration(results: TestResults):
     """Test full pipeline integration"""
-    logger.info("\n🔄 Testing Full Pipeline...")
+    logger.info("\n Testing Full Pipeline...")
     
     try:
         # Create test user
@@ -504,7 +504,7 @@ relationship<|>Microsoft<|>Google<|>competes_with<|>0.85<|COMPLETE|>"""
 
 async def test_7_graph_merge(results: TestResults):
     """Test graph merging functionality"""
-    logger.info("\n🔗 Testing Graph Merge...")
+    logger.info("\n Testing Graph Merge...")
     
     try:
         test_user = "test_merge_user"
@@ -588,7 +588,7 @@ async def test_7_graph_merge(results: TestResults):
 async def run_all_tests():
     """Run all test suites"""
     print("\n" + "="*60)
-    print("🧪 LIGHTRAG SYSTEM TEST SUITE")
+    print(" LIGHTRAG SYSTEM TEST SUITE")
     print("="*60)
     print(f"Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*60 + "\n")
@@ -626,7 +626,7 @@ def cleanup_test_output():
     """Clean up test output directory"""
     test_dir = Path("test_output")
     if test_dir.exists():
-        logger.info("🧹 Cleaning up previous test outputs...")
+        logger.info(" Cleaning up previous test outputs...")
         shutil.rmtree(test_dir)
     
     ensure_directory(test_dir)
@@ -670,7 +670,7 @@ if __name__ == "__main__":
         
         # Final cleanup
         if not args.no_cleanup:
-            logger.info("\n🧹 Cleaning up test files...")
+            logger.info("\n Cleaning up test files...")
             shutil.rmtree("test_output", ignore_errors=True)
             shutil.rmtree("backend/data/test_user_pipeline", ignore_errors=True)
             shutil.rmtree("backend/data/test_merge_user", ignore_errors=True)
