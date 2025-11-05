@@ -372,7 +372,7 @@ class DocumentPipeline:
                     'file': doc_name,
                     'chunks': data.get('chunk_count', 0),
                     'tokens': data.get('total_tokens', 0),
-                    'time': datetime.fromtimestamp(chunk_file.stat().mtime).strftime("%m/%d %H:%M"),
+                    'time': datetime.fromtimestamp(chunk_file.stat().st_mtime).strftime("%m/%d %H:%M"),
                     'has_graph': False,
                     'has_embeddings': False
                 }
