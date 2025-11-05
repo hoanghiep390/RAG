@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from typing import Dict, List, Tuple, Any, Optional
-from backend.utils.llm_utils import LLM_MODEL
 
 
 TUPLE_DELIMITER = "<|>"
@@ -50,7 +49,7 @@ async def use_llm_func(prompt: str, model: str = "gpt-4o-mini") -> str:
             prompt=prompt,
             model=model,
             temperature=0.0,
-            max_tokens=2000
+            max_tokens=300
         )
         return result
     except ImportError:
@@ -193,7 +192,9 @@ async def extract_single_chunk(
         else:
             prompt = create_extraction_prompt(chunk_text, entity_types)
             from backend.utils.llm_utils import call_llm_with_retry
-            result = await call_llm_with_retry(prompt, model=LLM_MODEL, max_retries=3)
+            import os
+            model = os.getenv("LLM_MODEL", "llama-3.1-70b-versatile")  # fallback
+            result = await call_llm_with_retry(prompt, model=model, max_retries=3)
             if use_cache:
                 llm_response_cache[cache_key] = result
         
@@ -233,7 +234,7 @@ async def extract_entities(
     tasks = [process_with_semaphore(c) for c in chunks]
     results = await asyncio.gather(*tasks)
     
-    maybe_nodes, maybe_edges = {}, {}
+    maybe_nodes, maybe_edges = {}, {}   
     
     for i, (ents, rels) in enumerate(results):
         chunk_id = chunks[i].get("chunk_id", f"chunk_{i}")

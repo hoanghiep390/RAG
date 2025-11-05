@@ -1,86 +1,34 @@
 # ============================================
-# CORE UI & DATA PROCESSING
+# CORE & ESSENTIAL
 # ============================================
 streamlit>=1.38.0
-pandas>=2.0.0
-numpy>=1.24.0
-openpyxl>=3.1.0              # Excel support
-
-# ============================================
-# GRAPH & VISUALIZATION
-# ============================================
 networkx>=3.1
-pyvis>=0.3.2                 # Interactive graph visualization
-
-# ============================================
-# EMBEDDINGS & VECTOR DATABASE
-# ============================================
+pyvis>=0.3.2
 sentence-transformers>=2.5.0
-faiss-cpu>=1.8.0             # Vector similarity search
-tqdm>=4.66.0                 # Progress bars
+faiss-cpu>=1.8.0
+nest_asyncio>=1.6.0
+python-dotenv>=1.0.0
 
 # ============================================
-# ASYNC & HTTP
+# LLM & TOKENIZER
 # ============================================
-httpx>=0.27.0
-nest_asyncio>=1.6.0          # Nested event loops
-
-# ============================================
-# DOCUMENT PROCESSING (Basic)
-# ============================================
-pdfplumber>=0.11.0           # PDF text extraction
-python-docx>=1.1.0           # DOCX processing
-python-pptx>=0.6.23          # PowerPoint
-Pillow>=10.0.0               # Image processing
-
-# ============================================
-# TEXT PROCESSING & FUZZY MATCHING
-# ============================================
-loguru>=0.7.2                # Advanced logging
-fuzzywuzzy>=0.18.0           # Fuzzy string matching
-python-Levenshtein>=0.25.0   # String distance
-
-# ============================================
-# TYPE HINTS
-# ============================================
-types-requests>=2.31.0
-types-Pillow>=10.0.0
-
-# ============================================
-# LLM PROVIDERS
-# ============================================
-# OpenAI
 openai>=1.30.0
-tiktoken>=0.7.0              # Token counting
-
-# Groq (FREE alternative)
-groq>=0.4.0                  # ⭐ ADDED
+groq>=0.4.0
+tiktoken>=0.7.0
 
 # ============================================
-# ML FRAMEWORKS
-# ============================================
-torch==2.1.2                 # ⭐ PINNED VERSION (stable)
-transformers>=4.35.0
-huggingface_hub>=0.23.0
-hf_xet>=0.0.5                
-hf-transfer>=0.1.0           # Fast model downloads
-
-# ============================================
-# DOCLING (Advanced PDF/Document Processing)
+# DOCUMENT PROCESSING
 # ============================================
 docling>=1.3.0
-docling-parse>=1.0.0
-docling-core>=1.0.0
+pdfplumber
+# ============================================
+# TORCH (TƯƠNG THÍCH PYTHON 3.13)
+# ============================================
+torch>=2.6.0
+transformers>=4.35.0
+huggingface_hub>=0.23.0
 
 # ============================================
-# UTILITIES
+# OPTIONAL
 # ============================================
-python-dotenv>=1.0.0         # Environment variables
-watchdog>=3.0.0              # File system monitoring
-pipmaster>=0.0.11            # ⭐ ADDED - Dynamic package installer
-
-# ============================================
-# OPTIONAL: Accelerators (uncomment if needed)
-# ============================================
-# accelerate>=0.20.0         # Hugging Face training acceleration
-# bitsandbytes>=0.41.0       # 8-bit quantization
+tqdm>=4.66.0

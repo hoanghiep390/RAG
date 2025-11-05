@@ -129,7 +129,7 @@ async def call_groq_async(
         raise ImportError("groq package not installed. Install with: pip install groq")
     except Exception as e:
         logger.error(f"Groq API error: {str(e)}")
-        raise
+        raise   
 
 
 def call_groq_sync(
@@ -187,19 +187,18 @@ async def call_llm_async(
     provider = provider or os.getenv("LLM_PROVIDER", "openai").lower()
 
     # Strict mode: bắt buộc .env phải có LLM_MODEL
+    provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
+    
     if not model:
-        raise ValueError(
-            "❌ LLM_MODEL is not set in your .env file. "
-            "Please define it, e.g. LLM_MODEL=gpt-4o-mini or LLM_MODEL=llama-3.1-70b-versatile"
-        )
-
-    if provider == "openai":
-        return await call_openai_async(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
-    elif provider == "groq":
-        return await call_groq_async(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
-    else:
-        raise ValueError(f"Unsupported provider: {provider}")
+        if provider == "groq":
+            model = "llama-3.1-70b-versatile"
+            logger.warning("LLM_MODEL not set, using default: llama-3.1-70b-versatile")
+        elif provider == "openai":
+            model = "gpt-4o-mini"
+            logger.warning("LLM_MODEL not set, using default: gpt-4o-mini")
+        else:
+            raise ValueError("LLM_MODEL must be set in .env")
 
 
 def call_llm(
@@ -272,3 +271,9 @@ async def call_llm_with_retry(
                 raise
             logger.warning(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
             await asyncio.sleep(2 ** attempt)
+
+# Fallback nếu .env thiếu
+DEFAULT_MODEL = os.getenv("LLM_MODEL")
+if not DEFAULT_MODEL:
+    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    DEFAULT_MODEL = "llama-3.1-70b-versatile" if provider == "groq" else "gpt-4o-mini"
