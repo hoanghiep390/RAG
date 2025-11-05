@@ -343,7 +343,7 @@ def _doc_to_text_segments(path: str, cfg: DocChunkConfig) -> List[Tuple[str, str
 
 # === Packing Logic (SỬA LỖI `step`, `start`) ===
 def _pack_segments_by_token(
-    tokenizer: OpenAITokenizer,
+    tokenizer: Any,
     segments: List[Tuple[str, str]],
     cfg: DocChunkConfig,
     file_path: str
