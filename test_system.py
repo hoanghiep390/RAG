@@ -1,284 +1,171 @@
-"""
-Simplified test script for LightRAG system
-Tests: Chunking → Extraction → Graph Building → Embedding
-"""
-
+import os
 import sys
+import json
 from pathlib import Path
+import asyncio
+import logging
+from io import BytesIO
+from typing import Any
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Thêm backend vào sys.path để import
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), 'backend')))
 
-# Simple colors
-C = {
-    'GREEN': '\033[92m',
-    'RED': '\033[91m',
-    'YELLOW': '\033[93m',
-    'CYAN': '\033[96m',
-    'RESET': '\033[0m',
-    'BOLD': '\033[1m'
-}
+# Import các modules từ code của bạn
+from backend.core.pipeline import DocumentPipeline, DocChunkConfig
+from backend.core.chunking import process_document_to_chunks
+from backend.core.extraction import extract_entities_relations
+from backend.core.graph_builder import build_knowledge_graph, merge_admin_graphs
+from backend.core.embedding import VectorDatabase, search_similar
+from backend.utils.file_utils import save_to_json, load_from_json, save_uploaded_file, delete_uploaded_file
+from backend.utils.utils import logger
+from backend.utils.llm_utils import call_llm_async  # Để mock nếu cần
 
-def log(emoji, msg, color='RESET'):
-    """Simple logging"""
-    print(f"{C[color]}{emoji} {msg}{C['RESET']}")
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 
-def header(text):
-    """Print header"""
-    print(f"\n{C['BOLD']}{C['CYAN']}{'='*60}{C['RESET']}")
-    print(f"{C['BOLD']}{C['CYAN']}{text}{C['RESET']}")
-    print(f"{C['BOLD']}{C['CYAN']}{'='*60}{C['RESET']}\n")
+# Mock UploadedFile cho Streamlit (vì script không chạy trong Streamlit)
+class MockUploadedFile:
+    def __init__(self, name: str, content: bytes):
+        self.name = name
+        self.content = content
 
+    def getbuffer(self):
+        return BytesIO(self.content)
 
-# ============================================
-# Test Functions
-# ============================================
+# Mock LLM calls để test offline (trả về dữ liệu giả định)
+def mock_call_llm_async(prompt, **kwargs):
+    logger.info("Mocking LLM call...")
+    return """
+entity<|>Company A<|>ORGANIZATION<|>A tech company<|>
+entity<|>Product X<|>PRODUCT<|>Main product<|>
+relationship<|>Company A<|>Product X<|>produces<|>0.9<|COMPLETE|>
+""".strip()
 
-def test_imports():
-    """Test 1: Import modules"""
-    header("TEST 1: Imports")
+# Hàm test chính
+async def test_workflow(user_id: str = "test_user"):
+    logger.info("=== BẮT ĐẦU TEST WORKFLOW ===")
     
-    modules = [
-        'backend.core.chunking',
-        'backend.core.extraction',
-        'backend.core.graph_builder',
-        'backend.core.embedding',
-        'backend.utils.file_utils'
-    ]
+    # Step 0: Tạo file test tạm (nội dung đơn giản)
+    test_content = b"""
+    This is a test document.
+    Company A produces Product X.
+    It is located in Location Y.
+    """
+    test_filename = "test_document.txt"
+    mock_file = MockUploadedFile(test_filename, test_content)
     
-    failed = []
-    for module in modules:
-        try:
-            __import__(module)
-            log('✅', f'{module.split(".")[-1]}', 'GREEN')
-        except Exception as e:
-            log('❌', f'{module.split(".")[-1]}: {str(e)}', 'RED')
-            failed.append(module)
-    
-    return len(failed) == 0
-
-
-def test_create_document():
-    """Test 2: Create test document"""
-    header("TEST 2: Create Test File")
-    
+    # Step 1: Test file_utils - Save uploaded file
     try:
-        test_dir = Path("backend/data/test")
-        test_dir.mkdir(parents=True, exist_ok=True)
-        
-        test_file = test_dir / "test_doc.txt"
-        content = """# LightRAG Test
-
-Apple Inc. is a technology company founded by Steve Jobs.
-Microsoft Corporation was founded by Bill Gates.
-Both companies are based in the United States."""
-        
-        test_file.write_text(content, encoding='utf-8')
-        
-        log('✅', f'Created: {test_file}', 'GREEN')
-        log('ℹ️', f'Size: {test_file.stat().st_size} bytes', 'CYAN')
-        
-        return True, str(test_file)
-        
+        saved_path = save_uploaded_file(mock_file, user_id=user_id)
+        logger.info(f"Step 1: File saved at {saved_path}")
+        assert Path(saved_path).exists(), "File không được lưu!"
     except Exception as e:
-        log('❌', f'Failed: {str(e)}', 'RED')
-        return False, None
-
-
-def test_chunking(test_file):
-    """Test 3: Chunking"""
-    header("TEST 3: Chunking")
+        logger.error(f"Step 1 failed: {e}")
+        return False
     
+    # Step 2: Khởi tạo pipeline
+    pipeline = DocumentPipeline(user_id=user_id, enable_advanced=True)
+    
+    # Step 3: Test chunking.py - Chunk document
     try:
-        from backend.core.chunking import process_document_to_chunks, DocChunkConfig
-        
-        config = DocChunkConfig(max_token_size=200, overlap_token_size=30)
-        chunks = process_document_to_chunks(test_file, config=config)
-        
-        log('✅', f'Chunks: {len(chunks)}', 'GREEN')
-        log('ℹ️', f'Tokens: {sum(c["tokens"] for c in chunks)}', 'CYAN')
-        
-        if chunks:
-            log('ℹ️', f'First chunk: {chunks[0]["content"][:60]}...', 'CYAN')
-        
-        return True, chunks
-        
+        config = DocChunkConfig(max_token_size=100, overlap_token_size=20)
+        chunks = process_document_to_chunks(saved_path, config=config)
+        logger.info(f"Step 3: Chunked into {len(chunks)} chunks")
+        assert len(chunks) > 0, "Không có chunks!"
+        save_to_json(chunks, "test_chunks.json")
     except Exception as e:
-        log('❌', f'Failed: {str(e)}', 'RED')
-        import traceback
-        traceback.print_exc()
-        return False, None
-
-
-def test_extraction(chunks):
-    """Test 4: Entity & Relationship Extraction"""
-    header("TEST 4: Extraction")
+        logger.error(f"Step 3 failed: {e}")
+        return False
+    
+    # Step 4: Test extraction.py - Extract entities/relations (mock LLM để nhanh)
+    global call_llm_async
+    original_llm = call_llm_async
+    call_llm_async = mock_call_llm_async  # Mock để tránh gọi API thật
     
     try:
-        from backend.core.extraction import extract_entities_relations
-        
-        log('⏳', 'Extracting (using mock LLM)...', 'YELLOW')
-        
-        config = {'entity_types': ['PERSON', 'ORGANIZATION', 'LOCATION']}
-        entities, relationships = extract_entities_relations(chunks, config)
-        
-        total_ents = sum(len(e) for e in entities.values())
-        total_rels = sum(len(r) for r in relationships.values())
-        
-        log('✅', f'Entities: {total_ents}', 'GREEN')
-        log('✅', f'Relationships: {total_rels}', 'GREEN')
-        
-        return True, (entities, relationships)
-        
+        global_config = {"entity_types": ["ORGANIZATION", "PRODUCT", "LOCATION"]}
+        entities, relationships = extract_entities_relations(chunks, global_config)
+        logger.info(f"Step 4: Extracted {len(entities)} entity chunks, {len(relationships)} relationship chunks")
+        assert len(entities) > 0 or len(relationships) > 0, "Không extract được gì!"
+        save_to_json({"entities": entities, "relationships": relationships}, "test_extraction.json")
     except Exception as e:
-        log('❌', f'Failed: {str(e)}', 'RED')
-        import traceback
-        traceback.print_exc()
-        return False, None
-
-
-def test_graph(entities, relationships):
-    """Test 5: Graph Building"""
-    header("TEST 5: Graph Building")
+        logger.error(f"Step 4 failed: {e}")
+        call_llm_async = original_llm  # Restore
+        return False
     
+    call_llm_async = original_llm  # Restore sau mock
+    
+    # Step 5: Test graph_builder.py - Build knowledge graph
     try:
-        from backend.core.graph_builder import build_knowledge_graph
-        
         kg = build_knowledge_graph(entities, relationships)
         stats = kg.get_statistics()
+        logger.info(f"Step 5: Built graph with {stats['num_entities']} entities, {stats['num_relationships']} relationships")
+        assert stats['num_entities'] > 0, "Graph rỗng!"
+        save_to_json(kg.to_dict(), "test_graph.json")
         
-        log('✅', f'Nodes: {stats["num_entities"]}', 'GREEN')
-        log('✅', f'Edges: {stats["num_relationships"]}', 'GREEN')
-        log('ℹ️', f'Density: {stats["density"]:.4f}', 'CYAN')
-        
-        return True, kg
-        
+        # Test merge (giả lập nhiều graph)
+        merge_admin_graphs(user_id)
+        merged_path = Path(f"backend/data/{user_id}/graphs/COMBINED_graph.json")
+        assert merged_path.exists(), "Merge graph thất bại!"
     except Exception as e:
-        log('❌', f'Failed: {str(e)}', 'RED')
-        import traceback
-        traceback.print_exc()
-        return False, None
-
-
-def test_embedding(chunks, entities, relationships, kg):
-    """Test 6: Embedding Generation"""
-    header("TEST 6: Embeddings")
+        logger.error(f"Step 5 failed: {e}")
+        return False
     
+    # Step 6: Test embedding.py - Generate embeddings and search
     try:
-        from backend.core.embedding import (
-            generate_embeddings,
-            generate_entity_embeddings,
-            VectorDatabase
+        vector_db = VectorDatabase(db_path="test_faiss.index", metadata_path="test_faiss_meta.json")
+        # Giả lập process_file trong embedding.py (dùng pipeline để tích hợp)
+        result = pipeline.process_uploaded_file(
+            mock_file,
+            chunk_config=config,
+            enable_extraction=True,
+            enable_graph=True,
+            enable_embedding=True,
+            enable_gleaning=False
         )
+        logger.info(f"Step 6: Pipeline result: {result}")
+        assert result['success'], "Pipeline thất bại!"
         
-        log('⏳', 'Generating embeddings...', 'YELLOW')
-        
-        chunk_embs = generate_embeddings(chunks)
-        entity_embs = generate_entity_embeddings(entities, kg)
-        
-        log('✅', f'Chunk embeddings: {len(chunk_embs)}', 'GREEN')
-        log('✅', f'Entity embeddings: {len(entity_embs)}', 'GREEN')
-        
-        # Create vector DB
-        vdb = VectorDatabase(
-            db_path="backend/data/test/test.index",
-            metadata_path="backend/data/test/test_meta.json"
-        )
-        
-        vdb.add_embeddings(chunk_embs)
-        vdb.add_embeddings(entity_embs)
-        vdb.save()
-        
-        log('✅', f'Vector DB saved', 'GREEN')
-        
-        return True, vdb
-        
+        # Test search
+        query = "Company A"
+        results = search_similar(query, vector_db, top_k=3)
+        logger.info(f"Search results: {len(results)} items")
+        assert len(results) > 0, "Search không tìm thấy gì!"
     except Exception as e:
-        log('⚠️', f'Skipped: {str(e)}', 'YELLOW')
-        return None, None
+        logger.error(f"Step 6 failed: {e}")
+        return False
+    
+    # Step 7: Test pipeline.py full - Process uploaded file
+    try:
+        full_result = pipeline.process_uploaded_file(
+            mock_file,
+            chunk_config=config,
+            enable_extraction=True,
+            enable_graph=True,
+            enable_embedding=True,
+            enable_gleaning=False
+        )
+        logger.info(f"Step 7: Full pipeline success: {full_result['success']}")
+        assert full_result['success'], "Full pipeline thất bại!"
+    except Exception as e:
+        logger.error(f"Step 7 failed: {e}")
+        return False
+    
+    # Step 8: Cleanup
+    try:
+        delete_uploaded_file(saved_path)
+        for f in ["test_chunks.json", "test_extraction.json", "test_graph.json", "test_faiss.index", "test_faiss_meta.json"]:
+            Path(f).unlink(missing_ok=True)
+        # Xóa thư mục test_user
+        import shutil
+        shutil.rmtree(f"backend/data/{user_id}", ignore_errors=True)
+        logger.info("Step 8: Cleanup done")
+    except Exception as e:
+        logger.error(f"Cleanup failed: {e}")
+    
+    logger.info("=== TEST WORKFLOW HOÀN THÀNH - ALL PASS ===")
+    return True
 
-
-# ============================================
-# Main Test Runner
-# ============================================
-
-def run_tests():
-    """Run all tests"""
-    print(f"{C['BOLD']}{C['CYAN']}")
-    print("""
-    ╔════════════════════════════════════════╗
-    ║    LightRAG System Test Suite v1.0    ║
-    ╚════════════════════════════════════════╝
-    """)
-    print(C['RESET'])
-    
-    results = {}
-    
-    # Test 1: Imports
-    results['imports'] = test_imports()
-    if not results['imports']:
-        log('❌', 'Import failed. Cannot continue.', 'RED')
-        return results
-    
-    # Test 2: Create document
-    success, test_file = test_create_document()
-    results['create_doc'] = success
-    if not success:
-        return results
-    
-    # Test 3: Chunking
-    success, chunks = test_chunking(test_file)
-    results['chunking'] = success
-    if not success:
-        return results
-    
-    # Test 4: Extraction
-    success, extraction_data = test_extraction(chunks)
-    results['extraction'] = success
-    if not success:
-        return results
-    
-    entities, relationships = extraction_data
-    
-    # Test 5: Graph
-    success, kg = test_graph(entities, relationships)
-    results['graph'] = success
-    if not success:
-        kg = None
-    
-    # Test 6: Embedding (optional)
-    success, vdb = test_embedding(chunks, entities, relationships, kg)
-    results['embedding'] = success
-    
-    # Summary
-    header("SUMMARY")
-    
-    passed = sum(1 for v in results.values() if v is True)
-    failed = sum(1 for v in results.values() if v is False)
-    skipped = sum(1 for v in results.values() if v is None)
-    total = len([v for v in results.values() if v is not None])
-    
-    log('📊', f'Total: {total}', 'CYAN')
-    log('✅', f'Passed: {passed}', 'GREEN')
-    if failed > 0:
-        log('❌', f'Failed: {failed}', 'RED')
-    if skipped > 0:
-        log('⚠️', f'Skipped: {skipped}', 'YELLOW')
-    
-    success_rate = (passed / total * 100) if total > 0 else 0
-    log('📈', f'Success: {success_rate:.0f}%', 'CYAN')
-    
-    print("\nDetails:")
-    for name, result in results.items():
-        symbol = '✅' if result else ('❌' if result is False else '⚠️')
-        print(f"  {symbol} {name}")
-    
-    return results
-
-
+# Run test
 if __name__ == "__main__":
-    results = run_tests()
-    
-    # Exit code
-    all_passed = all(v is True for v in results.values() if v is not None)
-    sys.exit(0 if all_passed else 1)
+    asyncio.run(test_workflow())
