@@ -36,17 +36,14 @@ import json
 import xml.etree.ElementTree as ET
 import yaml
 
-
-# ==================== CONFIG ====================
 @dataclass
 class ChunkConfig:
     max_tokens: int = 300
     overlap_tokens: int = 50
-    include_hierarchy: bool = True  # Add hierarchy to content
-    merge_small_segments: bool = True  # Merge segments < 50 tokens
-
-
-# ==================== TOKENIZER ====================
+    include_hierarchy: bool = True  
+    merge_small_segments: bool = True 
+    
+    
 class Tokenizer:
     def __init__(self):
         self.enc = tiktoken.encoding_for_model("gpt-4o-mini")
@@ -61,7 +58,7 @@ class Tokenizer:
         return len(self.encode(text))
 
 
-# ==================== SEGMENT ====================
+
 class Segment:
     """Represents a document segment with hierarchy"""
     
@@ -78,7 +75,7 @@ class Segment:
         return f"Segment({self.full_hierarchy()}, {self.tokens} tokens)"
 
 
-# ==================== CHUNK ====================
+
 class Chunk:
     """Represents a final chunk with multiple segments"""
     
@@ -123,7 +120,7 @@ class Chunk:
         }
 
 
-# ==================== SOFT SPLIT ====================
+
 SENTENCE_BREAK = re.compile(r'[.!?…]\s+|\n{2,}')
 
 def soft_split(text: str, tokenizer: Tokenizer, max_tokens: int) -> List[str]:
@@ -139,11 +136,11 @@ def soft_split(text: str, tokenizer: Tokenizer, max_tokens: int) -> List[str]:
         end = min(start + max_tokens, len(ids))
         chunk_text = tokenizer.decode(ids[start:end])
         
-        # Find last sentence boundary
+        
         if end < len(ids):
             sentences = SENTENCE_BREAK.split(chunk_text)
             if len(sentences) > 1:
-                # Keep all but last incomplete sentence
+                
                 chunk_text = "".join(sentences[:-1])
         
         parts.append(chunk_text.strip())
@@ -152,7 +149,7 @@ def soft_split(text: str, tokenizer: Tokenizer, max_tokens: int) -> List[str]:
     return parts
 
 
-# ==================== EXTRACTORS ====================
+
 
 def extract_pdf(path: str) -> List[Segment]:
     """Extract segments from PDF"""
@@ -276,12 +273,11 @@ def extract_data(path: str, file_type: str) -> List[Segment]:
         return [Segment(hierarchy, content)]
 
 
-# ==================== MAIN EXTRACTOR ====================
+
 def extract_segments(path: str) -> List[Segment]:
     """Extract segments from any file type"""
     ext = get_file_extension(path).lower()
     
-    # Map extensions to extractors
     extractors = {
         'pdf': extract_pdf,
         'docx': extract_docx,
@@ -300,7 +296,6 @@ def extract_segments(path: str) -> List[Segment]:
     return extractor(path)
 
 
-# ==================== CHUNKER ====================
 class Chunker:
     """Smart chunker with hierarchy preservation"""
     
@@ -310,18 +305,16 @@ class Chunker:
     
     def chunk_segments(self, segments: List[Segment], file_path: str) -> List[Chunk]:
         """Convert segments to chunks"""
-        # Calculate tokens for all segments
+
         for seg in segments:
             seg.tokens = self.tokenizer.count(seg.content)
         
-        # Merge small segments
+        
         if self.config.merge_small_segments:
             segments = self._merge_small(segments)
         
-        # Split large segments
         segments = self._split_large(segments)
-        
-        # Pack into chunks with overlap
+    
         chunks = self._pack_with_overlap(segments, file_path)
         
         return chunks
@@ -333,29 +326,25 @@ class Chunker:
         buffer_tokens = 0
         
         for seg in segments:
-            # If segment is small, add to buffer
             if seg.tokens < 50 and buffer_tokens + seg.tokens < self.config.max_tokens:
                 buffer.append(seg)
                 buffer_tokens += seg.tokens
             else:
-                # Flush buffer
+
                 if buffer:
                     if len(buffer) == 1:
                         merged.append(buffer[0])
                     else:
-                        # Merge buffer segments
                         merged_seg = Segment(
                             hierarchy=buffer[0].hierarchy,
                             content="\n".join(s.content for s in buffer)
                         )
                         merged_seg.tokens = buffer_tokens
                         merged.append(merged_seg)
-                
-                # Start new buffer
+    
                 buffer = [seg]
                 buffer_tokens = seg.tokens
         
-        # Flush remaining
         if buffer:
             if len(buffer) == 1:
                 merged.append(buffer[0])
