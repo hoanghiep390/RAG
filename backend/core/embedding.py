@@ -2,7 +2,7 @@ from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import numpy as np
 from backend.utils.file_utils import save_to_json
-from backend.core.chunking import process_document_to_chunks
+from backend.core.chunking import process_document_to_chunks, normalize_hierarchy
 
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
@@ -141,7 +141,7 @@ class VectorDatabase:
 
 def generate_embeddings(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    ✅ FIXED: Đồng bộ với chunking.py output
+    ✅ FIXED: Đồng bộ với chunking.py output + Handle hierarchy v1/v2
     
     Nhận đầu vào là list các chunk từ process_document_to_chunks()
     Mỗi chunk có: chunk_id, content, tokens, order, hierarchy, file_path, file_type
@@ -153,7 +153,10 @@ def generate_embeddings(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     
     out = []
     for chunk, emb in zip(chunks, embeddings_array):
-        # ✅ FIXED: Sử dụng 'chunk_id' thay vì 'chunkid'
+        # ✅ FIXED: Handle hierarchy từ v1 (string) hoặc v2 (list)
+        hierarchy = chunk.get('hierarchy', '')
+        hierarchy_str = normalize_hierarchy(hierarchy)  # Convert to string
+        
         out.append({
             'id': chunk.get('chunk_id', ''),           
             'text': chunk.get('content', ''),
@@ -161,7 +164,8 @@ def generate_embeddings(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             'chunk_id': chunk.get('chunk_id', ''),     
             'tokens': chunk.get('tokens', 0),          
             'order': chunk.get('order', 0),
-            'hierarchy': chunk.get('hierarchy', ''),
+            'hierarchy': hierarchy_str,  # ✅ Always string for compatibility
+            'hierarchy_list': hierarchy if isinstance(hierarchy, list) else [hierarchy],  # ✅ Also store list version
             'file_path': chunk.get('file_path', ''),
             'file_type': chunk.get('file_type', ''),
             'entity_type': 'CHUNK'                   
