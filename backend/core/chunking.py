@@ -423,7 +423,7 @@ class Chunker:
         return chunks
 
 
-# ==================== PUBLIC API ====================
+
 def process_document_to_chunks(
     path: str,
     config: ChunkConfig = None
@@ -466,8 +466,7 @@ def process_document_to_chunks(
         raise
 
 
-# ==================== COMPATIBILITY ====================
-# For backward compatibility with old code
+
 DocChunkConfig = ChunkConfig
 
 
@@ -486,7 +485,7 @@ def get_default_config_for_file(filepath: str) -> ChunkConfig:
     return configs.get(ext, ChunkConfig())
 
 
-# ==================== HIERARCHY HELPERS ====================
+
 def normalize_hierarchy(hierarchy: Any) -> str:
     """
     Convert hierarchy to string for backward compatibility
