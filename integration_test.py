@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 =======================================================
-LightRAG Integration Test v2.0 (ĐÃ SỬA & ĐỒNG BỘ)
+LightRAG Integration Test v2.0
 =======================================================
 Kiểm tra toàn bộ pipeline với mock LLM, async an toàn, cleanup đầy đủ
 """

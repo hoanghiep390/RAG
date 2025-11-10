@@ -252,8 +252,8 @@ if uploaded_files:
                 result = pipeline.process_uploaded_file(
                     uploaded_file=f,
                     chunk_config=DocChunkConfig(
-                        max_token_size=chunk_size,
-                        overlap_token_size=chunk_overlap
+                        max_tokens=chunk_size,
+                        overlap_tokens=chunk_overlap
                     ),
                     enable_extraction=enable_extraction,
                     enable_graph=enable_graph,

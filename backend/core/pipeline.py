@@ -104,8 +104,8 @@ class DocumentPipeline:
             # Step 2: Chunking
             logger.info("[Pipeline] Step 1: Chunking...")
             config = chunk_config or DocChunkConfig(
-                max_token_size=self.global_config['chunk_size'],
-                overlap_token_size=self.global_config['chunk_overlap']
+                max_tokens=self.global_config['chunk_size'],
+                overlap_tokens=self.global_config['chunk_overlap']
             )
             
             chunks = process_document_to_chunks(filepath, config=config)
@@ -502,7 +502,7 @@ def process_document(filepath: str, config: Optional[DocChunkConfig] = None,
         Dict kết quả
     """
     try:
-        cfg = config or DocChunkConfig(max_token_size=300, overlap_token_size=50)
+        cfg = config or DocChunkConfig(max_tokens=300, overlap_tokens=50)
         chunks = process_document_to_chunks(filepath, config=cfg)
         
         pipeline = DocumentPipeline(user_id=user_id, enable_advanced=enable_advanced)
