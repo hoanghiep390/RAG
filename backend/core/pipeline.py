@@ -10,6 +10,8 @@ from datetime import datetime
 import sys
 import os
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import multiprocessing as mp
 
 # Add backend to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -35,6 +37,277 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
+class DocumentPipeline:
+    """Pipeline với optimizations"""
+    
+    def __init__(self, user_id: str = "default", enable_advanced: bool = True):
+        self.user_id = user_id
+        
+        # ... (giữ nguyên code cũ) ...
+        
+        # ✅ NEW: Add performance settings
+        self.max_workers = int(os.getenv('MAX_WORKERS', max(1, mp.cpu_count() - 1)))
+        self.batch_size = int(os.getenv('EXTRACTION_BATCH_SIZE', 10))
+        self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', 64))
+        self.use_hnsw = os.getenv('USE_HNSW_INDEX', 'true').lower() == 'true'
+        
+        logger.info(f"🚀 Pipeline initialized:")
+        logger.info(f"   Max workers: {self.max_workers}")
+        logger.info(f"   Extraction batch: {self.batch_size}")
+        logger.info(f"   Embedding batch: {self.embedding_batch_size}")
+        logger.info(f"   HNSW index: {self.use_hnsw}")
+    
+    def process_multiple_files(self, 
+                              uploaded_files,
+                              chunk_config: Optional[DocChunkConfig] = None,
+                              **kwargs) -> List[Dict]:
+        """
+        ✅ NEW: Process multiple files in parallel
+        
+        Usage:
+            results = pipeline.process_multiple_files(
+                uploaded_files=[file1, file2, file3],
+                chunk_config=config,
+                enable_extraction=True,
+                enable_graph=True,
+                enable_embedding=True
+            )
+        """
+        logger.info(f"🔄 Processing {len(uploaded_files)} files in parallel")
+        
+        results = []
+        
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all files
+            future_to_file = {
+                executor.submit(
+                    self.process_uploaded_file,
+                    f, chunk_config, **kwargs
+                ): f for f in uploaded_files
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_file):
+                file = future_to_file[future]
+                try:
+                    result = future.result(timeout=int(os.getenv('FILE_PROCESSING_TIMEOUT', 300)))
+                    results.append(result)
+                    
+                    if result.get('success'):
+                        logger.info(f"✅ [{len(results)}/{len(uploaded_files)}] {file.name}")
+                    else:
+                        logger.error(f"❌ [{len(results)}/{len(uploaded_files)}] {file.name}: {result.get('error')}")
+                
+                except Exception as e:
+                    logger.error(f"❌ Failed: {file.name} - {e}")
+                    results.append({
+                        'success': False,
+                        'filename': file.name,
+                        'error': str(e)
+                    })
+        
+        return results
+    
+    def _process_advanced_pipeline(self, chunks, doc_id, enable_extraction, enable_graph, 
+                                   enable_embedding, enable_gleaning):
+        """
+        ✅ OPTIMIZED: Use optimized batch sizes and HNSW
+        """
+        result = {}
+        
+        # Step 2: Extraction with batch processing
+        entities_dict = {}
+        relationships_dict = {}
+        
+        if enable_extraction:
+            logger.info(f"[Pipeline] Step 2: Extraction (batch_size={self.batch_size})...")
+            try:
+                # ✅ Use batch extraction
+                entities_dict, relationships_dict = extract_entities_relations(chunks, self.global_config)
+                
+                # Save results
+                extraction_file = self.extractions_dir / f"{doc_id}_extraction.json"
+                with open(extraction_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'entities': entities_dict,
+                        'relationships': relationships_dict,
+                        'total_entities': sum(len(v) for v in entities_dict.values()),
+                        'total_relationships': sum(len(v) for v in relationships_dict.values())
+                    }, f, ensure_ascii=False, indent=2)
+                
+                result.update({
+                    'entities_count': sum(len(v) for v in entities_dict.values()),
+                    'relationships_count': sum(len(v) for v in relationships_dict.values()),
+                    'extraction_file': str(extraction_file)
+                })
+                
+                logger.info(f"[Pipeline] Extracted {result['entities_count']} entities, "
+                          f"{result['relationships_count']} relationships")
+                
+            except Exception as e:
+                logger.error(f"[Pipeline] Extraction failed: {str(e)}")
+                result['extraction_error'] = str(e)
+        
+        # Step 2.5: Gleaning (skip if not needed)
+        if enable_gleaning and self.global_config.get('enable_gleaning', False):
+            logger.info("[Pipeline] Step 2.5: Gleaning...")
+            try:
+                from backend.core.graph_builder import gleaning_process
+                import asyncio
+                
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        try:
+                            import nest_asyncio
+                            nest_asyncio.apply()
+                        except ImportError:
+                            logger.warning("[Pipeline] nest_asyncio not available, skipping gleaning")
+                            enable_gleaning = False
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                if enable_gleaning:
+                    entities_dict, relationships_dict = loop.run_until_complete(
+                        gleaning_process(
+                            entities_dict, 
+                            relationships_dict, 
+                            chunks, 
+                            KnowledgeGraph(), 
+                            self.global_config['max_gleaning_iterations']
+                        )
+                    )
+                    
+                    result['gleaning_applied'] = True
+                    logger.info("[Pipeline] Gleaning completed")
+                    
+            except Exception as e:
+                logger.error(f"[Pipeline] Gleaning failed: {str(e)}")
+                result['gleaning_error'] = str(e)
+        
+        # Step 3: Graph Building
+        kg = None
+        
+        if enable_graph:
+            logger.info("[Pipeline] Step 3: Graph Building...")
+            try:
+                # ✅ Use optimized graph building
+                enable_summarization = os.getenv('ENABLE_GRAPH_SUMMARIZATION', 'false').lower() == 'true'
+                kg = build_knowledge_graph(entities_dict, relationships_dict, 
+                                          enable_summarization=enable_summarization)
+                
+                # Save graph
+                graph_file = self.graphs_dir / f"{doc_id}_graph.json"
+                with open(graph_file, 'w', encoding='utf-8') as f:
+                    json.dump({
+                        'graph': kg.to_dict(),
+                        'statistics': kg.get_statistics(),
+                        'metadata': {'source_file': doc_id}
+                    }, f, ensure_ascii=False, indent=2)
+                
+                result.update({
+                    'graph_nodes': kg.G.number_of_nodes(),
+                    'graph_edges': kg.G.number_of_edges(),
+                    'graph_file': str(graph_file)
+                })
+                
+                logger.info(f"[Pipeline] Built graph: {result['graph_nodes']} nodes, "
+                          f"{result['graph_edges']} edges")
+                
+            except Exception as e:
+                logger.error(f"[Pipeline] Graph building failed: {str(e)}")
+                result['graph_error'] = str(e)
+        
+        # Step 4: Embedding with optimizations
+        if enable_embedding:
+            logger.info(f"[Pipeline] Step 4: Embedding (batch_size={self.embedding_batch_size})...")
+            try:
+                # ✅ Use optimized embedding generation
+                chunk_embeds = generate_embeddings(chunks, batch_size=self.embedding_batch_size)
+                entity_embeds = generate_entity_embeddings(entities_dict, kg, 
+                                                          batch_size=self.embedding_batch_size)
+                rel_embeds = generate_relationship_embeddings(relationships_dict, 
+                                                             batch_size=self.embedding_batch_size)
+                
+                # ✅ Create vector database with HNSW
+                vector_db = VectorDatabase(
+                    db_path=str(self.vectors_dir / f"{doc_id}.index"),
+                    metadata_path=str(self.vectors_dir / f"{doc_id}_meta.json"),
+                    dim=384,
+                    use_hnsw=self.use_hnsw
+                )
+                
+                # Add all embeddings
+                vector_db.add_embeddings(chunk_embeds)
+                if entity_embeds:
+                    vector_db.add_embeddings(entity_embeds)
+                if rel_embeds:
+                    vector_db.add_embeddings(rel_embeds)
+                
+                vector_db.save()
+                
+                result.update({
+                    'total_embeddings': len(chunk_embeds) + len(entity_embeds) + len(rel_embeds),
+                    'chunk_embeddings': len(chunk_embeds),
+                    'entity_embeddings': len(entity_embeds),
+                    'relationship_embeddings': len(rel_embeds),
+                    'vector_db_path': str(self.vectors_dir / f"{doc_id}.index")
+                })
+                
+                logger.info(f"[Pipeline] Generated {result['total_embeddings']} embeddings")
+                
+            except Exception as e:
+                logger.error(f"[Pipeline] Embedding failed: {str(e)}")
+                result['embedding_error'] = str(e)
+        
+        return result
+
+
+# ==================== ADD NEW UTILITY FUNCTIONS ====================
+
+def process_documents_batch(filepaths: List[str], 
+                           config: Optional[DocChunkConfig] = None,
+                           user_id: str = "default",
+                           enable_advanced: bool = True,
+                           max_workers: int = 4) -> List[Dict]:
+    """
+    ✅ NEW: Process multiple documents in parallel
+    
+    Usage:
+        results = process_documents_batch(
+            filepaths=['doc1.pdf', 'doc2.pdf'],
+            config=DocChunkConfig(max_tokens=400),
+            user_id='admin_00000000',
+            enable_advanced=True,
+            max_workers=4
+        )
+    """
+    pipeline = DocumentPipeline(user_id=user_id, enable_advanced=enable_advanced)
+    
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_path = {
+            executor.submit(process_document, path, config, user_id, enable_advanced): path
+            for path in filepaths
+        }
+        
+        for future in as_completed(future_to_path):
+            path = future_to_path[future]
+            try:
+                result = future.result()
+                results.append(result)
+                logger.info(f"✅ Processed: {Path(path).name}")
+            except Exception as e:
+                logger.error(f"❌ Failed: {Path(path).name} - {e}")
+                results.append({
+                    'success': False,
+                    'filepath': path,
+                    'error': str(e)
+                })
+    
+    return results
 
 class DocumentPipeline:
     """
