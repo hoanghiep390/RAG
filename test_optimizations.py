@@ -17,7 +17,7 @@ def test_imports():
     try:
         from backend.utils.cache_utils import DiskCache, disk_cached
         from backend.core.chunking import process_document_to_chunks, Tokenizer
-        from backend.core.embedding import EmbeddingModel, VectorDatabase, get_model  # ✅ FIXED
+        from backend.core.embedding import EmbeddingModel, VectorDatabase, get_model
         from backend.core.extraction import extract_entities_relations
         from backend.core.pipeline import DocumentPipeline
         print("✅ All imports successful")
@@ -88,7 +88,7 @@ def test_embedding_model():
     """Test 4: Verify optimized embedding model"""
     print("\n🧪 Test 4: Embedding Model")
     try:
-        from backend.core.embedding import get_model  # ✅ FIXED
+        from backend.core.embedding import get_model  
         
         model = get_model()
         
@@ -96,7 +96,7 @@ def test_embedding_model():
         
         # Test batch encoding
         start = time.time()
-        embeddings = model.encode(texts, batch_size=3, show_progress=False)  # ✅ FIXED
+        embeddings = model.encode(texts, batch_size=3, show_progress=False)  
         elapsed = time.time() - start
         
         assert len(embeddings) == 3, "Wrong number of embeddings"
@@ -114,12 +114,11 @@ def test_vector_db():
     """Test 5: Verify HNSW index"""
     print("\n🧪 Test 5: Vector Database (HNSW)")
     try:
-        from backend.core.embedding import VectorDatabase, get_model  # ✅ FIXED
-        
+        from backend.core.embedding import VectorDatabase, get_model  
         # Create test embeddings
         model = get_model()
         texts = [f"Test document {i}" for i in range(100)]
-        embeddings_array = model.encode(texts, show_progress=False)  # ✅ FIXED
+        embeddings_array = model.encode(texts, show_progress=False) 
         
         embeddings = []
         for i, (text, emb) in enumerate(zip(texts, embeddings_array)):

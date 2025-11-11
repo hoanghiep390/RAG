@@ -1,7 +1,4 @@
-# backend/core/chunking.py - SIMPLIFIED & OPTIMIZED
-"""
-✅ Simplified chunking with caching and optimization
-"""
+# backend/core/chunking.py 
 from __future__ import annotations
 import re
 import uuid
@@ -11,6 +8,7 @@ from pathlib import Path
 from functools import lru_cache
 
 from backend.utils.utils import logger
+
 from backend.utils.file_utils import read_file_content, get_file_extension
 
 try:
@@ -20,7 +18,6 @@ except ImportError as e:
     logger.error(f"Missing dependencies: {e}")
     raise
 
-# File processors
 try:
     import pdfplumber
 except ImportError:

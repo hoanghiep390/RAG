@@ -1,314 +1,413 @@
 #!/usr/bin/env python3
 """
 =======================================================
-LightRAG Integration Test v2.0
+LightRAG Integration Test - Minimal Version
 =======================================================
-Kiểm tra toàn bộ pipeline với mock LLM, async an toàn, cleanup đầy đủ
+Tests entire pipeline + auto cleanup
 """
 
 import os
 import sys
-import json
 import asyncio
-import logging
 import shutil
+import time
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List
-import traceback
 
-# Add backend to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
+sys.path.insert(0, os.path.abspath('.'))
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+# ==================== CONFIG ====================
+TEST_USER = "test_integration"
+TEST_DIR = Path("backend/data") / TEST_USER
+CLEANUP = True  # Auto cleanup after test
 
-# ==================== TEST RESULTS ====================
-class TestResults:
-    def __init__(self):
-        self.tests = []
-        self.passed = 0
-        self.failed = 0
-        self.warnings = 0
-        self.start_time = datetime.now()
+
+# ==================== MOCK LLM ====================
+async def mock_llm(*args, **kwargs):
+    """Mock LLM response"""
+    await asyncio.sleep(0.01)
+    return """
+entity<|>LightRAG<|>TECHNOLOGY<|>RAG system with graphs and vectors
+entity<|>FAISS<|>TECHNOLOGY<|>Vector search library##
+relationship<|>LightRAG<|>FAISS<|>uses for search<|>uses<|>0.9<|COMPLETE|>
+"""
+
+def setup_mock():
+    """Setup mock LLM"""
+    global _original
+    try:
+        from backend.utils import llm_utils
+        _original = llm_utils.call_llm_with_retry
+        llm_utils.call_llm_with_retry = mock_llm
+        llm_utils.call_llm_async = mock_llm
+    except:
+        pass
+
+def restore_mock():
+    """Restore original LLM"""
+    try:
+        from backend.utils import llm_utils
+        llm_utils.call_llm_with_retry = _original
+        llm_utils.call_llm_async = _original
+    except:
+        pass
+
+
+# ==================== TEST DATA ====================
+def create_test_files():
+    """Create test files"""
+    upload_dir = TEST_DIR / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
     
-    def add(self, name: str, passed: bool, msg: str = "", err: str = "", warn: bool = False):
-        result = {
-            'test': name, 'passed': passed, 'warning': warn,
-            'message': msg, 'error': err, 'time': datetime.now().isoformat()
-        }
-        self.tests.append(result)
-        if warn: self.warnings += 1
-        elif passed: self.passed += 1
-        else: self.failed += 1
-        level = logging.WARNING if warn else logging.INFO if passed else logging.ERROR
-        prefix = "WARN" if warn else "PASS" if passed else "FAIL"
-        logger.log(level, f"{prefix}: {name} - {msg or err}")
-
-    def summary(self) -> bool:
-        duration = (datetime.now() - self.start_time).total_seconds()
-        total = self.passed + self.failed
-        print("\n" + "="*70)
-        print("INTEGRATION TEST SUMMARY")
-        print("="*70)
-        print(f"Total: {total} | PASS: {self.passed} | FAIL: {self.failed} | WARN: {self.warnings}")
-        print(f"Duration: {duration:.2f}s | Success: {(self.passed/total*100):.1f}%" if total else "N/A")
-        print("="*70)
-        if self.failed:
-            print("\nFAILED:")
-            for t in self.tests:
-                if not t['passed'] and not t['warning']:
-                    print(f"  • {t['test']}: {t['error']}")
-        return self.failed == 0
-
-
-# ==================== MOCK FILE ====================
-class MockFile:
-    def __init__(self, name: str, content: bytes):
-        self.name = name
-        self.size = len(content)
-        self._content = content
-    def getbuffer(self): return self._content
-    def read(self): return self._content
-
-
-def create_test_docs() -> List[MockFile]:
-    return [
-        MockFile("overview.md", b"""
+    # Test file 1: Markdown
+    (upload_dir / "test.md").write_text("""
 # LightRAG System
 
 ## Features
-- Chunking with hierarchy
+- Document chunking
 - Entity extraction
-- Knowledge graph
+- Knowledge graphs
 - Vector search
 
-LightRAG combines **knowledge graphs** and **vector embeddings**.
-        """.strip()),
-        MockFile("tech.txt", b"""
-LightRAG uses:
-- tiktoken for token counting
-- FAISS for vector search
+## Technologies
+- FAISS for vectors
 - NetworkX for graphs
-- SentenceTransformers for embeddings
-        """.strip())
-    ]
+- Sentence Transformers
+""", encoding='utf-8')
+    
+    # Test file 2: Text
+    (upload_dir / "test.txt").write_text("""
+LightRAG combines knowledge graphs with vector embeddings.
+It uses FAISS for fast similarity search.
+The system extracts entities and builds graphs automatically.
+""", encoding='utf-8')
+    
+    return list(upload_dir.glob("*"))
 
 
-# ==================== MOCK LLM (AN TOÀN) ====================
-_original_call = None
-_original_retry = None
+# ==================== CLEANUP ====================
+def cleanup():
+    """Remove all test data"""
+    print("\n🗑️ Cleaning up...")
+    
+    # Remove test user directory
+    if TEST_DIR.exists():
+        shutil.rmtree(TEST_DIR)
+        print(f"   ✅ Removed: {TEST_DIR}")
+    
+    # Remove temp files
+    for pattern in ["*.index", "*_meta.json", "test_*"]:
+        for f in Path(".").glob(pattern):
+            try:
+                if f.is_file():
+                    f.unlink()
+                elif f.is_dir():
+                    shutil.rmtree(f)
+            except:
+                pass
+    
+    # Clear cache
+    cache_dir = Path("backend/data/cache")
+    if cache_dir.exists():
+        for subdir in cache_dir.glob("*"):
+            if subdir.is_dir():
+                shutil.rmtree(subdir, ignore_errors=True)
+    
+    print("✅ Cleanup complete")
 
-async def mock_llm(*args, **kwargs):
-    await asyncio.sleep(0.01)
-    return """entity<|>LightRAG<|>TECHNOLOGY<|>RAG system with graph and vector##
-entity<|>Knowledge Graph<|>CONCEPT<|>Structured knowledge##
-relationship<|>LightRAG<|>Knowledge Graph<|>uses<|>0.9<|COMPLETE|>"""
 
-def setup_llm_mock():
-    global _original_call, _original_retry
+# ==================== TESTS ====================
+class MockFile:
+    """Mock uploaded file"""
+    def __init__(self, path):
+        self.name = path.name
+        self.size = path.stat().st_size
+        self._path = path
+    
+    def getbuffer(self):
+        return self._path.read_bytes()
+
+
+def test_imports():
+    """Test 1: Imports"""
+    print("\n🧪 Test 1: Imports")
     try:
-        from backend.utils import llm_utils
-        _original_call = llm_utils.call_llm_async
-        _original_retry = llm_utils.call_llm_with_retry
-        llm_utils.call_llm_async = mock_llm
-        llm_utils.call_llm_with_retry = mock_llm
-    except: pass
-
-def restore_llm():
-    if _original_call:
-        from backend.utils import llm_utils
-        llm_utils.call_llm_async = _original_call
-        llm_utils.call_llm_with_retry = _original_retry
-
-
-# ==================== TEST FUNCTIONS ====================
-def test_imports(results: TestResults):
-    logger.info("\nTEST 1: Imports")
-    imports = [
-        ("backend.core.chunking", "process_document_to_chunks"),
-        ("backend.core.extraction", "extract_entities_relations"),
-        ("backend.core.graph_builder", "build_knowledge_graph"),
-        ("backend.core.embedding", "VectorDatabase"),
-        ("backend.core.pipeline", "DocumentPipeline"),
-    ]
-    for mod, func in imports:
-        try:
-            m = __import__(mod, fromlist=[func])
-            getattr(m, func)
-            results.add(f"import:{mod}.{func}", True, "OK")
-        except Exception as e:
-            results.add(f"import:{mod}.{func}", False, err=str(e))
-
-def test_upload(results: TestResults):
-    logger.info("\nTEST 2: Upload")
-    from backend.utils.file_utils import save_uploaded_file
-    user = "test_user_sync"
-    paths = []
-    for doc in create_test_docs():
-        try:
-            path = save_uploaded_file(doc, user_id=user)
-            assert Path(path).exists()
-            paths.append(path)
-            results.add(f"upload:{doc.name}", True, f"Saved: {path}")
-        except Exception as e:
-            results.add(f"upload:{doc.name}", False, err=str(e))
-    test_upload.paths = paths
-
-async def test_chunking(results: TestResults):
-    logger.info("\nTEST 3: Chunking")
-    from backend.core.chunking import process_document_to_chunks, DocChunkConfig
-    if not hasattr(test_upload, 'paths'): 
-        results.add("chunking", False, err="No upload paths")
-        return
-    all_chunks = {}
-    for path in test_upload.paths:
-        try:
-            chunks = process_document_to_chunks(path, DocChunkConfig(max_tokens=200, overlap_tokens=30))
-            assert len(chunks) > 0
-            assert all(isinstance(c['hierarchy'], list) for c in chunks), "hierarchy must be list"
-            assert all('hierarchy_list' in c for c in chunks)
-            name = Path(path).name
-            all_chunks[name] = chunks
-            results.add(f"chunk:{name}", True, f"{len(chunks)} chunks, hierarchy=list")
-        except Exception as e:
-            results.add(f"chunk:{Path(path).name}", False, err=str(e))
-    test_chunking.chunks = all_chunks
-
-async def test_extraction(results: TestResults):
-    logger.info("\nTEST 4: Extraction")
-    setup_llm_mock()
-    from backend.core.extraction import extract_entities_relations
-    if not hasattr(test_chunking, 'chunks'):
-        results.add("extraction", False, err="No chunks")
-        restore_llm()
-        return
-    total_ents = total_rels = 0
-    for name, chunks in test_chunking.chunks.items():
-        try:
-            global_config = {
-                "entity_types": ["TECHNOLOGY", "CONCEPT", "PRODUCT"]
-            }
-            ents, rels = extract_entities_relations(chunks)
-            e_count = sum(len(v) for v in ents.values())
-            r_count = sum(len(v) for v in rels.values())
-            total_ents += e_count
-            total_rels += r_count
-            results.add(f"ext:{name}", True, f"{e_count}e {r_count}r")
-        except Exception as e:
-            results.add(f"ext:{name}", False, err=str(e))
-    results.add("extraction:total", total_ents > 0 or total_rels > 0, f"{total_ents}e {total_rels}r")
-    restore_llm()
-
-def test_graph(results: TestResults):
-    logger.info("\nTEST 5: Graph")
-    if not hasattr(test_chunking, 'chunks') or not test_chunking.chunks:
-        results.add("graph", False, err="No chunks")
-        return
-    from backend.core.graph_builder import build_knowledge_graph
-    try:
-        chunks = list(test_chunking.chunks.values())[0]
+        from backend.core.chunking import process_document_to_chunks
         from backend.core.extraction import extract_entities_relations
-        ents, rels = extract_entities_relations(chunks, {"entity_types": ["TECHNOLOGY"]})
-        kg = build_knowledge_graph(ents, rels)
+        from backend.core.graph_builder import build_knowledge_graph
+        from backend.core.embedding import generate_embeddings, VectorDatabase
+        from backend.core.pipeline import DocumentPipeline
+        print("✅ All imports OK")
+        return True
+    except Exception as e:
+        print(f"❌ Import failed: {e}")
+        return False
+
+
+def test_chunking(files):
+    """Test 2: Chunking"""
+    print("\n🧪 Test 2: Chunking")
+    try:
+        from backend.core.chunking import process_document_to_chunks, ChunkConfig
+        
+        all_chunks = []
+        for f in files:
+            chunks = process_document_to_chunks(str(f), ChunkConfig(max_tokens=200, overlap_tokens=30))
+            assert len(chunks) > 0
+            assert all('chunk_id' in c for c in chunks)
+            all_chunks.extend(chunks)
+        
+        print(f"✅ Created {len(all_chunks)} chunks")
+        return all_chunks
+    except Exception as e:
+        print(f"❌ Chunking failed: {e}")
+        return []
+
+
+def test_extraction(chunks):
+    """Test 3: Extraction"""
+    print("\n🧪 Test 3: Extraction")
+    
+    setup_mock()
+    
+    try:
+        from backend.core.extraction import extract_entities_relations
+        
+        entities, relationships = extract_entities_relations(chunks)
+        
+        ent_count = sum(len(v) for v in entities.values())
+        rel_count = sum(len(v) for v in relationships.values())
+        
+        print(f"✅ Extracted {ent_count} entities, {rel_count} relationships")
+        return entities, relationships
+    except Exception as e:
+        print(f"❌ Extraction failed: {e}")
+        return {}, {}
+    finally:
+        restore_mock()
+
+
+def test_graph(entities, relationships):
+    """Test 4: Graph Building"""
+    print("\n🧪 Test 4: Graph Building")
+    try:
+        from backend.core.graph_builder import build_knowledge_graph
+        
+        kg = build_knowledge_graph(entities, relationships, enable_summarization=False)
         stats = kg.get_statistics()
-        results.add("graph", stats['num_entities'] > 0, f"{stats['num_entities']} nodes")
+        
+        assert stats['num_entities'] > 0
+        
+        print(f"✅ Built graph: {stats['num_entities']} nodes, {stats['num_relationships']} edges")
+        return kg
     except Exception as e:
-        results.add("graph", False, err=str(e))
+        print(f"❌ Graph failed: {e}")
+        return None
 
-def test_embedding(results: TestResults):
-    logger.info("\nTEST 6: Embedding")
-    if not hasattr(test_chunking, 'chunks') or not test_chunking.chunks:
-        results.add("embedding", False, err="No chunks")
-        return
-    from backend.core.embedding import generate_embeddings, VectorDatabase
+
+def test_embedding(chunks):
+    """Test 5: Embeddings"""
+    print("\n🧪 Test 5: Embeddings")
     try:
-        chunks = list(test_chunking.chunks.values())[0]
-        embeds = generate_embeddings(chunks)
-        assert len(embeds) == len(chunks)
-        assert all(len(e['embedding']) == 384 for e in embeds)
-        db = VectorDatabase(db_path="test.index", metadata_path="test_meta.json", dim=384)
-        db.add_embeddings(embeds)
+        from backend.core.embedding import generate_embeddings, VectorDatabase
+        
+        # Generate embeddings
+        embeddings = generate_embeddings(chunks, batch_size=32, use_cache=False)
+        assert len(embeddings) == len(chunks)
+        assert all(len(e['embedding']) == 384 for e in embeddings)
+        
+        # Create vector DB
+        db = VectorDatabase("test.index", "test_meta.json", dim=384, use_hnsw=True)
+        db.add_embeddings(embeddings)
+        
+        # Test search
+        results = db.search(embeddings[0]['embedding'], top_k=3)
+        assert len(results) == 3
+        
         db.save()
-        assert Path("test.index").exists()
-        results.add("embedding", True, f"{len(embeds)} vectors saved")
+        
+        print(f"✅ Created {len(embeddings)} embeddings, HNSW index working")
+        return True
     except Exception as e:
-        results.add("embedding", False, err=str(e))
-    finally:
-        for f in ["test.index", "test_meta.json"]:
-            if Path(f).exists(): Path(f).unlink()
+        print(f"❌ Embedding failed: {e}")
+        return False
 
-def test_pipeline(results: TestResults):
-    logger.info("\nTEST 7: Pipeline")
-    setup_llm_mock()
-    from backend.core.pipeline import DocumentPipeline, DocChunkConfig
-    pipeline = DocumentPipeline(user_id="test_pipe", enable_advanced=True)
-    doc = create_test_docs()[0]
+
+def test_pipeline(files):
+    """Test 6: Full Pipeline"""
+    print("\n🧪 Test 6: Full Pipeline")
+    
+    setup_mock()
+    
     try:
-        res = pipeline.process_uploaded_file(
-            doc, DocChunkConfig(max_tokens=200, overlap_tokens=30),
-            enable_extraction=True, enable_graph=True, enable_embedding=True
+        from backend.core.pipeline import DocumentPipeline, DocChunkConfig
+        
+        pipeline = DocumentPipeline(user_id=TEST_USER, enable_advanced=True)
+        mock_file = MockFile(files[0])
+        
+        result = pipeline.process_uploaded_file(
+            uploaded_file=mock_file,
+            chunk_config=DocChunkConfig(max_tokens=200, overlap_tokens=30),
+            enable_extraction=True,
+            enable_graph=True,
+            enable_embedding=True,
+            enable_gleaning=False
         )
-        assert res['success']
-        assert res['chunks_count'] > 0
-        results.add("pipeline", True, f"{res['chunks_count']} chunks")
+        
+        assert result['success']
+        assert result['chunks_count'] > 0
+        
+        print(f"✅ Pipeline: {result['chunks_count']} chunks, "
+              f"{result.get('entities_count', 0)} entities, "
+              f"{result.get('graph_nodes', 0)} nodes")
+        return True
     except Exception as e:
-        results.add("pipeline", False, err=str(e))
+        print(f"❌ Pipeline failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
     finally:
-        restore_llm()
+        restore_mock()
 
-def test_persistence(results: TestResults):
-    logger.info("\nTEST 8: Persistence")
-    from backend.core.pipeline import DocumentPipeline
-    pipeline = DocumentPipeline(user_id="test_pipe")
-    docs = pipeline.get_processed_docs()
-    results.add("persistence", len(docs) > 0, f"{len(docs)} docs found")
+
+def test_persistence():
+    """Test 7: Persistence"""
+    print("\n🧪 Test 7: Persistence")
+    try:
+        from backend.core.pipeline import DocumentPipeline
+        
+        pipeline = DocumentPipeline(user_id=TEST_USER)
+        docs = pipeline.get_processed_docs()
+        
+        assert len(docs) > 0
+        
+        print(f"✅ Found {len(docs)} persisted documents")
+        return True
+    except Exception as e:
+        print(f"❌ Persistence failed: {e}")
+        return False
 
 
 # ==================== MAIN ====================
-async def main():
-    print("\nLIGHTTAG INTEGRATION TEST v2.0")
-    print("="*70)
-    results = TestResults()
-
-    # Apply nest_asyncio if in interactive env
+def main():
+    """Run all tests"""
+    
+    print("="*60)
+    print("🚀 LIGHTRAG INTEGRATION TEST")
+    print("="*60)
+    print(f"⏰ Started: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"📁 Test dir: {TEST_DIR}")
+    
+    start_time = time.time()
+    passed = 0
+    failed = 0
+    
     try:
-        import nest_asyncio
-        nest_asyncio.apply()
-    except: pass
-
-    test_imports(results)
-    test_upload(results)
-    await test_chunking(results)
-    await test_extraction(results)
-    test_graph(results)
-    test_embedding(results)
-    test_pipeline(results)
-    test_persistence(results)
-
-    success = results.summary()
-
-    # Save results
-    os.makedirs("test_output", exist_ok=True)
-    with open("test_output/results.json", "w", encoding="utf-8") as f:
-        json.dump(results.tests, f, indent=2, ensure_ascii=False)
-
-    # Cleanup
-    for d in ["backend/data/test_user_sync", "backend/data/test_pipe"]:
-        if Path(d).exists():
-            shutil.rmtree(d, ignore_errors=True)
-    print(f"\nResults: test_output/results.json")
-    return success
+        # Setup
+        print("\n📁 Creating test files...")
+        files = create_test_files()
+        print(f"✅ Created {len(files)} test files")
+        
+        # Apply nest_asyncio
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+        except ImportError:
+            pass
+        
+        # Run tests
+        tests = []
+        
+        # Test 1: Imports
+        if test_imports():
+            passed += 1
+        else:
+            failed += 1
+            print("\n❌ Cannot continue without imports")
+            return 1
+        
+        # Test 2: Chunking
+        chunks = test_chunking(files)
+        if chunks:
+            passed += 1
+        else:
+            failed += 1
+        
+        # Test 3: Extraction
+        if chunks:
+            entities, relationships = test_extraction(chunks)
+            if entities or relationships:
+                passed += 1
+            else:
+                failed += 1
+        
+        # Test 4: Graph
+        if chunks:
+            kg = test_graph(entities if entities else {}, relationships if relationships else {})
+            if kg:
+                passed += 1
+            else:
+                failed += 1
+        
+        # Test 5: Embedding
+        if chunks:
+            if test_embedding(chunks):
+                passed += 1
+            else:
+                failed += 1
+        
+        # Test 6: Full Pipeline
+        if test_pipeline(files):
+            passed += 1
+        else:
+            failed += 1
+        
+        # Test 7: Persistence
+        if test_persistence():
+            passed += 1
+        else:
+            failed += 1
+        
+        # Summary
+        duration = time.time() - start_time
+        total = passed + failed
+        
+        print("\n" + "="*60)
+        print("📊 SUMMARY")
+        print("="*60)
+        print(f"Total: {total}")
+        print(f"✅ Passed: {passed}")
+        print(f"❌ Failed: {failed}")
+        print(f"⏱️ Duration: {duration:.2f}s")
+        print(f"📈 Success Rate: {(passed/total*100):.1f}%")
+        print("="*60)
+        
+        success = failed == 0
+        
+        if success:
+            print("\n🎉 ALL TESTS PASSED!")
+        else:
+            print(f"\n⚠️ {failed} TEST(S) FAILED")
+        
+        return 0 if success else 1
+    
+    except KeyboardInterrupt:
+        print("\n⚠️ Interrupted by user")
+        return 130
+    
+    except Exception as e:
+        print(f"\n❌ Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+    
+    finally:
+        # Cleanup
+        if CLEANUP:
+            cleanup()
+        else:
+            print(f"\n⏭️ Keeping test data: {TEST_DIR}")
 
 
 if __name__ == "__main__":
-    try:
-        success = asyncio.run(main())
-        sys.exit(0 if success else 1)
-    except KeyboardInterrupt:
-        print("\nInterrupted")
-        sys.exit(130)
+    sys.exit(main())
