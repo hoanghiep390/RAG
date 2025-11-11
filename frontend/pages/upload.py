@@ -386,45 +386,6 @@ if uploaded_files:
 else:
     st.info("👆 Vui lòng chọn file để upload")
 
-
-# ✅ NEW: Performance tips
-with st.expander("💡 Tips tối ưu hiệu suất", expanded=False):
-    st.markdown("""
-    ### 🚀 Tối ưu tốc độ xử lý:
-    
-    1. **Parallel Processing** ⚡
-       - Bật "Parallel" khi upload nhiều file
-       - Tốc độ tăng 2-4x với 4 CPU cores
-    
-    2. **Chunk Size** 📏
-       - File nhỏ (< 10 pages): 300-400 tokens
-       - File lớn (> 50 pages): 500-600 tokens
-       - Lớn hơn = ít chunks hơn = nhanh hơn
-    
-    3. **Batch Size** 📦
-       - Mặc định: 10 chunks/LLM call
-       - Tăng lên 15-20 nếu API cho phép
-       - Giảm số API calls = nhanh hơn
-    
-    4. **Disable Expensive Features** 💰
-       - Tắt Gleaning khi upload hàng loạt
-       - Tắt Summarization nếu không cần
-       - Bật lại khi cần chất lượng cao
-    
-    5. **GPU** 🎮
-       - Nếu có CUDA: set `USE_GPU=true` trong .env
-       - Embedding nhanh hơn 5-10x
-    
-    ### 📊 Benchmark:
-    - **10 PDF files (100 pages total)**
-      - Before: ~15 phút
-      - After: ~4 phút ⚡ **3.75x nhanh hơn**
-    
-    - **Single large PDF (500 pages)**
-      - Before: ~25 phút
-      - After: ~7 phút ⚡ **3.5x nhanh hơn**
-    """)
-
 # Quick actions
 st.markdown("---")
 col1, col2 = st.columns(2)

@@ -1,22 +1,23 @@
-# backend/core/extraction.py - OPTIMIZED VERSION
+# backend/core/extraction.py - SIMPLIFIED & OPTIMIZED
 """
-✅ OPTIMIZED: Extraction with batch processing and better caching
+✅ Simplified extraction with batch processing
 """
-
 import asyncio
 import logging
 import os
 from typing import Dict, List, Tuple, Any, Optional
+from collections import OrderedDict
 
 TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
 COMPLETION_DELIMITER = "<|COMPLETE|>"
 
-# ✅ OPTIMIZED: Better cache with size limit
-from collections import OrderedDict
+logger = logging.getLogger(__name__)
 
+
+# ==================== LRU CACHE ====================
 class LRUCache:
-    """Simple LRU cache for LLM responses"""
+    """Simple LRU cache"""
     def __init__(self, maxsize=1000):
         self.cache = OrderedDict()
         self.maxsize = maxsize
@@ -34,160 +35,106 @@ class LRUCache:
         if len(self.cache) > self.maxsize:
             self.cache.popitem(last=False)
 
-llm_response_cache = LRUCache(maxsize=int(os.getenv('CACHE_MAX_SIZE', 1000)))
-logger = logging.getLogger(__name__)
+llm_cache = LRUCache(maxsize=int(os.getenv('CACHE_MAX_SIZE', 1000)))
 
 
+# ==================== UTILS ====================
 def clean_llm_output(text: str) -> str:
     """Clean LLM output"""
     if not text:
         return ""
     
     cleaned = text.strip()
-    cleaned = cleaned.replace(" <|>", TUPLE_DELIMITER)
-    cleaned = cleaned.replace("<|> ", TUPLE_DELIMITER)
-    cleaned = cleaned.replace(" ## ", RECORD_DELIMITER)
-    cleaned = cleaned.replace("## ", RECORD_DELIMITER)
-    cleaned = cleaned.replace(" ##", RECORD_DELIMITER)
-    cleaned = cleaned.replace(" <|COMPLETE|>", COMPLETION_DELIMITER)
-    cleaned = cleaned.replace("\ufeff", "")
+    for old, new in [
+        (" <|>", TUPLE_DELIMITER), ("<|> ", TUPLE_DELIMITER),
+        (" ## ", RECORD_DELIMITER), ("## ", RECORD_DELIMITER), (" ##", RECORD_DELIMITER),
+        (" <|COMPLETE|>", COMPLETION_DELIMITER), ("\ufeff", "")
+    ]:
+        cleaned = cleaned.replace(old, new)
     
     return cleaned
 
 
-# ==================== BATCH PROMPT ====================
-def create_batch_extraction_prompt(chunks: List[Dict], entity_types: List[str]) -> str:
-    """
-    ✅ OPTIMIZED: Create prompt for multiple chunks at once
-    Reduces LLM API calls by processing chunks in batches
-    """
-    entity_types_str = ", ".join(entity_types)
+def extract_keywords(description: str) -> str:
+    """Extract keywords from description"""
+    verbs = ["produces", "creates", "develops", "founded", "located", "works",
+             "manages", "owns", "uses", "builds", "sells", "provides", "offers",
+             "leads", "operates", "manufactures", "designs", "invented"]
     
-    # Combine multiple chunks with separator
+    desc_lower = description.lower()
+    found = [v for v in verbs if v in desc_lower]
+    
+    return ", ".join(found[:3]) if found else ", ".join(description.split()[:3])
+
+
+# ==================== PROMPTS ====================
+def create_batch_prompt(chunks: List[Dict], entity_types: List[str]) -> str:
+    """Create prompt for multiple chunks"""
+    types_str = ", ".join(entity_types)
     chunks_text = "\n\n---CHUNK_SEPARATOR---\n\n".join([
-        f"CHUNK_ID: {c['chunk_id']}\n{c['content']}"
-        for c in chunks
+        f"CHUNK_ID: {c['chunk_id']}\n{c['content']}" for c in chunks
     ])
     
     return f"""
 -Goal-
-Extract entities and relationships from MULTIPLE text chunks. 
-For each entity/relationship, include the CHUNK_ID it comes from.
+Extract entities and relationships from MULTIPLE chunks. Include CHUNK_ID for each.
 
--Steps-
-1. For each chunk, identify entities:
-   Format: ("entity"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<entity_name>{TUPLE_DELIMITER}<entity_type>{TUPLE_DELIMITER}<description>)
-   
-   Entity types: {entity_types_str}
+-Format-
+("entity"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<desc>)
+("relationship"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<desc>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
 
-2. For each chunk, identify relationships:
-   Format: ("relationship"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<source_entity>{TUPLE_DELIMITER}<target_entity>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
-   
-   - Keywords: 2-5 key verbs/nouns (comma-separated)
-   - Strength: 0.0-1.0
+Entity Types: {types_str}
+Keywords: 2-5 verbs/nouns
+Strength: 0.0-1.0
 
-3. Output format:
-   (<record>{RECORD_DELIMITER}<record>{RECORD_DELIMITER}...{COMPLETION_DELIMITER})
-
--Example-
-("entity"{TUPLE_DELIMITER}chunk_123{TUPLE_DELIMITER}Apple Inc.{TUPLE_DELIMITER}ORGANIZATION{TUPLE_DELIMITER}Tech company)
-("relationship"{TUPLE_DELIMITER}chunk_123{TUPLE_DELIMITER}Apple Inc.{TUPLE_DELIMITER}iPhone{TUPLE_DELIMITER}manufactures{TUPLE_DELIMITER}manufactures, produces{TUPLE_DELIMITER}0.95)
-
--Text Chunks-
+-Chunks-
 {chunks_text}
 
 Output:
 """
 
 
-def create_extraction_prompt(chunk_text: str, entity_types: List[str]) -> str:
-    """
-    Standard single-chunk extraction prompt (fallback)
-    """
-    entity_types_str = ", ".join(entity_types)
+def create_single_prompt(text: str, entity_types: List[str]) -> str:
+    """Create prompt for single chunk"""
+    types_str = ", ".join(entity_types)
     
     return f"""
 -Goal-
-Extract entities and relationships from the text.
+Extract entities and relationships.
 
--Steps-
-1. Identify entities:
-   Format: ("entity"{TUPLE_DELIMITER}<entity_name>{TUPLE_DELIMITER}<entity_type>{TUPLE_DELIMITER}<description>)
-   Types: {entity_types_str}
+-Format-
+("entity"{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<desc>)
+("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<desc>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
 
-2. Identify relationships:
-   Format: ("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
+Types: {types_str}
 
 -Text-
-{chunk_text}
+{text}
 
 Output:
 """
 
 
 # ==================== PARSER ====================
-def parse_batch_extraction_result(result: str, chunks: List[Dict]) -> Tuple[Dict, Dict]:
-    """
-    ✅ OPTIMIZED: Parse batch extraction results
-    Returns entities_dict and relationships_dict organized by chunk_id
-    """
-    records = parse_extraction_result(result)
-    
-    entities_dict = {}
-    relationships_dict = {}
-    
-    for record in records:
-        if record['type'] == 'entity':
-            chunk_id = record.get('chunk_id', chunks[0]['chunk_id'])
-            if chunk_id not in entities_dict:
-                entities_dict[chunk_id] = []
-            entities_dict[chunk_id].append({
-                'entity_name': record['entity_name'],
-                'entity_type': record['entity_type'],
-                'description': record['description'],
-                'chunk_id': chunk_id,
-                'source_id': chunk_id
-            })
-        
-        elif record['type'] == 'relationship':
-            chunk_id = record.get('chunk_id', chunks[0]['chunk_id'])
-            if chunk_id not in relationships_dict:
-                relationships_dict[chunk_id] = []
-            relationships_dict[chunk_id].append({
-                'source_id': record['source_entity'],
-                'target_id': record['target_entity'],
-                'description': record['description'],
-                'keywords': record.get('keywords', ''),
-                'strength': record.get('strength', 1.0),
-                'chunk_id': chunk_id
-            })
-    
-    return entities_dict, relationships_dict
-
-
-def parse_extraction_result(result: str) -> List[Dict[str, Any]]:
-    """Parse extraction result (supports both single and batch formats)"""
+def parse_extraction(result: str) -> List[Dict[str, Any]]:
+    """Parse extraction result"""
     records = []
-    result = clean_llm_output(result)
-    result = result.replace(COMPLETION_DELIMITER, "").strip()
+    result = clean_llm_output(result).replace(COMPLETION_DELIMITER, "").strip()
     
-    raw_records = result.split(RECORD_DELIMITER)
-    
-    for raw_record in raw_records:
-        raw_record = raw_record.strip()
-        if not raw_record:
+    for raw in result.split(RECORD_DELIMITER):
+        raw = raw.strip()
+        if not raw:
             continue
         
-        parts = [p.strip() for p in raw_record.split(TUPLE_DELIMITER)]
+        parts = [p.strip() for p in raw.split(TUPLE_DELIMITER)]
         if len(parts) < 2:
             continue
         
         record_type = parts[0].lower().replace('(', '').replace('"', '')
         
-        # ENTITY with chunk_id: ("entity", chunk_id, name, type, desc)
+        # ENTITY: ("entity", chunk_id?, name, type, desc)
         if record_type == "entity":
-            if len(parts) >= 5:
-                # Batch format with chunk_id
+            if len(parts) >= 5:  # Batch format
                 records.append({
                     "type": "entity",
                     "chunk_id": parts[1],
@@ -195,8 +142,7 @@ def parse_extraction_result(result: str) -> List[Dict[str, Any]]:
                     "entity_type": parts[3],
                     "description": parts[4],
                 })
-            elif len(parts) >= 4:
-                # Single format without chunk_id
+            elif len(parts) >= 4:  # Single format
                 records.append({
                     "type": "entity",
                     "entity_name": parts[1],
@@ -204,248 +150,211 @@ def parse_extraction_result(result: str) -> List[Dict[str, Any]]:
                     "description": parts[3],
                 })
         
-        # RELATIONSHIP with chunk_id
+        # RELATIONSHIP: ("relationship", chunk_id?, source, target, desc, keywords?, strength?)
         elif record_type == "relationship":
-            if len(parts) >= 7:
-                # Batch format: chunk_id, source, target, desc, keywords, strength
-                try:
-                    strength = float(parts[6])
-                except ValueError:
-                    strength = 1.0
-                
-                records.append({
-                    "type": "relationship",
-                    "chunk_id": parts[1],
-                    "source_entity": parts[2],
-                    "target_entity": parts[3],
-                    "description": parts[4],
-                    "keywords": parts[5],
-                    "strength": strength,
-                })
-            elif len(parts) >= 6:
-                # Single format with keywords
-                try:
-                    strength = float(parts[5])
-                except ValueError:
-                    strength = 1.0
-                
-                keywords = parts[4] if len(parts) > 4 else extract_keywords_from_description(parts[3])
-                
-                records.append({
-                    "type": "relationship",
-                    "source_entity": parts[1],
-                    "target_entity": parts[2],
-                    "description": parts[3],
-                    "keywords": keywords,
-                    "strength": strength,
-                })
+            try:
+                if len(parts) >= 7:  # Batch with keywords
+                    records.append({
+                        "type": "relationship",
+                        "chunk_id": parts[1],
+                        "source_entity": parts[2],
+                        "target_entity": parts[3],
+                        "description": parts[4],
+                        "keywords": parts[5],
+                        "strength": float(parts[6]),
+                    })
+                elif len(parts) >= 6:  # Single with keywords
+                    records.append({
+                        "type": "relationship",
+                        "source_entity": parts[1],
+                        "target_entity": parts[2],
+                        "description": parts[3],
+                        "keywords": parts[4],
+                        "strength": float(parts[5]),
+                    })
+                elif len(parts) >= 5:  # Without keywords
+                    records.append({
+                        "type": "relationship",
+                        "source_entity": parts[1] if len(parts) == 6 else parts[2],
+                        "target_entity": parts[2] if len(parts) == 6 else parts[3],
+                        "description": parts[3] if len(parts) == 6 else parts[4],
+                        "keywords": extract_keywords(parts[3] if len(parts) == 6 else parts[4]),
+                        "strength": float(parts[4]) if len(parts) == 6 else 1.0,
+                    })
+            except (ValueError, IndexError):
+                continue
     
     return records
 
 
-def extract_keywords_from_description(description: str) -> str:
-    """Extract keywords from description (fallback)"""
-    verbs = [
-        "produces", "creates", "develops", "founded", "located", "works",
-        "manages", "owns", "uses", "builds", "sells", "provides", "offers",
-        "leads", "operates", "manufactures", "designs", "invented"
-    ]
+def parse_batch(result: str, chunks: List[Dict]) -> Tuple[Dict, Dict]:
+    """Parse batch result into dicts by chunk_id"""
+    records = parse_extraction(result)
+    entities_dict = {}
+    rels_dict = {}
     
-    desc_lower = description.lower()
-    found_keywords = [v for v in verbs if v in desc_lower]
+    for rec in records:
+        chunk_id = rec.get('chunk_id', chunks[0]['chunk_id'])
+        
+        if rec['type'] == 'entity':
+            if chunk_id not in entities_dict:
+                entities_dict[chunk_id] = []
+            entities_dict[chunk_id].append({
+                'entity_name': rec['entity_name'],
+                'entity_type': rec['entity_type'],
+                'description': rec['description'],
+                'chunk_id': chunk_id,
+                'source_id': chunk_id
+            })
+        
+        elif rec['type'] == 'relationship':
+            if chunk_id not in rels_dict:
+                rels_dict[chunk_id] = []
+            rels_dict[chunk_id].append({
+                'source_id': rec['source_entity'],
+                'target_id': rec['target_entity'],
+                'description': rec['description'],
+                'keywords': rec.get('keywords', ''),
+                'strength': rec.get('strength', 1.0),
+                'chunk_id': chunk_id
+            })
     
-    if found_keywords:
-        return ", ".join(found_keywords[:3])
+    return entities_dict, rels_dict
+
+
+def process_result(records: List[Dict], chunk_id: str) -> Tuple[List[Dict], List[Dict]]:
+    """Process single chunk result"""
+    entities = []
+    rels = []
     
-    words = description.split()[:3]
-    return ", ".join(words)
-
-
-# ==================== HANDLERS ====================
-def handle_single_entity_extraction(record: Dict[str, Any], chunk_id: str) -> Dict[str, Any]:
-    """Handle entity extraction"""
-    return {
-        "entity_name": record["entity_name"],
-        "entity_type": record["entity_type"],
-        "description": record["description"],
-        "chunk_id": chunk_id,
-        "source_id": chunk_id
-    }
-
-
-def handle_single_relationship_extraction(record: Dict[str, Any], chunk_id: str) -> Dict[str, Any]:
-    """Handle relationship extraction"""
-    return {
-        "source_id": record["source_entity"],
-        "target_id": record["target_entity"],
-        "description": record["description"],
-        "keywords": record.get("keywords", ""),
-        "strength": record.get("strength", 1.0),
-        "chunk_id": chunk_id
-    }
-
-
-def process_extraction_result(records: List[Dict[str, Any]], chunk_id: str) -> Tuple[List[Dict], List[Dict]]:
-    """Process extraction results"""
-    entities, relationships = [], []
+    for rec in records:
+        if rec['type'] == 'entity':
+            entities.append({
+                'entity_name': rec['entity_name'],
+                'entity_type': rec['entity_type'],
+                'description': rec['description'],
+                'chunk_id': chunk_id,
+                'source_id': chunk_id
+            })
+        elif rec['type'] == 'relationship':
+            rels.append({
+                'source_id': rec['source_entity'],
+                'target_id': rec['target_entity'],
+                'description': rec['description'],
+                'keywords': rec.get('keywords', ''),
+                'strength': rec.get('strength', 1.0),
+                'chunk_id': chunk_id
+            })
     
-    for r in records:
-        if r["type"] == "entity":
-            entities.append(handle_single_entity_extraction(r, chunk_id))
-        elif r["type"] == "relationship":
-            relationships.append(handle_single_relationship_extraction(r, chunk_id))
-    
-    return entities, relationships
+    return entities, rels
 
 
 # ==================== ASYNC EXTRACTION ====================
-async def extract_single_chunk(
-    chunk: Dict[str, Any],
-    entity_types: List[str],
-    model: str,
-    use_cache: bool = True
-) -> Tuple[List[Dict], List[Dict]]:
+async def extract_single(chunk: Dict, entity_types: List[str], model: str, use_cache: bool = True) -> Tuple[List, List]:
     """Extract from single chunk"""
     chunk_id = chunk.get("chunk_id", "")
-    chunk_text = chunk.get("content", "")
-    cache_key = f"{chunk_id}_{hash(chunk_text)}"
+    text = chunk.get("content", "")
+    cache_key = f"{chunk_id}_{hash(text)}"
     
     try:
         if use_cache:
-            cached = llm_response_cache.get(cache_key)
-            if cached is not None:
+            cached = llm_cache.get(cache_key)
+            if cached:
                 result = cached
-                logger.debug(f"✅ Cache hit: {chunk_id}")
+                logger.debug(f"✅ Cache: {chunk_id}")
             else:
-                prompt = create_extraction_prompt(chunk_text, entity_types)
                 from backend.utils.llm_utils import call_llm_with_retry
+                prompt = create_single_prompt(text, entity_types)
                 result = await call_llm_with_retry(prompt, model=model, max_retries=3)
-                llm_response_cache.set(cache_key, result)
+                llm_cache.set(cache_key, result)
         else:
-            prompt = create_extraction_prompt(chunk_text, entity_types)
             from backend.utils.llm_utils import call_llm_with_retry
+            prompt = create_single_prompt(text, entity_types)
             result = await call_llm_with_retry(prompt, model=model, max_retries=3)
         
-        records = parse_extraction_result(result)
-        entities, relationships = process_extraction_result(records, chunk_id)
-        
-        return entities, relationships
+        records = parse_extraction(result)
+        return process_result(records, chunk_id)
     
-    except asyncio.TimeoutError:
-        logger.error(f"⏰ Timeout: {chunk_id}")
-        return [], []
     except Exception as e:
-        logger.error(f"❌ Error: {chunk_id}: {e}")
+        logger.error(f"❌ {chunk_id}: {e}")
         return [], []
 
 
-async def extract_batch(
-    chunks: List[Dict[str, Any]],
-    entity_types: List[str],
-    model: str,
-    use_cache: bool = True
-) -> Tuple[Dict, Dict]:
-    """
-    ✅ OPTIMIZED: Extract from batch of chunks with one LLM call
-    """
-    # Create cache key from all chunks
+async def extract_batch(chunks: List[Dict], entity_types: List[str], model: str, use_cache: bool = True) -> Tuple[Dict, Dict]:
+    """Extract from batch of chunks"""
     cache_key = f"batch_{'_'.join([c['chunk_id'] for c in chunks])}"
     
     try:
         if use_cache:
-            cached = llm_response_cache.get(cache_key)
-            if cached is not None:
-                logger.debug(f"✅ Cache hit for batch of {len(chunks)} chunks")
+            cached = llm_cache.get(cache_key)
+            if cached:
+                logger.debug(f"✅ Cache: batch of {len(chunks)}")
                 return cached
         
-        # Create batch prompt
-        prompt = create_batch_extraction_prompt(chunks, entity_types)
-        
-        # Call LLM once for all chunks
         from backend.utils.llm_utils import call_llm_with_retry
+        prompt = create_batch_prompt(chunks, entity_types)
         result = await call_llm_with_retry(prompt, model=model, max_retries=3)
         
-        # Parse batch results
-        entities_dict, relationships_dict = parse_batch_extraction_result(result, chunks)
+        entities_dict, rels_dict = parse_batch(result, chunks)
         
-        # Cache result
         if use_cache:
-            llm_response_cache.set(cache_key, (entities_dict, relationships_dict))
+            llm_cache.set(cache_key, (entities_dict, rels_dict))
         
-        return entities_dict, relationships_dict
+        return entities_dict, rels_dict
     
     except Exception as e:
-        logger.error(f"❌ Batch extraction error: {e}")
+        logger.error(f"❌ Batch: {e}")
         return {}, {}
 
 
-async def extract_entities(
-    chunks: List[Dict[str, Any]],
-    global_config: Dict[str, Any],
-    max_concurrent: int = 5,
-    batch_size: int = 10,
-    use_cache: bool = True
-) -> Tuple[Dict[str, List], Dict[str, List]]:
-    """
-    ✅ OPTIMIZED: Extract with batch processing
-    
-    Args:
-        chunks: List of chunks
-        global_config: Configuration
-        max_concurrent: Max concurrent API calls
-        batch_size: Chunks per batch (1 LLM call per batch)
-        use_cache: Use caching
-    
-    Returns:
-        (entities_dict, relationships_dict)
-    """
+async def extract_entities(chunks: List[Dict], global_config: Dict, 
+                          max_concurrent: int = 5, batch_size: int = 10, 
+                          use_cache: bool = True) -> Tuple[Dict, Dict]:
+    """Extract with batch processing"""
     entity_types = global_config.get("entity_types", [
         "PERSON", "ORGANIZATION", "LOCATION", "EVENT", "PRODUCT", "CONCEPT", "TECHNOLOGY"
     ])
     
     model = os.getenv("LLM_MODEL", "llama-3.1-70b-versatile")
     
-    # ✅ OPTIMIZATION: Group chunks into batches
+    # Group into batches
     batches = [chunks[i:i + batch_size] for i in range(0, len(chunks), batch_size)]
     
-    logger.info(f"🔄 Processing {len(chunks)} chunks in {len(batches)} batches (batch_size={batch_size})")
+    logger.info(f"🔄 Processing {len(chunks)} chunks in {len(batches)} batches (batch={batch_size})")
     
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def process_batch_with_semaphore(batch):
+    async def process_with_sem(batch):
         async with semaphore:
             return await extract_batch(batch, entity_types, model, use_cache)
     
-    # Process all batches
-    tasks = [process_batch_with_semaphore(batch) for batch in batches]
+    tasks = [process_with_sem(b) for b in batches]
     results = await asyncio.gather(*tasks)
     
-    # Merge results from all batches
-    entities_dict, relationships_dict = {}, {}
+    # Merge results
+    entities_dict = {}
+    rels_dict = {}
     
-    for batch_ents, batch_rels in results:
-        entities_dict.update(batch_ents)
-        relationships_dict.update(batch_rels)
+    for ents, rels in results:
+        entities_dict.update(ents)
+        rels_dict.update(rels)
     
-    total_entities = sum(len(v) for v in entities_dict.values())
-    total_rels = sum(len(v) for v in relationships_dict.values())
+    total_ents = sum(len(v) for v in entities_dict.values())
+    total_rels = sum(len(v) for v in rels_dict.values())
     
-    logger.info(f"✅ Extracted {total_entities} entities, {total_rels} relationships")
+    logger.info(f"✅ Extracted {total_ents} entities, {total_rels} relationships")
     
-    return entities_dict, relationships_dict
+    return entities_dict, rels_dict
 
 
-def extract_entities_relations(
-    chunks: List[Dict[str, Any]],
-    global_config: Optional[Dict[str, Any]] = None
-) -> Tuple[Dict, Dict]:
-    """Sync entry point for extraction"""
-    if global_config is None:
+# ==================== SYNC ENTRY POINT ====================
+def extract_entities_relations(chunks: List[Dict], global_config: Optional[Dict] = None) -> Tuple[Dict, Dict]:
+    """Sync entry point"""
+    if not global_config:
         global_config = {
             "entity_types": ["PERSON", "ORGANIZATION", "LOCATION", "EVENT", "PRODUCT", "CONCEPT", "TECHNOLOGY"]
         }
     
-    # Get batch size from env
     batch_size = int(os.getenv('EXTRACTION_BATCH_SIZE', 10))
     max_concurrent = int(os.getenv('MAX_CONCURRENT_LLM_CALLS', 8))
     
@@ -460,25 +369,21 @@ def extract_entities_relations(
             import nest_asyncio
             nest_asyncio.apply()
         except ImportError:
-            logger.warning("⚠️ nest_asyncio not installed")
+            logger.warning("⚠️ nest_asyncio not available")
     
-    nodes, edges = loop.run_until_complete(
-        extract_entities(chunks, global_config, max_concurrent, batch_size)
-    )
-    
-    return nodes, edges
+    return loop.run_until_complete(extract_entities(chunks, global_config, max_concurrent, batch_size))
 
 
-# ==================== KEYWORD ANALYSIS ====================
-def analyze_relationship_keywords(relationships_dict: Dict[str, List[Dict]]) -> Dict[str, int]:
-    """Analyze most common keywords"""
+# ==================== UTILITIES ====================
+def analyze_keywords(relationships_dict: Dict[str, List[Dict]]) -> Dict[str, int]:
+    """Analyze common keywords"""
     from collections import Counter
     
-    all_keywords = []
+    keywords = []
     for rels in relationships_dict.values():
         for rel in rels:
-            keywords = rel.get('keywords', '')
-            if keywords:
-                all_keywords.extend([k.strip() for k in keywords.split(',')])
+            kw = rel.get('keywords', '')
+            if kw:
+                keywords.extend([k.strip() for k in kw.split(',')])
     
-    return dict(Counter(all_keywords).most_common(20))
+    return dict(Counter(keywords).most_common(20))

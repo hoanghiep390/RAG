@@ -39,31 +39,52 @@ logger = logging.getLogger(__name__)
 
 class DocumentPipeline:
     """Pipeline với optimizations"""
+
+
+def __init__(self, user_id: str = "default", enable_advanced: bool = True):
+    self.user_id = user_id
     
-    def __init__(self, user_id: str = "default", enable_advanced: bool = True):
-        self.user_id = user_id
-        
-        # ... (giữ nguyên code cũ) ...
-        
-        # ✅ NEW: Add performance settings
-        self.max_workers = int(os.getenv('MAX_WORKERS', max(1, mp.cpu_count() - 1)))
-        self.batch_size = int(os.getenv('EXTRACTION_BATCH_SIZE', 10))
-        self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', 64))
-        self.use_hnsw = os.getenv('USE_HNSW_INDEX', 'true').lower() == 'true'
-        
-        logger.info(f"🚀 Pipeline initialized:")
-        logger.info(f"   Max workers: {self.max_workers}")
-        logger.info(f"   Extraction batch: {self.batch_size}")
-        logger.info(f"   Embedding batch: {self.embedding_batch_size}")
-        logger.info(f"   HNSW index: {self.use_hnsw}")
+    self.base_dir = Path("backend/data") / user_id
+    self.chunks_dir = self.base_dir / "chunks"
+    self.graphs_dir = self.base_dir / "graphs"
+    self.vectors_dir = self.base_dir / "vectors"
+    self.extractions_dir = self.base_dir / "extractions"
+    
+    for directory in [self.chunks_dir, self.graphs_dir, self.vectors_dir, self.extractions_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
+    
+    self.enable_advanced = enable_advanced and ADVANCED_FEATURES_AVAILABLE
+    
+    self.global_config = {
+        'entity_types': ['PERSON', 'ORGANIZATION', 'LOCATION', 'EVENT', 'PRODUCT', 'CONCEPT', 'TECHNOLOGY'],
+        'chunk_size': 300,
+        'chunk_overlap': 50,
+        'enable_gleaning': False,
+        'max_gleaning_iterations': 2,
+        'enable_graph': True,
+        'enable_embedding': True
+    }
+    import multiprocessing as mp
+    self.max_workers = int(os.getenv('MAX_WORKERS', max(1, mp.cpu_count() - 1)))
+    self.batch_size = int(os.getenv('EXTRACTION_BATCH_SIZE', 10))
+    self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', 64))
+    self.use_hnsw = os.getenv('USE_HNSW_INDEX', 'true').lower() == 'true'
+    
+    logger.info(f"🚀 Pipeline initialized:")
+    logger.info(f"   User: {user_id}")
+    logger.info(f"   Max workers: {self.max_workers}")
+    logger.info(f"   Extraction batch: {self.batch_size}")
+    logger.info(f"   Embedding batch: {self.embedding_batch_size}")
+    logger.info(f"   HNSW index: {self.use_hnsw}")
+    self.current_doc_id = None
+    self.knowledge_graph = None
+    self.vector_db = None
     
     def process_multiple_files(self, 
                               uploaded_files,
                               chunk_config: Optional[DocChunkConfig] = None,
                               **kwargs) -> List[Dict]:
         """
-        ✅ NEW: Process multiple files in parallel
-        
         Usage:
             results = pipeline.process_multiple_files(
                 uploaded_files=[file1, file2, file3],
