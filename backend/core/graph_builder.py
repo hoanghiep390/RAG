@@ -1,7 +1,7 @@
-# backend/core/graph_builder_v2.py
+# backend/core/graph_builder.py
 """
-✅ IMPROVED: Graph Builder with LLM Summarization & Entity Type Voting
-Based on LightRAG original architecture
+✅ Graph Builder following LightRAG architecture
+Includes: merge logic, entity type voting, LLM summarization
 """
 
 import networkx as nx
@@ -10,19 +10,17 @@ import asyncio
 from typing import Tuple, Dict, List, Any, Optional
 from pathlib import Path
 from collections import Counter
+import time
 
 from backend.utils.file_utils import save_to_json, load_from_json
-from backend.core.chunking import process_document_to_chunks
-from backend.core.extraction import extract_entities_relations
 
 logger = logging.getLogger(__name__)
 
-# ==================== CONFIG ====================
-MAX_DESCRIPTION_TOKENS = 500  # Max tokens before LLM summarization
-GRAPH_FIELD_SEP = "; "  # Separator for merging descriptions
+
+GRAPH_FIELD_SEP = "; "  
+MAX_DESCRIPTION_TOKENS = 500  
 
 
-# ==================== TOKEN COUNTER ====================
 def count_tokens(text: str) -> int:
     """Count tokens using tiktoken"""
     try:
@@ -30,75 +28,58 @@ def count_tokens(text: str) -> int:
         enc = tiktoken.encoding_for_model("gpt-4o-mini")
         return len(enc.encode(text))
     except:
-        # Fallback: rough estimate
-        return len(text.split()) * 1.3
+        return int(len(text.split()) * 1.3)
 
 
-# ==================== LLM SUMMARIZATION ====================
-async def summarize_description_async(
-    entity_name: str,
+async def _handle_entity_relation_summary(
+    entity_or_relation_name: str,
     description: str,
-    max_tokens: int = MAX_DESCRIPTION_TOKENS
+    global_config: dict,
 ) -> str:
     """
-    ✅ NEW: Summarize long descriptions using LLM
+    Summarize long entity/relation descriptions using LLM
+    Following LightRAG's summarization logic
     
     Args:
-        entity_name: Name of entity
-        description: Long description to summarize
-        max_tokens: Target token count
+        entity_or_relation_name: Name of entity/relation
+        description: Combined description (may contain GRAPH_FIELD_SEP)
+        global_config: Config with llm_model_func, tokenizer
     
     Returns:
         Summarized description
     """
-    if count_tokens(description) <= max_tokens:
-        return description
-    
-    try:
+    llm_func = global_config.get("llm_model_func")
+    if not llm_func:
         from backend.utils.llm_utils import call_llm_async
-        
-        prompt = f"""Summarize the following description for entity "{entity_name}" in under {max_tokens} tokens.
-Keep the most important facts. Be concise and factual.
-
-Original description:
-{description}
-
-Summarized description:"""
-        
-        summary = await call_llm_async(
-            prompt=prompt,
-            temperature=0.0,
-            max_tokens=max_tokens
-        )
-        
-        logger.info(f"Summarized description for {entity_name}: {count_tokens(description)} → {count_tokens(summary)} tokens")
-        return summary.strip()
-        
-    except Exception as e:
-        logger.warning(f"Failed to summarize description for {entity_name}: {e}")
-        # Fallback: truncate
-        tokens = description.split()[:max_tokens]
-        return " ".join(tokens)
-
-
-def summarize_description_sync(entity_name: str, description: str, max_tokens: int = MAX_DESCRIPTION_TOKENS) -> str:
-    """Sync wrapper for summarization"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        llm_func = call_llm_async
     
-    return loop.run_until_complete(summarize_description_async(entity_name, description, max_tokens))
+    max_tokens = global_config.get("summary_max_tokens", MAX_DESCRIPTION_TOKENS)
+    description_list = description.split(GRAPH_FIELD_SEP)
+    
+    prompt = f"""Summarize the following descriptions for "{entity_or_relation_name}":
 
+Descriptions:
+{chr(10).join(f"- {d}" for d in description_list)}
 
-# ==================== ENTITY TYPE VOTING ====================
+Provide a concise summary in under {max_tokens} tokens that captures the key facts.
+
+Summary:"""
+    
+    try:
+        summary = await llm_func(prompt, temperature=0.0, max_tokens=max_tokens)
+        logger.debug(f"Summarized: {entity_or_relation_name}")
+        return summary.strip()
+    except Exception as e:
+        logger.warning(f"Summarization failed for {entity_or_relation_name}: {e}")
+        return description[:1000]
+
 def vote_entity_type(entity_types: List[str]) -> str:
     """
-    ✅ NEW: Vote for most common entity type when merging
+    Vote for most common entity type
+    Following LightRAG's voting logic
     
     Args:
-        entity_types: List of entity types from different sources
+        entity_types: List of entity types
     
     Returns:
         Most common entity type
@@ -106,26 +87,265 @@ def vote_entity_type(entity_types: List[str]) -> str:
     if not entity_types:
         return "UNKNOWN"
     
-    # Count occurrences
     type_counts = Counter(entity_types)
-    
-    # Return most common
     most_common = type_counts.most_common(1)[0][0]
     
-    logger.debug(f"Entity type voting: {dict(type_counts)} → {most_common}")
     return most_common
 
+def build_file_path(
+    already_file_paths: List[str],
+    nodes_data: List[Dict],
+    entity_name: str
+) -> str:
+    """
+    Build combined file path string
+    
+    Args:
+        already_file_paths: Existing file paths
+        nodes_data: New node data
+        entity_name: Entity name (for logging)
+    
+    Returns:
+        Combined file path string
+    """
+    all_paths = set(already_file_paths)
+    
+    for node in nodes_data:
+        if node.get('file_path'):
+            all_paths.add(node['file_path'])
+    
+    return GRAPH_FIELD_SEP.join(sorted(all_paths))
 
-# ==================== IMPROVED KNOWLEDGE GRAPH ====================
+
+# ==================== MERGE NODES ====================
+async def _merge_nodes_then_upsert(
+    entity_name: str,
+    nodes_data: List[Dict],
+    knowledge_graph_inst: 'KnowledgeGraph',
+    global_config: Dict,
+) -> Dict:
+    """
+    Merge node data and upsert to graph
+    Following LightRAG's merge logic
+    
+    Args:
+        entity_name: Entity name
+        nodes_data: List of entity data dicts
+        knowledge_graph_inst: KnowledgeGraph instance
+        global_config: Configuration
+    
+    Returns:
+        Merged node data
+    """
+    already_entity_types = []
+    already_source_ids = []
+    already_description = []
+    already_file_paths = []
+
+    # Get existing node
+    already_node = knowledge_graph_inst.get_node(entity_name)
+    if already_node:
+        already_entity_types.append(already_node.get('type', 'UNKNOWN'))
+        
+        if already_node.get('source_id'):
+            already_source_ids.extend(
+                already_node['source_id'].split(GRAPH_FIELD_SEP)
+            )
+        
+        if already_node.get('file_path'):
+            already_file_paths.extend(
+                already_node['file_path'].split(GRAPH_FIELD_SEP)
+            )
+        
+        if already_node.get('description'):
+            already_description.append(already_node['description'])
+
+    # Vote for entity type
+    all_types = [nd['entity_type'] for nd in nodes_data] + already_entity_types
+    entity_type = vote_entity_type(all_types)
+
+    # Merge descriptions
+    all_descriptions = [nd['description'] for nd in nodes_data] + already_description
+    description = GRAPH_FIELD_SEP.join(sorted(set(all_descriptions)))
+
+    # Merge source IDs
+    all_source_ids = [nd['source_id'] for nd in nodes_data] + already_source_ids
+    source_id = GRAPH_FIELD_SEP.join(set(all_source_ids))
+
+    # Build file path
+    file_path = build_file_path(already_file_paths, nodes_data, entity_name)
+
+    # Check if summarization needed
+    force_llm_summary = global_config.get("force_llm_summary_on_merge", 5)
+    num_fragments = description.count(GRAPH_FIELD_SEP) + 1
+    
+    if num_fragments >= force_llm_summary:
+        logger.info(f"LLM merge N: {entity_name} | {num_fragments} fragments")
+        description = await _handle_entity_relation_summary(
+            entity_name, description, global_config
+        )
+    elif num_fragments > 1:
+        logger.debug(f"Merge N: {entity_name} | {num_fragments} fragments")
+
+    # Create node data
+    node_data = {
+        'entity_id': entity_name,
+        'type': entity_type,
+        'description': description,
+        'source_id': source_id,
+        'file_path': file_path,
+        'created_at': int(time.time()),
+    }
+
+    # Upsert to graph
+    knowledge_graph_inst.add_entity(
+        entity_name=entity_name,
+        entity_type=entity_type,
+        description=description,
+        source_id=source_id,
+        source_document=file_path.split(GRAPH_FIELD_SEP)[0] if file_path else "unknown"
+    )
+
+    node_data['entity_name'] = entity_name
+    return node_data
+
+
+# ==================== MERGE EDGES ====================
+async def _merge_edges_then_upsert(
+    src_id: str,
+    tgt_id: str,
+    edges_data: List[Dict],
+    knowledge_graph_inst: 'KnowledgeGraph',
+    global_config: Dict,
+) -> Optional[Dict]:
+    """
+    Merge edge data and upsert to graph
+    Following LightRAG's merge logic
+    
+    Args:
+        src_id: Source entity
+        tgt_id: Target entity
+        edges_data: List of relationship data dicts
+        knowledge_graph_inst: KnowledgeGraph instance
+        global_config: Configuration
+    
+    Returns:
+        Merged edge data or None
+    """
+    if src_id == tgt_id:
+        return None
+
+    already_weights = []
+    already_source_ids = []
+    already_description = []
+    already_keywords = []
+    already_file_paths = []
+
+    # Get existing edge
+    already_edge = knowledge_graph_inst.get_edge(src_id, tgt_id)
+    if already_edge:
+        already_weights.append(already_edge.get('weight', 1.0))
+        
+        if already_edge.get('source_id'):
+            already_source_ids.extend(
+                already_edge['source_id'].split(GRAPH_FIELD_SEP)
+            )
+        
+        if already_edge.get('file_path'):
+            already_file_paths.extend(
+                already_edge['file_path'].split(GRAPH_FIELD_SEP)
+            )
+        
+        if already_edge.get('description'):
+            already_description.append(already_edge['description'])
+        
+        if already_edge.get('keywords'):
+            already_keywords.extend(
+                already_edge['keywords'].split(GRAPH_FIELD_SEP)
+            )
+
+    # Merge weights (sum)
+    all_weights = [ed['weight'] for ed in edges_data] + already_weights
+    weight = sum(all_weights)
+
+    # Merge descriptions
+    all_descriptions = [ed['description'] for ed in edges_data if ed.get('description')] + already_description
+    description = GRAPH_FIELD_SEP.join(sorted(set(all_descriptions)))
+
+    # Merge keywords (deduplicate)
+    all_keywords = set()
+    for kw_str in already_keywords:
+        if kw_str:
+            all_keywords.update(k.strip() for k in kw_str.split(',') if k.strip())
+    for edge in edges_data:
+        if edge.get('keywords'):
+            all_keywords.update(k.strip() for k in edge['keywords'].split(',') if k.strip())
+    keywords = ','.join(sorted(all_keywords))
+
+    # Merge source IDs
+    all_source_ids = [ed['source_id'] for ed in edges_data if ed.get('source_id')] + already_source_ids
+    source_id = GRAPH_FIELD_SEP.join(set(all_source_ids))
+
+    # Build file path
+    file_path = build_file_path(already_file_paths, edges_data, f"{src_id}-{tgt_id}")
+
+    # Ensure source and target nodes exist
+    for node_id in [src_id, tgt_id]:
+        if not knowledge_graph_inst.has_node(node_id):
+            knowledge_graph_inst.add_entity(
+                entity_name=node_id,
+                entity_type='UNKNOWN',
+                description='',
+                source_id=source_id,
+                source_document=file_path.split(GRAPH_FIELD_SEP)[0] if file_path else "unknown"
+            )
+
+    # Check if summarization needed
+    force_llm_summary = global_config.get("force_llm_summary_on_merge", 5)
+    num_fragments = description.count(GRAPH_FIELD_SEP) + 1
+    
+    if num_fragments >= force_llm_summary:
+        logger.info(f"LLM merge E: {src_id} - {tgt_id} | {num_fragments} fragments")
+        description = await _handle_entity_relation_summary(
+            f"({src_id}, {tgt_id})", description, global_config
+        )
+    elif num_fragments > 1:
+        logger.debug(f"Merge E: {src_id} - {tgt_id} | {num_fragments} fragments")
+
+    # Upsert to graph
+    knowledge_graph_inst.add_relationship(
+        source_entity=src_id,
+        target_entity=tgt_id,
+        description=description,
+        strength=weight,
+        chunk_id=None,
+        source_document=file_path.split(GRAPH_FIELD_SEP)[0] if file_path else "unknown",
+        keywords=keywords
+    )
+
+    edge_data = {
+        'src_id': src_id,
+        'tgt_id': tgt_id,
+        'description': description,
+        'keywords': keywords,
+        'source_id': source_id,
+        'file_path': file_path,
+        'weight': weight,
+        'created_at': int(time.time()),
+    }
+
+    return edge_data
+
+
+# ==================== KNOWLEDGE GRAPH CLASS ====================
 class KnowledgeGraph:
     """
-    ✅ IMPROVED: Knowledge Graph with LLM summarization and entity type voting
+    Knowledge Graph with LightRAG-compatible structure
     """
     
     def __init__(self, enable_summarization: bool = True):
         self.G = nx.DiGraph()
         self.enable_summarization = enable_summarization
-        self._pending_summaries = {}  # Cache for batch summarization
     
     def add_entity(
         self,
@@ -136,61 +356,35 @@ class KnowledgeGraph:
         source_document: str,
         **kwargs
     ):
-        """
-        ✅ IMPROVED: Add entity with type voting and description management
-        """
+        """Add or merge entity"""
         if self.G.has_node(entity_name):
-            # ========== MERGE EXISTING ENTITY ==========
+            # Merge
             node = self.G.nodes[entity_name]
             
-            # 1. VOTE FOR ENTITY TYPE
-            existing_type = node.get('type', 'UNKNOWN')
-            types_to_vote = node.get('_type_history', [existing_type])
-            types_to_vote.append(entity_type)
-            voted_type = vote_entity_type(types_to_vote)
-            node['type'] = voted_type
-            node['_type_history'] = types_to_vote
-            
-            # 2. MERGE DESCRIPTIONS
+            # Merge description
             if description and description not in node.get('description', ''):
-                existing_desc = node.get('description', '')
-                
-                # Merge with separator
-                if existing_desc:
-                    merged_desc = f"{existing_desc}{GRAPH_FIELD_SEP}{description}"
+                existing = node.get('description', '')
+                if existing:
+                    node['description'] = f"{existing}{GRAPH_FIELD_SEP}{description}"
                 else:
-                    merged_desc = description
-                
-                node['description'] = merged_desc
-                
-                # Mark for summarization if too long
-                if self.enable_summarization and count_tokens(merged_desc) > MAX_DESCRIPTION_TOKENS:
-                    self._pending_summaries[entity_name] = merged_desc
+                    node['description'] = description
             
-            # 3. TRACK SOURCES
+            # Track sources
             sources = node.get('sources', set())
             sources.add(source_id)
             node['sources'] = sources
             
-            # 4. TRACK DOCUMENTS
             docs = node.get('source_documents', set())
             docs.add(source_document)
             node['source_documents'] = docs
-            
-            # 5. UPDATE OTHER ATTRIBUTES
-            for k, v in kwargs.items():
-                if k not in node:
-                    node[k] = v
-        
         else:
-            # ========== NEW ENTITY ==========
+            # New node
             self.G.add_node(
                 entity_name,
                 type=entity_type,
                 description=description,
                 sources={source_id},
                 source_documents={source_document},
-                _type_history=[entity_type],  # Track for voting
                 **kwargs
             )
     
@@ -204,39 +398,31 @@ class KnowledgeGraph:
         source_document: Optional[str] = None,
         **kwargs
     ):
-        """
-        ✅ IMPROVED: Add relationship with description management
-        """
+        """Add or merge relationship"""
         if self.G.has_edge(source_entity, target_entity):
-            # ========== MERGE EXISTING RELATIONSHIP ==========
+            # Merge
             edge = self.G.edges[source_entity, target_entity]
             
-            # 1. MERGE DESCRIPTIONS
             if description and description not in edge.get('description', ''):
-                existing_desc = edge.get('description', '')
-                if existing_desc:
-                    merged_desc = f"{existing_desc}{GRAPH_FIELD_SEP}{description}"
+                existing = edge.get('description', '')
+                if existing:
+                    edge['description'] = f"{existing}{GRAPH_FIELD_SEP}{description}"
                 else:
-                    merged_desc = description
-                edge['description'] = merged_desc
+                    edge['description'] = description
             
-            # 2. AGGREGATE STRENGTH (take max)
-            edge['strength'] = max(edge.get('strength', 1.0), strength)
+            edge['strength'] = edge.get('strength', 1.0) + strength
             
-            # 3. TRACK CHUNKS
             chunks = edge.get('chunks', set())
             if chunk_id:
                 chunks.add(chunk_id)
             edge['chunks'] = chunks
             
-            # 4. TRACK DOCUMENTS
             docs = edge.get('source_documents', set())
             if source_document:
                 docs.add(source_document)
             edge['source_documents'] = docs
-        
         else:
-            # ========== NEW RELATIONSHIP ==========
+            # New edge
             self.G.add_edge(
                 source_entity,
                 target_entity,
@@ -247,46 +433,32 @@ class KnowledgeGraph:
                 **kwargs
             )
     
-    async def apply_pending_summaries_async(self):
-        """
-        ✅ NEW: Apply LLM summarization to long descriptions
-        """
-        if not self._pending_summaries:
-            return
-        
-        logger.info(f"Summarizing {len(self._pending_summaries)} long descriptions...")
-        
-        for entity_name, long_desc in self._pending_summaries.items():
-            if self.G.has_node(entity_name):
-                summary = await summarize_description_async(entity_name, long_desc)
-                self.G.nodes[entity_name]['description'] = summary
-        
-        self._pending_summaries.clear()
-        logger.info("Summarization complete")
+    def get_node(self, entity_name: str) -> Optional[Dict]:
+        """Get node data"""
+        if self.G.has_node(entity_name):
+            return dict(self.G.nodes[entity_name])
+        return None
     
-    def apply_pending_summaries(self):
-        """Sync wrapper for summarization"""
-        if not self._pending_summaries:
-            return
-        
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        
-        loop.run_until_complete(self.apply_pending_summaries_async())
+    def has_node(self, entity_name: str) -> bool:
+        """Check if node exists"""
+        return self.G.has_node(entity_name)
+    
+    def get_edge(self, src: str, tgt: str) -> Optional[Dict]:
+        """Get edge data"""
+        if self.G.has_edge(src, tgt):
+            return dict(self.G.edges[src, tgt])
+        return None
+    
+    def has_edge(self, src: str, tgt: str) -> bool:
+        """Check if edge exists"""
+        return self.G.has_edge(src, tgt)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert graph to dict for JSON serialization"""
+        """Convert to dict for JSON"""
         data = nx.node_link_data(self.G)
         
-        # Clean up internal fields and convert sets to lists
+        # Convert sets to lists
         for node in data['nodes']:
-            # Remove internal fields
-            node.pop('_type_history', None)
-            
-            # Convert sets to lists
             for field in ['sources', 'source_documents']:
                 if field in node and isinstance(node[field], set):
                     node[field] = list(node[field])
@@ -300,140 +472,134 @@ class KnowledgeGraph:
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get graph statistics"""
+        type_counts = {}
+        for _, data in self.G.nodes(data=True):
+            t = data.get('type', 'UNKNOWN')
+            type_counts[t] = type_counts.get(t, 0) + 1
+        
         return {
             'num_entities': self.G.number_of_nodes(),
             'num_relationships': self.G.number_of_edges(),
-            'entity_types': self._count_entity_types(),
+            'entity_types': type_counts,
             'avg_degree': sum(dict(self.G.degree()).values()) / max(self.G.number_of_nodes(), 1),
             'density': nx.density(self.G),
-            'pending_summaries': len(self._pending_summaries)
         }
-    
-    def _count_entity_types(self) -> Dict[str, int]:
-        """Count entities by type"""
-        counts = {}
-        for _, data in self.G.nodes(data=True):
-            t = data.get('type', 'UNKNOWN')
-            counts[t] = counts.get(t, 0) + 1
-        return counts
-    
-    def get_isolated_entities(self) -> List[str]:
-        """
-        ✅ NEW: Find entities with no relationships (might be missing connections)
-        """
-        isolated = []
-        for node in self.G.nodes():
-            if self.G.degree(node) == 0:
-                isolated.append(node)
-        return isolated
 
 
-# ==================== GRAPH BUILDING ====================
-def build_knowledge_graph(
+# ==================== BUILD GRAPH ====================
+async def build_knowledge_graph_async(
     entities_dict: Dict[str, List[Dict]],
-    relationships_dict: Dict[str, List[Dict]],
+    relationships_dict: Dict[Tuple[str, str], List[Dict]],
+    global_config: Dict,
     enable_summarization: bool = True,
-    vector_db=None
 ) -> KnowledgeGraph:
     """
-    ✅ IMPROVED: Build knowledge graph with summarization and type voting
+    Build knowledge graph with async merge
+    Following LightRAG's architecture
     
     Args:
-        entities_dict: {chunk_id: [entity1, entity2, ...]}
-        relationships_dict: {chunk_id: [rel1, rel2, ...]}
-        enable_summarization: Enable LLM summarization for long descriptions
-        vector_db: Optional vector database reference
+        entities_dict: {entity_name: [entity_data]}
+        relationships_dict: {(src, tgt): [relation_data]}
+        global_config: Configuration
+        enable_summarization: Enable LLM summarization
     
     Returns:
         KnowledgeGraph instance
     """
     kg = KnowledgeGraph(enable_summarization=enable_summarization)
     
-    # Add entities
-    for chunk_id, ents in entities_dict.items():
-        doc = ents[0].get('source_document', Path(chunk_id).stem) if ents else 'unknown'
-        
-        for e in ents:
-            e['source_document'] = e.get('source_document', doc)
-            kg.add_entity(
-                entity_name=e['entity_name'],
-                entity_type=e['entity_type'],
-                description=e['description'],
-                source_id=e.get('source_id', chunk_id),
-                source_document=e['source_document']
-            )
+    logger.info("Building knowledge graph...")
     
-    # Add relationships
-    for chunk_id, rels in relationships_dict.items():
-        doc = rels[0].get('source_document', Path(chunk_id).stem) if rels else 'unknown'
-        
-        for r in rels:
-            r['source_document'] = r.get('source_document', doc)
-            
-            # Auto-create missing entities
-            if not kg.G.has_node(r['source_id']):
-                kg.add_entity(r['source_id'], 'UNKNOWN', '', chunk_id, doc)
-            if not kg.G.has_node(r['target_id']):
-                kg.add_entity(r['target_id'], 'UNKNOWN', '', chunk_id, doc)
-            
-            kg.add_relationship(
-                source_entity=r['source_id'],
-                target_entity=r['target_id'],
-                description=r['description'],
-                strength=r.get('strength', 1.0),
-                chunk_id=chunk_id,
-                source_document=doc
-            )
+    # Process all entities
+    entity_tasks = []
+    for entity_name, nodes_data in entities_dict.items():
+        task = _merge_nodes_then_upsert(
+            entity_name, nodes_data, kg, global_config
+        )
+        entity_tasks.append(task)
     
-    # Apply summarization if enabled
-    if enable_summarization:
-        kg.apply_pending_summaries()
+    if entity_tasks:
+        await asyncio.gather(*entity_tasks)
+        logger.info(f"Processed {len(entity_tasks)} entities")
+    
+    # Process all relationships
+    edge_tasks = []
+    for (src, tgt), edges_data in relationships_dict.items():
+        task = _merge_edges_then_upsert(
+            src, tgt, edges_data, kg, global_config
+        )
+        edge_tasks.append(task)
+    
+    if edge_tasks:
+        results = await asyncio.gather(*edge_tasks)
+        valid_edges = sum(1 for r in results if r is not None)
+        logger.info(f"Processed {valid_edges} relationships")
+    
+    stats = kg.get_statistics()
+    logger.info(f"Graph built: {stats['num_entities']} nodes, {stats['num_relationships']} edges")
     
     return kg
 
 
-# ==================== PROCESS FILE ====================
-def process_file(
-    filepath: str,
+def build_knowledge_graph(
+    entities_dict: Dict[str, List[Dict]],
+    relationships_dict: Dict[Tuple[str, str], List[Dict]],
     global_config: Optional[Dict] = None,
-    enable_summarization: bool = True,
+    enable_summarization: bool = False,
     vector_db=None
-) -> Dict:
+) -> KnowledgeGraph:
     """
-    ✅ IMPROVED: Process file with summarization
+    Sync wrapper for building knowledge graph
+    
+    Args:
+        entities_dict: Entity data
+        relationships_dict: Relationship data
+        global_config: Configuration
+        enable_summarization: Enable LLM summarization
+        vector_db: Unused (for compatibility)
+    
+    Returns:
+        KnowledgeGraph instance
     """
-    logger.info(f"Processing: {filepath}")
-    
-    chunks = process_document_to_chunks(filepath)
-    entities, relationships = extract_entities_relations(chunks, global_config)
-    kg = build_knowledge_graph(entities, relationships, enable_summarization, vector_db)
-    
-    result = {
-        'graph': kg.to_dict(),
-        'statistics': kg.get_statistics(),
-        'metadata': {
-            'source_file': filepath,
-            'num_chunks': len(chunks),
-            'num_entity_chunks': len(entities),
-            'num_relationship_chunks': len(relationships),
-            'summarization_enabled': enable_summarization
+    if not global_config:
+        global_config = {
+            "force_llm_summary_on_merge": 5,
+            "summary_max_tokens": MAX_DESCRIPTION_TOKENS,
         }
-    }
     
-    # Save graph
-    safe_name = Path(filepath).stem
-    output_dir = Path(f"backend/data/{Path(filepath).parent.name}/graphs")
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / f"{safe_name}_graph.json"
-    save_to_json(result, str(output))
+    # Get or create event loop
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
     
-    return result
+    # Apply nest_asyncio if needed
+    if loop.is_running():
+        try:
+            import nest_asyncio
+            nest_asyncio.apply()
+        except ImportError:
+            pass
+    
+    return loop.run_until_complete(
+        build_knowledge_graph_async(
+            entities_dict, relationships_dict, global_config, enable_summarization
+        )
+    )
 
 
 # ==================== MERGE GRAPHS ====================
-def merge_admin_graphs(user_id: str, enable_summarization: bool = True) -> Optional[KnowledgeGraph]:
+def merge_admin_graphs(user_id: str, enable_summarization: bool = False) -> Optional[KnowledgeGraph]:
     """
-    ✅ IMPROVED: Merge graphs with summarization
+    Merge all user graphs into combined graph
+    
+    Args:
+        user_id: User ID
+        enable_summarization: Enable summarization
+    
+    Returns:
+        Combined KnowledgeGraph or None
     """
     graphs_dir = Path(f"backend/data/{user_id}/graphs")
     if not graphs_dir.exists():
@@ -478,114 +644,9 @@ def merge_admin_graphs(user_id: str, enable_summarization: bool = True) -> Optio
         except Exception as e:
             logger.error(f"Failed to load {f}: {e}")
 
-    # Apply summarization
-    if enable_summarization:
-        kg.apply_pending_summaries()
-
-    # Save combined graph
+    # Save combined
     out_path = graphs_dir / "COMBINED_graph.json"
     save_to_json(kg.to_dict(), str(out_path))
-    logger.info(f"COMBINED_graph.json saved: {kg.G.number_of_nodes()} nodes, {kg.G.number_of_edges()} edges")
+    logger.info(f"Saved COMBINED_graph.json: {kg.G.number_of_nodes()} nodes, {kg.G.number_of_edges()} edges")
     
     return kg
-
-
-# ==================== GLEANING PROCESS ====================
-async def gleaning_process(
-    entities_dict: Dict[str, List[Dict]],
-    relationships_dict: Dict[str, List[Dict]],
-    chunks: List[Dict],
-    knowledge_graph: KnowledgeGraph,
-    max_iterations: int = 2
-) -> Tuple[Dict, Dict]:
-    """
-    ✅ IMPROVED: Refinement with better prompts
-    """
-    from backend.utils.llm_utils import call_llm_async
-    from backend.core.extraction import parse_extraction_result, process_extraction_result
-
-    current_entities = entities_dict.copy()
-    current_relations = relationships_dict.copy()
-
-    for it in range(max_iterations):
-        logger.info(f"[Gleaning] Iteration {it+1}/{max_iterations}")
-
-        # Build entity summary
-        entities_text = "\n".join([
-            f"- {e['entity_name']} ({e['entity_type']}): {e.get('description', '')}"
-            for ents in current_entities.values() for e in ents
-        ]) or "None"
-
-        # Build relationship summary
-        relations_text = "\n".join([
-            f"- {r['source_id']} → {r['target_id']}: {r.get('description', '')} (strength: {r['strength']})"
-            for rels in current_relations.values() for r in rels
-        ]) or "None"
-
-        prompt = f"""You are a knowledge graph expert. Review and improve this graph.
-
-Current Entities:
-{entities_text}
-
-Current Relationships:
-{relations_text}
-
-Tasks:
-1. Fix incorrect entity types
-2. Standardize entity names (e.g., "Apple Inc." → "Apple")
-3. Add missing entities or relationships
-4. Remove duplicates
-
-Output format:
-entity<|>name<|>type<|>description##
-relationship<|>source<|>target<|>description<|>strength##
-
-Output:
-"""
-
-        try:
-            response = await call_llm_async(prompt, temperature=0.0, max_tokens=1500)
-            records = parse_extraction_result(response)
-            new_ents, new_rels = process_extraction_result(records, chunk_id=f"gleaning_{it}")
-
-            # Merge new results
-            for chunk_id, ents in new_ents.items():
-                current_entities.setdefault(chunk_id, []).extend(ents)
-            for chunk_id, rels in new_rels.items():
-                current_relations.setdefault(chunk_id, []).extend(rels)
-
-            if len(new_ents) + len(new_rels) == 0:
-                logger.info("[Gleaning] No improvement. Stopping.")
-                break
-        except Exception as e:
-            logger.error(f"[Gleaning] Error in iteration {it+1}: {e}")
-            break
-
-    return current_entities, current_relations
-
-
-# ==================== DIAGNOSTICS ====================
-def diagnose_graph(kg: KnowledgeGraph) -> Dict[str, Any]:
-    """
-    ✅ NEW: Diagnose graph quality
-    
-    Returns:
-        Dict with potential issues
-    """
-    issues = {
-        'isolated_entities': kg.get_isolated_entities(),
-        'entities_needing_summary': [
-            node for node, data in kg.G.nodes(data=True)
-            if count_tokens(data.get('description', '')) > MAX_DESCRIPTION_TOKENS
-        ],
-        'weak_relationships': [
-            (u, v) for u, v, data in kg.G.edges(data=True)
-            if data.get('strength', 1.0) < 0.3
-        ],
-        'unknown_entities': [
-            node for node, data in kg.G.nodes(data=True)
-            if data.get('type') == 'UNKNOWN'
-        ]
-    }
-    
-    return issues

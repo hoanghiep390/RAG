@@ -17,9 +17,7 @@ def ensure_dir(path):
 logger = logging.getLogger(__name__)
 
 
-# ============================================
-# JSON Operations (Required by extraction.py and graph_builder.py)
-# ============================================
+
 
 def save_to_json(data: Any, filename: str) -> None:
     """
@@ -30,10 +28,10 @@ def save_to_json(data: Any, filename: str) -> None:
         filename: Đường dẫn file output
     """
     try:
-        # Create directory if not exists
+    
         os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
         
-        # Save to JSON
+    
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         
@@ -72,9 +70,7 @@ def load_from_json(filename: str) -> Any:
         raise
 
 
-# ============================================
-# File Upload Operations
-# ============================================
+
 
 def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     """
@@ -90,30 +86,25 @@ def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     Raises:
         IOError: Nếu không thể lưu file
     """
-    # Tạo thư mục uploads
+def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     upload_dir = Path("backend/data/uploads")
     if user_id:
         upload_dir = upload_dir / user_id
     upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Tạo tên file unique với timestamp để tránh trùng
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Làm sạch tên file gốc (remove special chars)
     safe_filename = "".join(c for c in uploaded_file.name if c.isalnum() or c in "._- ")
     filename = f"{timestamp}_{safe_filename}"
-    
     filepath = upload_dir / filename
-    
-    # Lưu file
+
     try:
         with open(filepath, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        logger.info(f"✅ Saved uploaded file: {filepath}")
+            f.write(uploaded_file.getbuffer()) 
+        logger.info(f"Saved uploaded file: {filepath}")
     except Exception as e:
-        logger.error(f"❌ Failed to save file {filename}: {str(e)}")
+        logger.error(f"Failed to save file {filename}: {str(e)}")
         raise IOError(f"Failed to save file {filename}: {str(e)}")
-    
+
     return str(filepath.resolve())
 
 

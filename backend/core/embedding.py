@@ -1,4 +1,4 @@
-# backend/core/embedding.py - SIMPLIFIED & OPTIMIZED
+# backend/core/embedding.py 
 """
 ✅ Simplified embedding with HNSW index and batch processing
 """
@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import logging
 
+from pathlib import Path
 from backend.utils.file_utils import save_to_json
 from backend.core.chunking import process_document_to_chunks, normalize_hierarchy
 from backend.utils.cache_utils import embedding_cache
@@ -15,7 +16,7 @@ from backend.utils.cache_utils import embedding_cache
 logger = logging.getLogger(__name__)
 
 
-# ==================== OPTIMIZED MODEL ====================
+
 class EmbeddingModel:
     """Optimized embedding model with GPU support"""
     
@@ -36,7 +37,7 @@ class EmbeddingModel:
         )
 
 
-# Global model instance
+
 _model: Optional[EmbeddingModel] = None
 
 def get_model() -> EmbeddingModel:
@@ -47,7 +48,7 @@ def get_model() -> EmbeddingModel:
     return _model
 
 
-# ==================== VECTOR DATABASE ====================
+
 class VectorDatabase:
     """Optimized vector database with HNSW"""
     
@@ -58,6 +59,8 @@ class VectorDatabase:
         self.dim = dim
         self.use_hnsw = use_hnsw
         self.metadata = {}
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.metadata_path).parent.mkdir(parents=True, exist_ok=True)
         self._load_or_create()
     
     def _load_or_create(self):
@@ -183,14 +186,14 @@ class VectorDatabase:
         }
 
 
-# ==================== EMBEDDING GENERATION ====================
+
 def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64, 
                        use_cache: bool = True) -> List[Dict[str, Any]]:
     """Generate embeddings with caching"""
     if not chunks:
         return []
     
-    # Check cache
+    
     if use_cache:
         cache_key = f"chunks_{'_'.join([c.get('chunk_id', '')[:8] for c in chunks[:5]])}"
         cached = embedding_cache.get(cache_key)
@@ -198,14 +201,14 @@ def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64,
             logger.info(f"✅ Cache hit: {len(chunks)} chunks")
             return cached
     
-    # Generate embeddings
+    
     model = get_model()
     texts = [c['content'] for c in chunks]
     
     logger.info(f"🔄 Generating {len(chunks)} embeddings (batch={batch_size})")
     embeddings_array = model.encode(texts, batch_size=batch_size)
     
-    # Build output
+    
     result = []
     for chunk, emb in zip(chunks, embeddings_array):
         hierarchy = chunk.get('hierarchy', '')
@@ -223,7 +226,7 @@ def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64,
             'entity_type': 'CHUNK'
         })
     
-    # Cache
+    
     if use_cache:
         embedding_cache.set(cache_key, result)
     
@@ -243,7 +246,7 @@ def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]],
             etype = entity['entity_type']
             desc = entity.get('description', '')
             
-            # Enhanced with graph
+            
             if knowledge_graph and knowledge_graph.G.has_node(name):
                 desc = knowledge_graph.G.nodes[name].get('description', desc)
             
@@ -319,16 +322,16 @@ def process_file(filepath: str, entities_dict: Optional[Dict] = None,
     """Process file with optimized settings"""
     logger.info(f"🔄 Processing: {filepath}")
     
-    # Generate embeddings
+    
     chunks = process_document_to_chunks(filepath)
     chunk_embeds = generate_embeddings(chunks, batch_size=batch_size)
     
-    # Create database
+    
     dim = len(chunk_embeds[0]["embedding"]) if chunk_embeds else 384
     vector_db = VectorDatabase(db_path="faiss.index", metadata_path="faiss_meta.json", 
                                dim=dim, use_hnsw=use_hnsw)
     
-    # Add embeddings
+    
     vector_db.add_embeddings(chunk_embeds)
     logger.info(f"✅ Added {len(chunk_embeds)} chunk embeddings")
     
@@ -344,7 +347,7 @@ def process_file(filepath: str, entities_dict: Optional[Dict] = None,
             vector_db.add_embeddings(rel_embeds)
             save_to_json(rel_embeds, "relationship_embeddings.json")
     
-    # Save
+    
     all_embeds = {
         'chunks': chunk_embeds,
         'entities': entity_embeds if entities_dict else [],
@@ -357,7 +360,7 @@ def process_file(filepath: str, entities_dict: Optional[Dict] = None,
     return vector_db
 
 
-# ==================== UTILITIES ====================
+
 def clear_cache():
     """Clear embedding cache"""
     embedding_cache.clear()

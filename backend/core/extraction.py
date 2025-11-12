@@ -1,361 +1,414 @@
-# backend/core/extraction.py - SIMPLIFIED & OPTIMIZED
+# backend/core/extraction.py
 """
-✅ Simplified extraction with batch processing
+✅ Extraction module following LightRAG architecture
+Includes: entity/relation handlers, normalization, robust parsing
 """
 import asyncio
 import logging
 import os
+import re
 from typing import Dict, List, Tuple, Any, Optional
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
+
+logger = logging.getLogger(__name__)
 
 TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
 COMPLETION_DELIMITER = "<|COMPLETE|>"
 
-logger = logging.getLogger(__name__)
+GRAPH_FIELD_SEP = "; "  
 
-
-# ==================== LRU CACHE ====================
-class LRUCache:
-    """Simple LRU cache"""
-    def __init__(self, maxsize=1000):
-        self.cache = OrderedDict()
-        self.maxsize = maxsize
+def normalize_extracted_info(text: str, is_entity: bool = False) -> str:
+    """
+    Normalize extracted text following LightRAG rules
     
-    def get(self, key):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-            return self.cache[key]
-        return None
+    Args:
+        text: Text to normalize
+        is_entity: True if normalizing entity name
     
-    def set(self, key, value):
-        if key in self.cache:
-            self.cache.move_to_end(key)
-        self.cache[key] = value
-        if len(self.cache) > self.maxsize:
-            self.cache.popitem(last=False)
-
-llm_cache = LRUCache(maxsize=int(os.getenv('CACHE_MAX_SIZE', 1000)))
-
-
-# ==================== UTILS ====================
-def clean_llm_output(text: str) -> str:
-    """Clean LLM output"""
-    if not text:
+    Returns:
+        Normalized text
+    """
+    if not text or not text.strip():
         return ""
     
-    cleaned = text.strip()
-    for old, new in [
-        (" <|>", TUPLE_DELIMITER), ("<|> ", TUPLE_DELIMITER),
-        (" ## ", RECORD_DELIMITER), ("## ", RECORD_DELIMITER), (" ##", RECORD_DELIMITER),
-        (" <|COMPLETE|>", COMPLETION_DELIMITER), ("\ufeff", "")
-    ]:
-        cleaned = cleaned.replace(old, new)
+    text = text.strip().strip('"').strip("'").strip()
     
-    return cleaned
-
-
-def extract_keywords(description: str) -> str:
-    """Extract keywords from description"""
-    verbs = ["produces", "creates", "develops", "founded", "located", "works",
-             "manages", "owns", "uses", "builds", "sells", "provides", "offers",
-             "leads", "operates", "manufactures", "designs", "invented"]
+    if is_entity:
+        text = ' '.join(text.split())
+        if text:
+            text = text[0].upper() + text[1:] if len(text) > 1 else text.upper()
+    else:
+        text = ' '.join(text.split())
     
-    desc_lower = description.lower()
-    found = [v for v in verbs if v in desc_lower]
+    return text
+
+
+def clean_str(text: str) -> str:
+    """Clean string by removing special characters"""
+    if not text:
+        return ""
+    return text.strip().strip('"').strip("'")
+
+async def _handle_single_entity_extraction(
+    record_attributes: list[str],
+    chunk_key: str,
+    file_path: str = "unknown_source",
+) -> Optional[Dict]:
+    """
+    Handle single entity extraction following LightRAG logic
     
-    return ", ".join(found[:3]) if found else ", ".join(description.split()[:3])
+    Args:
+        record_attributes: ["entity", name, type, description]
+        chunk_key: Chunk ID
+        file_path: Source file path
+    
+    Returns:
+        Entity dict or None if invalid
+    """
+    if len(record_attributes) < 4 or '"entity"' not in record_attributes[0]:
+        return None
+
+    entity_name = clean_str(record_attributes[1]).strip()
+    if not entity_name:
+        logger.warning(f"Entity extraction error: empty entity name in: {record_attributes}")
+        return None
+
+    entity_name = normalize_extracted_info(entity_name, is_entity=True)
+
+    if not entity_name or not entity_name.strip():
+        logger.warning(
+            f"Entity extraction error: entity name became empty after normalization. "
+            f"Original: '{record_attributes[1]}'"
+        )
+        return None
+
+    entity_type = clean_str(record_attributes[2]).strip('"')
+    if not entity_type.strip() or entity_type.startswith('("'):
+        logger.warning(f"Entity extraction error: invalid entity type in: {record_attributes}")
+        return None
+
+    entity_description = clean_str(record_attributes[3])
+    entity_description = normalize_extracted_info(entity_description)
+
+    if not entity_description.strip():
+        logger.warning(
+            f"Entity extraction error: empty description for entity '{entity_name}' "
+            f"of type '{entity_type}'"
+        )
+        return None
+
+    return {
+        'entity_name': entity_name,
+        'entity_type': entity_type,
+        'description': entity_description,
+        'source_id': chunk_key,
+        'chunk_id': chunk_key,
+        'file_path': file_path,
+    }
+
+async def _handle_single_relationship_extraction(
+    record_attributes: list[str],
+    chunk_key: str,
+    file_path: str = "unknown_source",
+) -> Optional[Dict]:
+    """
+    Handle single relationship extraction following LightRAG logic
+    
+    Args:
+        record_attributes: ["relationship", source, target, description, keywords?, strength?]
+        chunk_key: Chunk ID
+        file_path: Source file path
+    
+    Returns:
+        Relationship dict or None if invalid
+    """
+    if len(record_attributes) < 5 or '"relationship"' not in record_attributes[0]:
+        return None
+
+    source = clean_str(record_attributes[1])
+    target = clean_str(record_attributes[2])
+
+    source = normalize_extracted_info(source, is_entity=True)
+    target = normalize_extracted_info(target, is_entity=True)
+
+    if not source or not source.strip():
+        logger.warning(
+            f"Relationship extraction error: source entity became empty after normalization. "
+            f"Original: '{record_attributes[1]}'"
+        )
+        return None
+
+    if not target or not target.strip():
+        logger.warning(
+            f"Relationship extraction error: target entity became empty after normalization. "
+            f"Original: '{record_attributes[2]}'"
+        )
+        return None
+
+    if source == target:
+        logger.debug(f"Relationship source and target are the same in: {record_attributes}")
+        return None
+
+    edge_description = clean_str(record_attributes[3])
+    edge_description = normalize_extracted_info(edge_description)
+
+    edge_keywords = normalize_extracted_info(
+        clean_str(record_attributes[4]), is_entity=True
+    )
+    edge_keywords = edge_keywords.replace("ï¼Œ", ",")
+
+    weight = 1.0
+    if len(record_attributes) > 5:
+        try:
+            weight_str = record_attributes[5].strip('"').strip("'")
+            if weight_str and re.match(r'^[0-9]*\.?[0-9]+$', weight_str):
+                weight = float(weight_str)
+        except (ValueError, IndexError):
+            pass
+
+    return {
+        'source_id': source,
+        'target_id': target,
+        'weight': weight,
+        'strength': weight,
+        'description': edge_description,
+        'keywords': edge_keywords,
+        'source_id': chunk_key,
+        'chunk_id': chunk_key,
+        'file_path': file_path,
+    }
+
+def split_string_by_multi_markers(text: str, markers: List[str]) -> List[str]:
+    """Split string by multiple markers"""
+    if not markers:
+        return [text]
+    
+    pattern = '|'.join(re.escape(m) for m in markers)
+    parts = re.split(pattern, text)
+    return [p.strip() for p in parts if p.strip()]
 
 
-# ==================== PROMPTS ====================
-def create_batch_prompt(chunks: List[Dict], entity_types: List[str]) -> str:
-    """Create prompt for multiple chunks"""
+async def parse_extraction_result(
+    result: str,
+    chunk_key: str,
+    file_path: str = "unknown_source"
+) -> Tuple[Dict[str, List[Dict]], Dict[Tuple[str, str], List[Dict]]]:
+    """
+    Parse LLM extraction result into entities and relationships
+    
+    Args:
+        result: LLM output text
+        chunk_key: Chunk ID
+        file_path: Source file
+    
+    Returns:
+        (entities_dict, relationships_dict)
+        - entities_dict: {entity_name: [entity_data]}
+        - relationships_dict: {(source, target): [relation_data]}
+    """
+    maybe_nodes = defaultdict(list)
+    maybe_edges = defaultdict(list)
+
+    context_base = {
+        'tuple_delimiter': TUPLE_DELIMITER,
+        'record_delimiter': RECORD_DELIMITER,
+        'completion_delimiter': COMPLETION_DELIMITER,
+    }
+
+    records = split_string_by_multi_markers(
+        result,
+        [context_base["record_delimiter"], context_base["completion_delimiter"]],
+    )
+
+    for record in records:
+        match = re.search(r"\((.*)\)", record)
+        if match is None:
+            continue
+        
+        record_content = match.group(1)
+        record_attributes = split_string_by_multi_markers(
+            record_content, [context_base["tuple_delimiter"]]
+        )
+        entity_data = await _handle_single_entity_extraction(
+            record_attributes, chunk_key, file_path
+        )
+        if entity_data is not None:
+            maybe_nodes[entity_data["entity_name"]].append(entity_data)
+            continue
+        relationship_data = await _handle_single_relationship_extraction(
+            record_attributes, chunk_key, file_path
+        )
+        if relationship_data is not None:
+            rel_key = (relationship_data["source_id"], relationship_data["target_id"])
+            maybe_edges[rel_key].append(relationship_data)
+
+    return dict(maybe_nodes), dict(maybe_edges)
+
+
+def create_extraction_prompt(text: str, entity_types: List[str]) -> str:
+    """Create extraction prompt following LightRAG format"""
     types_str = ", ".join(entity_types)
-    chunks_text = "\n\n---CHUNK_SEPARATOR---\n\n".join([
-        f"CHUNK_ID: {c['chunk_id']}\n{c['content']}" for c in chunks
-    ])
     
     return f"""
 -Goal-
-Extract entities and relationships from MULTIPLE chunks. Include CHUNK_ID for each.
+Extract entities and relationships from the text below.
 
--Format-
-("entity"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<desc>)
-("relationship"{TUPLE_DELIMITER}<chunk_id>{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<desc>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
+-Steps-
+1. Identify ALL entities in the text
+2. Identify ALL relationships between entities
+3. Format output EXACTLY as shown
 
-Entity Types: {types_str}
-Keywords: 2-5 verbs/nouns
-Strength: 0.0-1.0
+-Entity Format-
+("entity"{TUPLE_DELIMITER}<entity_name>{TUPLE_DELIMITER}<entity_type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
 
--Chunks-
-{chunks_text}
+-Relationship Format-
+("relationship"{TUPLE_DELIMITER}<source_entity>{TUPLE_DELIMITER}<target_entity>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>){RECORD_DELIMITER}
 
-Output:
-"""
+-Entity Types-
+{types_str}
 
+-Keywords-
+2-5 action verbs or nouns describing the relationship
 
-def create_single_prompt(text: str, entity_types: List[str]) -> str:
-    """Create prompt for single chunk"""
-    types_str = ", ".join(entity_types)
-    
-    return f"""
--Goal-
-Extract entities and relationships.
-
--Format-
-("entity"{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<desc>)
-("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<desc>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>)
-
-Types: {types_str}
+-Strength-
+Float between 0.0 and 1.0 indicating relationship strength
 
 -Text-
 {text}
 
-Output:
+-Output-
 """
-
-
-# ==================== PARSER ====================
-def parse_extraction(result: str) -> List[Dict[str, Any]]:
-    """Parse extraction result"""
-    records = []
-    result = clean_llm_output(result).replace(COMPLETION_DELIMITER, "").strip()
+async def extract_single_chunk(
+    chunk: Dict,
+    entity_types: List[str],
+    llm_func,
+    cache_dict: Optional[Dict] = None
+) -> Tuple[Dict, Dict]:
+    """
+    Extract entities and relationships from single chunk
     
-    for raw in result.split(RECORD_DELIMITER):
-        raw = raw.strip()
-        if not raw:
-            continue
-        
-        parts = [p.strip() for p in raw.split(TUPLE_DELIMITER)]
-        if len(parts) < 2:
-            continue
-        
-        record_type = parts[0].lower().replace('(', '').replace('"', '')
-        
-        # ENTITY: ("entity", chunk_id?, name, type, desc)
-        if record_type == "entity":
-            if len(parts) >= 5:  # Batch format
-                records.append({
-                    "type": "entity",
-                    "chunk_id": parts[1],
-                    "entity_name": parts[2],
-                    "entity_type": parts[3],
-                    "description": parts[4],
-                })
-            elif len(parts) >= 4:  # Single format
-                records.append({
-                    "type": "entity",
-                    "entity_name": parts[1],
-                    "entity_type": parts[2],
-                    "description": parts[3],
-                })
-        
-        # RELATIONSHIP: ("relationship", chunk_id?, source, target, desc, keywords?, strength?)
-        elif record_type == "relationship":
-            try:
-                if len(parts) >= 7:  # Batch with keywords
-                    records.append({
-                        "type": "relationship",
-                        "chunk_id": parts[1],
-                        "source_entity": parts[2],
-                        "target_entity": parts[3],
-                        "description": parts[4],
-                        "keywords": parts[5],
-                        "strength": float(parts[6]),
-                    })
-                elif len(parts) >= 6:  # Single with keywords
-                    records.append({
-                        "type": "relationship",
-                        "source_entity": parts[1],
-                        "target_entity": parts[2],
-                        "description": parts[3],
-                        "keywords": parts[4],
-                        "strength": float(parts[5]),
-                    })
-                elif len(parts) >= 5:  # Without keywords
-                    records.append({
-                        "type": "relationship",
-                        "source_entity": parts[1] if len(parts) == 6 else parts[2],
-                        "target_entity": parts[2] if len(parts) == 6 else parts[3],
-                        "description": parts[3] if len(parts) == 6 else parts[4],
-                        "keywords": extract_keywords(parts[3] if len(parts) == 6 else parts[4]),
-                        "strength": float(parts[4]) if len(parts) == 6 else 1.0,
-                    })
-            except (ValueError, IndexError):
-                continue
+    Args:
+        chunk: Chunk data with 'chunk_id' and 'content'
+        entity_types: List of entity types to extract
+        llm_func: Async LLM function
+        cache_dict: Optional cache dictionary
     
-    return records
-
-
-def parse_batch(result: str, chunks: List[Dict]) -> Tuple[Dict, Dict]:
-    """Parse batch result into dicts by chunk_id"""
-    records = parse_extraction(result)
-    entities_dict = {}
-    rels_dict = {}
-    
-    for rec in records:
-        chunk_id = rec.get('chunk_id', chunks[0]['chunk_id'])
-        
-        if rec['type'] == 'entity':
-            if chunk_id not in entities_dict:
-                entities_dict[chunk_id] = []
-            entities_dict[chunk_id].append({
-                'entity_name': rec['entity_name'],
-                'entity_type': rec['entity_type'],
-                'description': rec['description'],
-                'chunk_id': chunk_id,
-                'source_id': chunk_id
-            })
-        
-        elif rec['type'] == 'relationship':
-            if chunk_id not in rels_dict:
-                rels_dict[chunk_id] = []
-            rels_dict[chunk_id].append({
-                'source_id': rec['source_entity'],
-                'target_id': rec['target_entity'],
-                'description': rec['description'],
-                'keywords': rec.get('keywords', ''),
-                'strength': rec.get('strength', 1.0),
-                'chunk_id': chunk_id
-            })
-    
-    return entities_dict, rels_dict
-
-
-def process_result(records: List[Dict], chunk_id: str) -> Tuple[List[Dict], List[Dict]]:
-    """Process single chunk result"""
-    entities = []
-    rels = []
-    
-    for rec in records:
-        if rec['type'] == 'entity':
-            entities.append({
-                'entity_name': rec['entity_name'],
-                'entity_type': rec['entity_type'],
-                'description': rec['description'],
-                'chunk_id': chunk_id,
-                'source_id': chunk_id
-            })
-        elif rec['type'] == 'relationship':
-            rels.append({
-                'source_id': rec['source_entity'],
-                'target_id': rec['target_entity'],
-                'description': rec['description'],
-                'keywords': rec.get('keywords', ''),
-                'strength': rec.get('strength', 1.0),
-                'chunk_id': chunk_id
-            })
-    
-    return entities, rels
-
-
-# ==================== ASYNC EXTRACTION ====================
-async def extract_single(chunk: Dict, entity_types: List[str], model: str, use_cache: bool = True) -> Tuple[List, List]:
-    """Extract from single chunk"""
+    Returns:
+        (entities_dict, relationships_dict)
+    """
     chunk_id = chunk.get("chunk_id", "")
-    text = chunk.get("content", "")
-    cache_key = f"{chunk_id}_{hash(text)}"
+    content = chunk.get("content", "")
+    file_path = chunk.get("file_path", "unknown_source")
+    
+    cache_key = f"{chunk_id}_{hash(content)}"
+    if cache_dict and cache_key in cache_dict:
+        return cache_dict[cache_key]
+    
+    prompt = create_extraction_prompt(content, entity_types)
     
     try:
-        if use_cache:
-            cached = llm_cache.get(cache_key)
-            if cached:
-                result = cached
-                logger.debug(f"✅ Cache: {chunk_id}")
-            else:
-                from backend.utils.llm_utils import call_llm_with_retry
-                prompt = create_single_prompt(text, entity_types)
-                result = await call_llm_with_retry(prompt, model=model, max_retries=3)
-                llm_cache.set(cache_key, result)
-        else:
-            from backend.utils.llm_utils import call_llm_with_retry
-            prompt = create_single_prompt(text, entity_types)
-            result = await call_llm_with_retry(prompt, model=model, max_retries=3)
+        result = await llm_func(prompt)
+        entities, relationships = await parse_extraction_result(
+            result, chunk_id, file_path
+        )
         
-        records = parse_extraction(result)
-        return process_result(records, chunk_id)
-    
+        if cache_dict is not None:
+            cache_dict[cache_key] = (entities, relationships)
+        
+        return entities, relationships
+        
     except Exception as e:
-        logger.error(f"❌ {chunk_id}: {e}")
-        return [], []
-
-
-async def extract_batch(chunks: List[Dict], entity_types: List[str], model: str, use_cache: bool = True) -> Tuple[Dict, Dict]:
-    """Extract from batch of chunks"""
-    cache_key = f"batch_{'_'.join([c['chunk_id'] for c in chunks])}"
-    
-    try:
-        if use_cache:
-            cached = llm_cache.get(cache_key)
-            if cached:
-                logger.debug(f"✅ Cache: batch of {len(chunks)}")
-                return cached
-        
-        from backend.utils.llm_utils import call_llm_with_retry
-        prompt = create_batch_prompt(chunks, entity_types)
-        result = await call_llm_with_retry(prompt, model=model, max_retries=3)
-        
-        entities_dict, rels_dict = parse_batch(result, chunks)
-        
-        if use_cache:
-            llm_cache.set(cache_key, (entities_dict, rels_dict))
-        
-        return entities_dict, rels_dict
-    
-    except Exception as e:
-        logger.error(f"❌ Batch: {e}")
+        logger.error(f"Extraction failed for chunk {chunk_id}: {e}")
         return {}, {}
 
 
-async def extract_entities(chunks: List[Dict], global_config: Dict, 
-                          max_concurrent: int = 5, batch_size: int = 10, 
-                          use_cache: bool = True) -> Tuple[Dict, Dict]:
-    """Extract with batch processing"""
+async def extract_entities(
+    chunks: List[Dict],
+    global_config: Dict,
+    max_concurrent: int = 8,
+) -> Tuple[Dict, Dict]:
+    """
+    Extract entities and relationships from all chunks with concurrency control
+    
+    Args:
+        chunks: List of chunk dicts
+        global_config: Config with entity_types, llm_model_func
+        max_concurrent: Max concurrent LLM calls
+    
+    Returns:
+        (entities_dict, relationships_dict)
+    """
     entity_types = global_config.get("entity_types", [
-        "PERSON", "ORGANIZATION", "LOCATION", "EVENT", "PRODUCT", "CONCEPT", "TECHNOLOGY"
+        "PERSON", "ORGANIZATION", "LOCATION", "EVENT", 
+        "PRODUCT", "CONCEPT", "TECHNOLOGY"
     ])
     
-    model = os.getenv("LLM_MODEL", "llama-3.1-70b-versatile")
+    llm_func = global_config.get("llm_model_func")
+    if not llm_func:
+        from backend.utils.llm_utils import call_llm_async
+        llm_func = call_llm_async
     
-    # Group into batches
-    batches = [chunks[i:i + batch_size] for i in range(0, len(chunks), batch_size)]
-    
-    logger.info(f"🔄 Processing {len(chunks)} chunks in {len(batches)} batches (batch={batch_size})")
+    cache_dict = {}
     
     semaphore = asyncio.Semaphore(max_concurrent)
     
-    async def process_with_sem(batch):
+    async def process_with_semaphore(chunk):
         async with semaphore:
-            return await extract_batch(batch, entity_types, model, use_cache)
+            return await extract_single_chunk(chunk, entity_types, llm_func, cache_dict)
     
-    tasks = [process_with_sem(b) for b in batches]
-    results = await asyncio.gather(*tasks)
+    logger.info(f"Extracting from {len(chunks)} chunks (max_concurrent={max_concurrent})")
     
-    # Merge results
-    entities_dict = {}
-    rels_dict = {}
+    tasks = [process_with_semaphore(c) for c in chunks]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     
-    for ents, rels in results:
-        entities_dict.update(ents)
-        rels_dict.update(rels)
+    all_entities = defaultdict(list)
+    all_relationships = defaultdict(list)
     
-    total_ents = sum(len(v) for v in entities_dict.values())
-    total_rels = sum(len(v) for v in rels_dict.values())
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(f"Task failed: {result}")
+            continue
+        
+        entities, relationships = result
+        
+        for entity_name, entity_list in entities.items():
+            all_entities[entity_name].extend(entity_list)
+        
+        for rel_key, rel_list in relationships.items():
+            all_relationships[rel_key].extend(rel_list)
     
-    logger.info(f"✅ Extracted {total_ents} entities, {total_rels} relationships")
+    total_ents = sum(len(v) for v in all_entities.values())
+    total_rels = sum(len(v) for v in all_relationships.values())
     
-    return entities_dict, rels_dict
+    logger.info(f"Extracted {total_ents} entities, {total_rels} relationships")
+    
+    return dict(all_entities), dict(all_relationships)
 
 
-# ==================== SYNC ENTRY POINT ====================
-def extract_entities_relations(chunks: List[Dict], global_config: Optional[Dict] = None) -> Tuple[Dict, Dict]:
-    """Sync entry point"""
+def extract_entities_relations(
+    chunks: List[Dict],
+    global_config: Optional[Dict] = None
+) -> Tuple[Dict, Dict]:
+    """
+    Sync wrapper for extraction
+    
+    Args:
+        chunks: List of chunk dicts
+        global_config: Configuration
+    
+    Returns:
+        (entities_dict, relationships_dict)
+    """
     if not global_config:
         global_config = {
-            "entity_types": ["PERSON", "ORGANIZATION", "LOCATION", "EVENT", "PRODUCT", "CONCEPT", "TECHNOLOGY"]
+            "entity_types": [
+                "PERSON", "ORGANIZATION", "LOCATION", "EVENT",
+                "PRODUCT", "CONCEPT", "TECHNOLOGY"
+            ]
         }
     
-    batch_size = int(os.getenv('EXTRACTION_BATCH_SIZE', 10))
+    
     max_concurrent = int(os.getenv('MAX_CONCURRENT_LLM_CALLS', 8))
     
     try:
@@ -363,27 +416,14 @@ def extract_entities_relations(chunks: List[Dict], global_config: Optional[Dict]
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-    
+ 
     if loop.is_running():
         try:
             import nest_asyncio
             nest_asyncio.apply()
         except ImportError:
-            logger.warning("⚠️ nest_asyncio not available")
+            logger.warning("nest_asyncio not available")
     
-    return loop.run_until_complete(extract_entities(chunks, global_config, max_concurrent, batch_size))
-
-
-# ==================== UTILITIES ====================
-def analyze_keywords(relationships_dict: Dict[str, List[Dict]]) -> Dict[str, int]:
-    """Analyze common keywords"""
-    from collections import Counter
-    
-    keywords = []
-    for rels in relationships_dict.values():
-        for rel in rels:
-            kw = rel.get('keywords', '')
-            if kw:
-                keywords.extend([k.strip() for k in kw.split(',')])
-    
-    return dict(Counter(keywords).most_common(20))
+    return loop.run_until_complete(
+        extract_entities(chunks, global_config, max_concurrent)
+    )
