@@ -297,45 +297,44 @@ class DocumentPipeline:
                 result['graph_error'] = str(e)
 
         # Step 4: Embedding
-        # Trong _process_advanced_pipeline, phần Embedding
-    if enable_embedding:
-        logger.info("[Pipeline] Step 4: Embedding...")
-        try:
-        # BƯỚC 1: Tạo thư mục vectors (đảm bảo tồn tại)
-            self.vectors_dir.mkdir(parents=True, exist_ok=True)
-
-        # BƯỚC 2: Tạo VectorDatabase
-            vector_db = VectorDatabase(
+        if enable_embedding:
+            logger.info("[Pipeline] Step 4: Embedding...")
+            self.vectors_dir.mkdir(parents=True, exist_ok=True) 
+            logger.debug(f"Ensured vectors dir: {self.vectors_dir}")
+            try:
+                chunk_embeds = generate_embeddings(chunks)
+                entity_embeds = generate_entity_embeddings(entities_dict, kg) if kg else []
+                rel_embeds = generate_relationship_embeddings(relationships_dict)
+                
+                vector_db = VectorDatabase(
                     db_path=str(self.vectors_dir / f"{doc_id}.index"),
                     metadata_path=str(self.vectors_dir / f"{doc_id}_meta.json"),
                     dim=384
-        )
+                )
+                
+                # Add all embeddings
+                vector_db.add_embeddings(chunk_embeds)
+                if entity_embeds:
+                    vector_db.add_embeddings(entity_embeds)
+                if rel_embeds:
+                    vector_db.add_embeddings(rel_embeds)
+                
+                vector_db.save()
+                
+                result.update({
+                    'total_embeddings': len(chunk_embeds) + len(entity_embeds) + len(rel_embeds),
+                    'chunk_embeddings': len(chunk_embeds),
+                    'entity_embeddings': len(entity_embeds),
+                    'relationship_embeddings': len(rel_embeds),
+                    'vector_db_path': str(self.vectors_dir / f"{doc_id}.index")
+                })
+                
+                logger.info(f"[Pipeline] Generated {result['total_embeddings']} embeddings")
+                
+            except Exception as e:
+                logger.error(f"[Pipeline] Embedding failed: {str(e)}")
+                result['embedding_error'] = str(e)
 
-        # BƯỚC 3: Thêm embeddings
-            chunk_embeds = generate_embeddings(chunks)
-            entity_embeds = generate_entity_embeddings(entities_dict, kg) if kg else []
-            rel_embeds = generate_relationship_embeddings(relationships_dict)
-
-            vector_db.add_embeddings(chunk_embeds)
-            if entity_embeds: vector_db.add_embeddings(entity_embeds)
-            if rel_embeds: vector_db.add_embeddings(rel_embeds)
-
-        # BƯỚC 4: ĐẢM BẢO THƯ MỤC TỒN TẠI TRƯỚC KHI SAVE
-            Path(vector_db.db_path).parent.mkdir(parents=True, exist_ok=True)
-            Path(vector_db.metadata_path).parent.mkdir(parents=True, exist_ok=True)
-
-        # BƯỚC 5: MỚI SAVE
-            vector_db.save()
-
-            result.update({
-                'total_embeddings': len(chunk_embeds) + len(entity_embeds) + len(rel_embeds),
-                'vector_db_path': vector_db.db_path
-            })
-            logger.info(f"[Pipeline] Saved embeddings to {vector_db.db_path}")
-
-        except Exception as e:
-            logger.error(f"[Pipeline] Embedding failed: {str(e)}")
-            result['embedding_error'] = str(e)
         return result
 
     def load_chunks(self, chunk_file: str) -> Dict:
