@@ -296,29 +296,46 @@ class DocumentPipeline:
                 logger.error(f"[Pipeline] Graph building failed: {str(e)}")
                 result['graph_error'] = str(e)
 
-        # Step 4: Embedding
+    # Step 4: Embedding
         if enable_embedding:
             logger.info("[Pipeline] Step 4: Embedding...")
-            self.vectors_dir.mkdir(parents=True, exist_ok=True) 
+            
+            # ✅ FIX: Create vectors directory BEFORE VectorDatabase
+            self.vectors_dir.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Created vectors dir: {self.vectors_dir}")
+            self.vectors_dir.mkdir(parents=True, exist_ok=True)
             logger.debug(f"Ensured vectors dir: {self.vectors_dir}")
+            
             try:
-                chunk_embeds = generate_embeddings(chunks)
-                entity_embeds = generate_entity_embeddings(entities_dict, kg) if kg else []
-                rel_embeds = generate_relationship_embeddings(relationships_dict)
+                chunk_embeds = generate_embeddings(chunks, batch_size=self.embedding_batch_size)
+                entity_embeds = []
+                if entities_dict and kg:
+                    entity_embeds = generate_entity_embeddings(entities_dict, kg, 
+                                                              batch_size=self.embedding_batch_size)
+                rel_embeds = []
+                if relationships_dict:
+                    rel_embeds = generate_relationship_embeddings(relationships_dict,batch_size=self.embedding_batch_size)
+                vector_db_path = str((self.vectors_dir / f"{doc_id}.index").resolve())
+                metadata_path = str((self.vectors_dir / f"{doc_id}_meta.json").resolve())
                 
+                logger.debug(f"Creating VectorDB at: {vector_db_path}")
                 vector_db = VectorDatabase(
-                    db_path=str(self.vectors_dir / f"{doc_id}.index"),
-                    metadata_path=str(self.vectors_dir / f"{doc_id}_meta.json"),
-                    dim=384
+                    db_path=vector_db_path,
+                    metadata_path=metadata_path,
+                    dim=384,
+                    use_hnsw=self.use_hnsw
                 )
+                if chunk_embeds:
+                    vector_db.add_embeddings(chunk_embeds)
+                    logger.info(f"Added {len(chunk_embeds)} chunk embeddings")
                 
-                # Add all embeddings
-                vector_db.add_embeddings(chunk_embeds)
                 if entity_embeds:
                     vector_db.add_embeddings(entity_embeds)
+                    logger.info(f"Added {len(entity_embeds)} entity embeddings")
+                
                 if rel_embeds:
                     vector_db.add_embeddings(rel_embeds)
-                
+                    logger.info(f"Added {len(rel_embeds)} relationship embeddings")
                 vector_db.save()
                 
                 result.update({
@@ -326,13 +343,13 @@ class DocumentPipeline:
                     'chunk_embeddings': len(chunk_embeds),
                     'entity_embeddings': len(entity_embeds),
                     'relationship_embeddings': len(rel_embeds),
-                    'vector_db_path': str(self.vectors_dir / f"{doc_id}.index")
+                    'vector_db_path': vector_db_path
                 })
                 
                 logger.info(f"[Pipeline] Generated {result['total_embeddings']} embeddings")
                 
             except Exception as e:
-                logger.error(f"[Pipeline] Embedding failed: {str(e)}")
+                logger.error(f"[Pipeline] Embedding failed: {str(e)}", exc_info=True)
                 result['embedding_error'] = str(e)
 
         return result

@@ -1,21 +1,18 @@
 # backend/core/embedding.py 
 """
-✅ Simplified embedding with HNSW index and batch processing
+✅ FIXED: Simplified embedding with proper directory handling
 """
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import numpy as np
 import torch
 import logging
-
 from pathlib import Path
 from backend.utils.file_utils import save_to_json
 from backend.core.chunking import process_document_to_chunks, normalize_hierarchy
 from backend.utils.cache_utils import embedding_cache
 
 logger = logging.getLogger(__name__)
-
-
 
 class EmbeddingModel:
     """Optimized embedding model with GPU support"""
@@ -36,8 +33,6 @@ class EmbeddingModel:
             convert_to_numpy=True
         )
 
-
-
 _model: Optional[EmbeddingModel] = None
 
 def get_model() -> EmbeddingModel:
@@ -47,10 +42,8 @@ def get_model() -> EmbeddingModel:
         _model = EmbeddingModel()
     return _model
 
-
-
 class VectorDatabase:
-    """Optimized vector database with HNSW"""
+    """✅ FIXED: Optimized vector database with proper directory handling"""
     
     def __init__(self, db_path: str = "faiss.index", metadata_path: str = "faiss_meta.json", 
                  dim: int = 384, use_hnsw: bool = True):
@@ -59,8 +52,16 @@ class VectorDatabase:
         self.dim = dim
         self.use_hnsw = use_hnsw
         self.metadata = {}
-        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(self.metadata_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        # ✅ FIX: Create parent directories first
+        db_dir = Path(self.db_path).parent
+        meta_dir = Path(self.metadata_path).parent
+        
+        if str(db_dir) != '.':
+            db_dir.mkdir(parents=True, exist_ok=True)
+        if str(meta_dir) != '.':
+            meta_dir.mkdir(parents=True, exist_ok=True)
+        
         self._load_or_create()
     
     def _load_or_create(self):
@@ -157,17 +158,41 @@ class VectorDatabase:
         return results
     
     def save(self):
-        """Save database"""
+        """✅ FIXED: Save database with proper directory handling"""
         import json
+        from pathlib import Path
         
+        # ✅ FIX: Ensure parent directories exist before writing
+        db_path = Path(self.db_path)
+        meta_path = Path(self.metadata_path)
+        
+        # Create parent directories
+        if not db_path.parent.exists():
+            logger.warning(f"Parent dir missing, creating: {db_path.parent}")
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        if not meta_path.parent.exists():
+            logger.warning(f"Parent dir missing, creating: {meta_path.parent}")
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save FAISS index
         if self.index is not None:
             import faiss
-            faiss.write_index(self.index, self.db_path)
+            try:
+                faiss.write_index(self.index, str(db_path))
+                logger.info(f"💾 Saved index: {db_path}")
+            except Exception as e:
+                logger.error(f"Failed to save index: {e}")
+                raise
         
-        with open(self.metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(self.metadata, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"💾 Saved: {self.db_path}")
+        # Save metadata
+        try:
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(self.metadata, f, ensure_ascii=False, indent=2)
+            logger.info(f"💾 Saved metadata: {meta_path}")
+        except Exception as e:
+            logger.error(f"Failed to save metadata: {e}")
+            raise
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get statistics"""
@@ -185,14 +210,11 @@ class VectorDatabase:
             'total_metadata_entries': len(self.metadata)
         }
 
-
-
 def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64, 
                        use_cache: bool = True) -> List[Dict[str, Any]]:
     """Generate embeddings with caching"""
     if not chunks:
         return []
-    
     
     if use_cache:
         cache_key = f"chunks_{'_'.join([c.get('chunk_id', '')[:8] for c in chunks[:5]])}"
@@ -201,13 +223,11 @@ def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64,
             logger.info(f"✅ Cache hit: {len(chunks)} chunks")
             return cached
     
-    
     model = get_model()
     texts = [c['content'] for c in chunks]
     
     logger.info(f"🔄 Generating {len(chunks)} embeddings (batch={batch_size})")
     embeddings_array = model.encode(texts, batch_size=batch_size)
-    
     
     result = []
     for chunk, emb in zip(chunks, embeddings_array):
@@ -226,13 +246,11 @@ def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64,
             'entity_type': 'CHUNK'
         })
     
-    
     if use_cache:
         embedding_cache.set(cache_key, result)
     
     logger.info(f"✅ Generated {len(result)} embeddings")
     return result
-
 
 def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]], 
                               knowledge_graph=None, batch_size: int = 64) -> List[Dict[str, Any]]:
@@ -245,7 +263,6 @@ def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]],
             name = entity['entity_name']
             etype = entity['entity_type']
             desc = entity.get('description', '')
-            
             
             if knowledge_graph and knowledge_graph.G.has_node(name):
                 desc = knowledge_graph.G.nodes[name].get('description', desc)
@@ -268,7 +285,6 @@ def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]],
     
     logger.info(f"✅ Generated {len(result)} entity embeddings")
     return result
-
 
 def generate_relationship_embeddings(relationships_dict: Dict[str, List[Dict]], 
                                     batch_size: int = 64) -> List[Dict[str, Any]]:
@@ -302,7 +318,6 @@ def generate_relationship_embeddings(relationships_dict: Dict[str, List[Dict]],
     logger.info(f"✅ Generated {len(result)} relationship embeddings")
     return result
 
-
 def search_similar(query: str, vector_db: VectorDatabase, top_k: int = 5, 
                   filter_type: str = None) -> List[Dict[str, Any]]:
     """Search similar items"""
@@ -314,52 +329,6 @@ def search_similar(query: str, vector_db: VectorDatabase, top_k: int = 5,
         results = [r for r in results if r.get('entity_type') == filter_type]
     
     return results[:top_k]
-
-
-def process_file(filepath: str, entities_dict: Optional[Dict] = None,
-                relationships_dict: Optional[Dict] = None, knowledge_graph=None,
-                batch_size: int = 64, use_hnsw: bool = True) -> VectorDatabase:
-    """Process file with optimized settings"""
-    logger.info(f"🔄 Processing: {filepath}")
-    
-    
-    chunks = process_document_to_chunks(filepath)
-    chunk_embeds = generate_embeddings(chunks, batch_size=batch_size)
-    
-    
-    dim = len(chunk_embeds[0]["embedding"]) if chunk_embeds else 384
-    vector_db = VectorDatabase(db_path="faiss.index", metadata_path="faiss_meta.json", 
-                               dim=dim, use_hnsw=use_hnsw)
-    
-    
-    vector_db.add_embeddings(chunk_embeds)
-    logger.info(f"✅ Added {len(chunk_embeds)} chunk embeddings")
-    
-    if entities_dict:
-        entity_embeds = generate_entity_embeddings(entities_dict, knowledge_graph, batch_size)
-        if entity_embeds:
-            vector_db.add_embeddings(entity_embeds)
-            save_to_json(entity_embeds, "entity_embeddings.json")
-    
-    if relationships_dict:
-        rel_embeds = generate_relationship_embeddings(relationships_dict, batch_size)
-        if rel_embeds:
-            vector_db.add_embeddings(rel_embeds)
-            save_to_json(rel_embeds, "relationship_embeddings.json")
-    
-    
-    all_embeds = {
-        'chunks': chunk_embeds,
-        'entities': entity_embeds if entities_dict else [],
-        'relationships': rel_embeds if relationships_dict else []
-    }
-    save_to_json(all_embeds, "embedding_output.json")
-    vector_db.save()
-    
-    logger.info(f"📊 {vector_db.get_statistics()}")
-    return vector_db
-
-
 
 def clear_cache():
     """Clear embedding cache"""
