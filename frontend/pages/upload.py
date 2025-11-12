@@ -149,7 +149,7 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     st.markdown(f"**Đã chọn {len(uploaded_files)} file:**")
     for f in uploaded_files:
-        file_size = f.size / 1024 / 1024  # MB
+        file_size = f.size / 1024 / 1024  
         st.markdown(f"- 📄 {f.name} ({file_size:.2f} MB)")
 
 # Processing configuration
@@ -218,7 +218,7 @@ with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
         """, unsafe_allow_html=True)
 
 # ✅ FIX: Add file validation
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024  
 
 # Process button
 st.markdown("---")
