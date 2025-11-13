@@ -1,8 +1,5 @@
 # backend/core/embedding.py
-"""
-✅ CLEANED: Embedding module - NO FILE SAVING
-Chỉ generate embeddings và return data, không lưu file
-"""
+
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict, Any, Optional
 import numpy as np
