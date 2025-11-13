@@ -378,7 +378,6 @@ def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache:
     logger.info(f"🔄 Processing: {path}")
     
     try:
-        # Extract segments
         segments = extract_segments(path)
         if not segments:
             logger.warning(f"No segments from: {path}")
@@ -386,13 +385,11 @@ def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache:
         
         logger.info(f"📊 Extracted {len(segments)} segments")
         
-        # Chunk segments
         chunker = Chunker(config)
         chunks = chunker.chunk_segments(segments, path)
         
         logger.info(f"✅ Created {len(chunks)} chunks")
         
-        # Convert to dicts
         result = [c.to_dict() for c in chunks]
         
         return result
@@ -401,8 +398,6 @@ def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache:
         logger.error(f"Failed: {path}: {e}", exc_info=True)
         raise
 
-
-# ==================== UTILITIES ====================
 DocChunkConfig = ChunkConfig
 
 def get_default_config_for_file(filepath: str) -> ChunkConfig:
