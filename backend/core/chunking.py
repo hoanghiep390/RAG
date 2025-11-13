@@ -1,4 +1,8 @@
-# backend/core/chunking.py 
+# backend/core/chunking.py
+"""
+✅ CLEANED: Chunking module - NO FILE SAVING
+Chỉ xử lý và return data, không tạo file
+"""
 from __future__ import annotations
 import re
 import uuid
@@ -8,14 +12,12 @@ from pathlib import Path
 from functools import lru_cache
 
 from backend.utils.utils import logger
-
 from backend.utils.file_utils import read_file_content, get_file_extension
 
 try:
     import tiktoken
-    from backend.utils.cache_utils import chunk_cache
 except ImportError as e:
-    logger.error(f"Missing dependencies: {e}")
+    logger.error(f"Missing tiktoken: {e}")
     raise
 
 try:
@@ -358,27 +360,20 @@ class Chunker:
 
 
 # ==================== MAIN FUNCTION ====================
-def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache: bool = True) -> List[Dict[str, Any]]:
+def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache: bool = False) -> List[Dict[str, Any]]:
     """
-    Main entry point with caching
+    ✅ CLEANED: Main entry point - NO CACHING, NO FILE SAVING
+    Pure processing function that returns data
     
     Args:
         path: File path
         config: Chunking configuration
-        use_cache: Use disk cache
+        use_cache: IGNORED - no caching in cleaned version
     
     Returns:
         List of chunk dictionaries
     """
     config = config or ChunkConfig()
-    
-    # Check cache
-    if use_cache:
-        cache_key = f"{path}_{config.max_tokens}_{config.overlap_tokens}"
-        cached = chunk_cache.get(cache_key)
-        if cached:
-            logger.info(f"✅ Cache hit: {path}")
-            return cached
     
     logger.info(f"🔄 Processing: {path}")
     
@@ -399,10 +394,6 @@ def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache:
         
         # Convert to dicts
         result = [c.to_dict() for c in chunks]
-        
-        # Cache result
-        if use_cache:
-            chunk_cache.set(cache_key, result)
         
         return result
     

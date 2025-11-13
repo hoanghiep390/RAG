@@ -1,92 +1,39 @@
 # backend/utils/file_utils.py
 """
-Tiện ích xử lý file: lưu, đọc, xóa file upload
+✅ CLEANED: File utilities - CHỈ giữ các functions cần thiết
+Loại bỏ: save_to_json, load_from_json (sẽ dùng MongoDB)
+Giữ lại: File upload, file info, directory operations
 """
 
 import os
-import json
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Any
+from typing import List, Optional
 import logging
-from pathlib import Path
-
-def ensure_dir(path):
-    Path(path).mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 
 
+def ensure_dir(path):
+    """Ensure directory exists"""
+    Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def save_to_json(data: Any, filename: str) -> None:
-    """
-    Lưu dữ liệu JSON an toàn (UTF-8, có tạo thư mục nếu cần)
-    
-    Args:
-        data: Dữ liệu cần lưu (dict, list, etc.)
-        filename: Đường dẫn file output
-    """
-    try:
-    
-        os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
-        
-    
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        
-        logger.info(f"✅ Saved JSON to {filename}")
-        
-    except Exception as e:
-        logger.error(f"❌ Failed to save JSON file {filename}: {e}")
-        raise
-
-
-def load_from_json(filename: str) -> Any:
-    """
-    Đọc dữ liệu từ file JSON
-    
-    Args:
-        filename: Đường dẫn file JSON
-        
-    Returns:
-        Dữ liệu đã parse từ JSON
-    """
-    try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
-        logger.info(f"✅ Loaded JSON from {filename}")
-        return data
-        
-    except FileNotFoundError:
-        logger.error(f"❌ File not found: {filename}")
-        raise
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ Invalid JSON in {filename}: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"❌ Failed to load JSON file {filename}: {e}")
-        raise
-
-
-
+# ============================================
+# FILE UPLOAD (KEEP - Required for saving uploaded files)
+# ============================================
 
 def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     """
-    Lưu file upload vào thư mục backend/data/uploads/
+    ✅ KEEP: Save uploaded file to uploads directory
     
     Args:
-        uploaded_file: File object từ Streamlit (có .name và .getbuffer())
-        user_id: ID người dùng (optional, để tổ chức theo user)
+        uploaded_file: File object from Streamlit
+        user_id: User ID for organization
     
     Returns:
-        str: Đường dẫn file đã lưu (absolute path)
-    
-    Raises:
-        IOError: Nếu không thể lưu file
+        str: Absolute path to saved file
     """
-def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     upload_dir = Path("backend/data/uploads")
     if user_id:
         upload_dir = upload_dir / user_id
@@ -100,9 +47,9 @@ def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
     try:
         with open(filepath, "wb") as f:
             f.write(uploaded_file.getbuffer()) 
-        logger.info(f"Saved uploaded file: {filepath}")
+        logger.info(f"✅ Saved uploaded file: {filepath}")
     except Exception as e:
-        logger.error(f"Failed to save file {filename}: {str(e)}")
+        logger.error(f"❌ Failed to save file {filename}: {str(e)}")
         raise IOError(f"Failed to save file {filename}: {str(e)}")
 
     return str(filepath.resolve())
@@ -110,13 +57,13 @@ def save_uploaded_file(uploaded_file, user_id: Optional[str] = None) -> str:
 
 def get_uploaded_files(user_id: Optional[str] = None) -> List[Path]:
     """
-    Lấy danh sách file đã upload
+    ✅ KEEP: Get list of uploaded files
     
     Args:
-        user_id: ID người dùng (optional)
+        user_id: User ID
         
     Returns:
-        List[Path]: Danh sách Path objects của các file
+        List[Path]: List of uploaded file paths
     """
     upload_dir = Path("backend/data/uploads")
     if user_id:
@@ -130,13 +77,13 @@ def get_uploaded_files(user_id: Optional[str] = None) -> List[Path]:
 
 def delete_uploaded_file(filepath: str) -> bool:
     """
-    Xóa file đã upload
+    ✅ KEEP: Delete uploaded file
     
     Args:
-        filepath: Đường dẫn file cần xóa
+        filepath: File path to delete
         
     Returns:
-        bool: True nếu xóa thành công, False nếu có lỗi
+        bool: True if successful
     """
     try:
         Path(filepath).unlink(missing_ok=True)
@@ -148,18 +95,18 @@ def delete_uploaded_file(filepath: str) -> bool:
 
 
 # ============================================
-# File Information
+# FILE INFORMATION (KEEP - Useful utilities)
 # ============================================
 
 def get_file_info(filepath: str) -> dict:
     """
-    Lấy thông tin về file
+    ✅ KEEP: Get file information
     
     Args:
-        filepath: Đường dẫn file
+        filepath: File path
         
     Returns:
-        dict: Thông tin file (size, created_time, modified_time, extension)
+        dict: File information
     """
     path = Path(filepath)
     
@@ -181,13 +128,13 @@ def get_file_info(filepath: str) -> dict:
 
 def format_file_size(size_bytes: int) -> str:
     """
-    Format file size thành dạng human-readable
+    ✅ KEEP: Format file size to human-readable
     
     Args:
-        size_bytes: Kích thước (bytes)
+        size_bytes: Size in bytes
         
     Returns:
-        String formatted (vd: '1.5 MB', '320 KB')
+        str: Formatted size (e.g., '1.5 MB')
     """
     for unit in ['B', 'KB', 'MB', 'GB']:
         if size_bytes < 1024.0:
@@ -197,18 +144,18 @@ def format_file_size(size_bytes: int) -> str:
 
 
 # ============================================
-# Directory Operations
+# DIRECTORY OPERATIONS (KEEP - Useful utilities)
 # ============================================
 
 def ensure_directory(dir_path: str) -> Path:
     """
-    Đảm bảo thư mục tồn tại, tạo mới nếu chưa có
+    ✅ KEEP: Ensure directory exists
     
     Args:
-        dir_path: Đường dẫn thư mục
+        dir_path: Directory path
         
     Returns:
-        Path: Path object của thư mục
+        Path: Path object
     """
     path = Path(dir_path)
     path.mkdir(parents=True, exist_ok=True)
@@ -217,14 +164,14 @@ def ensure_directory(dir_path: str) -> Path:
 
 def list_files_in_directory(dir_path: str, pattern: str = "*") -> List[Path]:
     """
-    Liệt kê tất cả file trong thư mục theo pattern
+    ✅ KEEP: List files in directory
     
     Args:
-        dir_path: Đường dẫn thư mục
-        pattern: Pattern để filter (e.g., "*.txt", "*.json")
+        dir_path: Directory path
+        pattern: Glob pattern (e.g., "*.txt")
         
     Returns:
-        List[Path]: Danh sách file paths
+        List[Path]: List of file paths
     """
     path = Path(dir_path)
     
@@ -236,13 +183,13 @@ def list_files_in_directory(dir_path: str, pattern: str = "*") -> List[Path]:
 
 def get_directory_size(dir_path: str) -> dict:
     """
-    Tính tổng dung lượng của thư mục
+    ✅ KEEP: Calculate directory size
     
     Args:
-        dir_path: Đường dẫn thư mục
+        dir_path: Directory path
         
     Returns:
-        dict: Thông tin về size và số file
+        dict: Size info
     """
     path = Path(dir_path)
     
@@ -266,14 +213,14 @@ def get_directory_size(dir_path: str) -> dict:
 
 def delete_directory(directory: str, recursive: bool = False) -> bool:
     """
-    Xóa thư mục
+    ✅ KEEP: Delete directory
     
     Args:
-        directory: Đường dẫn thư mục
-        recursive: Có xóa đệ quy không (bao gồm tất cả files và subdirs)
+        directory: Directory path
+        recursive: Delete recursively
         
     Returns:
-        bool: True nếu thành công, False nếu thất bại
+        bool: True if successful
     """
     try:
         import shutil
@@ -282,7 +229,7 @@ def delete_directory(directory: str, recursive: bool = False) -> bool:
         if recursive:
             shutil.rmtree(dir_path)
         else:
-            dir_path.rmdir()  # Chỉ xóa nếu thư mục rỗng
+            dir_path.rmdir()  # Only if empty
         
         logger.info(f"✅ Deleted directory: {directory}")
         return True
@@ -293,19 +240,19 @@ def delete_directory(directory: str, recursive: bool = False) -> bool:
 
 
 # ============================================
-# Text File Operations
+# TEXT FILE OPERATIONS (KEEP - Used by chunking)
 # ============================================
 
 def read_file_content(filepath: str, encoding: str = 'utf-8') -> str:
     """
-    Đọc nội dung file text
+    ✅ KEEP: Read text file content (used by chunking.py)
     
     Args:
-        filepath: Đường dẫn file
-        encoding: Encoding của file (default: utf-8)
+        filepath: File path
+        encoding: File encoding
         
     Returns:
-        str: Nội dung file
+        str: File content
     """
     try:
         with open(filepath, 'r', encoding=encoding) as f:
@@ -317,18 +264,17 @@ def read_file_content(filepath: str, encoding: str = 'utf-8') -> str:
 
 def write_text_file(filepath: str, content: str, encoding: str = "utf-8") -> bool:
     """
-    Ghi nội dung vào text file
+    ✅ KEEP: Write text file
     
     Args:
-        filepath: Đường dẫn file
-        content: Nội dung cần ghi
-        encoding: Encoding (default: utf-8)
+        filepath: File path
+        content: Content to write
+        encoding: File encoding
         
     Returns:
-        bool: True nếu thành công, False nếu thất bại
+        bool: True if successful
     """
     try:
-        # Create directory if needed
         Path(filepath).parent.mkdir(parents=True, exist_ok=True)
         
         with open(filepath, "w", encoding=encoding) as f:
@@ -343,60 +289,56 @@ def write_text_file(filepath: str, content: str, encoding: str = "utf-8") -> boo
 
 
 # ============================================
-# Additional Utilities
+# FILE CHECKS (KEEP - Useful utilities)
 # ============================================
 
 def file_exists(filepath: str) -> bool:
     """
-    Kiểm tra file có tồn tại không
+    ✅ KEEP: Check if file exists
     
     Args:
-        filepath: Đường dẫn file
+        filepath: File path
         
     Returns:
-        bool: True nếu tồn tại, False nếu không
+        bool: True if exists
     """
     return Path(filepath).exists()
 
 
 def get_file_extension(filepath: str) -> str:
     """
-    Lấy extension của file (lowercase, không có dấu chấm)
+    ✅ KEEP: Get file extension (used by chunking.py)
     
     Args:
-        filepath: Đường dẫn file
+        filepath: File path
         
     Returns:
-        str: Extension (vd: 'pdf', 'txt', 'docx')
+        str: Extension without dot (e.g., 'pdf')
     """
     return Path(filepath).suffix.lower().lstrip('.')
 
 
 def copy_file(src: str, dst: str, overwrite: bool = False) -> bool:
     """
-    Copy file
+    ✅ KEEP: Copy file
     
     Args:
-        src: Đường dẫn file nguồn
-        dst: Đường dẫn file đích
-        overwrite: Có ghi đè nếu file đích đã tồn tại không
+        src: Source file path
+        dst: Destination file path
+        overwrite: Overwrite if exists
         
     Returns:
-        bool: True nếu thành công, False nếu thất bại
+        bool: True if successful
     """
     try:
         import shutil
         dst_path = Path(dst)
         
-        # Check if destination exists
         if dst_path.exists() and not overwrite:
             logger.warning(f"⚠️ File already exists: {dst}")
             return False
         
-        # Create destination directory if needed
         dst_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Copy file
         shutil.copy2(src, dst)
         logger.info(f"✅ Copied file: {src} → {dst}")
         return True
@@ -406,15 +348,19 @@ def copy_file(src: str, dst: str, overwrite: bool = False) -> bool:
         return False
 
 
-# ============================================
-# Backward Compatibility Aliases
-# ============================================
+"""
+MIGRATION NOTE:
+--------------
+If you need to save/load JSON data, use MongoDB:
 
-def save_json(data: Any, filename: str) -> None:
-    """Alias for save_to_json (backward compatibility)"""
-    return save_to_json(data, filename)
+OLD CODE:
+    from backend.utils.file_utils import save_to_json, load_from_json
+    save_to_json(data, "file.json")
+    data = load_from_json("file.json")
 
-
-def load_json(filename: str) -> Any:
-    """Alias for load_from_json (backward compatibility)"""
-    return load_from_json(filename)
+NEW CODE:
+    from backend.db.mongo_storage import MongoStorage
+    storage = MongoStorage(user_id)
+    storage.save_chunks(doc_id, chunks)
+    chunks = storage.get_chunks(doc_id)
+"""
