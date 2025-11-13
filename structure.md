@@ -48,3 +48,44 @@ mini_lightrag_graph/
     ├── architecture.md                   # → Mô tả kiến trúc hệ thống và các module
     ├── data_flow.png                     # → Sơ đồ luồng dữ liệu qua các module
     └── api_reference.md                  # → Mô tả chi tiết API nội bộ (core/db/utils)
+
+
+mini_lightrag_graph/
+│
+├── backend/                              # Backend: Core processing logic
+│   │
+│   ├── core/                             # Core modules (Pure functions)
+│   │   ├── chunking.py                   # ✅ Text → Chunks (no file I/O)
+│   │   ├── embedding.py                  # ✅ Chunks → Embeddings (no file I/O)
+│   │   ├── extraction.py                 # ✅ Text → Entities/Relations (no file I/O)
+│   │   ├── graph_builder.py              # ✅ Entities → Knowledge Graph (no file I/O)
+│   │   └── pipeline.py                   # ✅ Orchestrator + MongoDB Auto-Save
+│   │
+│   ├── db/                               # 💾 Database & Storage
+│   │   └── mongo_storage.py              # ✅ MongoDB CRUD operations
+│   │
+│   ├── utils/                            # 🔧 Utilities
+│   │   ├── file_utils.py                 # ✅ File operations (uploads only)
+│   │   ├── llm_utils.py                  # ✅ LLM API calls
+│   │   └── utils.py                      # ✅ Logging setup
+│   │
+│   ├── config.py                         # ⚙️ MongoDB connection config
+│   │
+│   └── data/                             # 📂 User data (only uploads)
+│       └── {user_id}/
+│           └── uploads/                  # ✅ Original uploaded files ONLY
+│
+├── frontend/                             # 🎨 Frontend: Streamlit UI
+│   ├── login.py                          # 🔐 Login/Register page
+│   └── pages/
+│       ├── upload.py                     # 📤 Upload & process documents
+│       └── graph.py                      # 🕸️ Visualize knowledge graph
+│
+├── scripts/                              # 🔧 Utility scripts
+│   └── migrate_to_mongodb.py             # 🔄 Migration script (file → MongoDB)
+│
+├── .env                                  # 🔑 Environment variables
+├── .env.example                          # 📝 Example config
+├── requirements.txt                      # 📦 Python dependencies
+├── README.md                             # 📖 Documentation
+└── structure.md                          # 📁 This file
