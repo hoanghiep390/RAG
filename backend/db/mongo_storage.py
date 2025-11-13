@@ -1,6 +1,6 @@
 # backend/db/mongo_storage.py
 """
-MongoDB Storage Manager for LightRAG Data
+MongoDB Storage Manager for LightRAG Data (WITHOUT Embeddings)
 Collections:
 - documents: Metadata về tài liệu upload
 - chunks: Text chunks từ documents
@@ -8,7 +8,8 @@ Collections:
 - relationships: Extracted relationships
 - graph_nodes: Knowledge graph nodes
 - graph_edges: Knowledge graph edges
-- embeddings: Vector embeddings
+
+NOTE: Embeddings được lưu trong FAISS (backend/core/vector_db.py)
 """
 import logging
 from typing import List, Dict, Any, Optional
@@ -19,7 +20,7 @@ from backend.config import get_mongodb
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """Unified storage manager for all LightRAG data"""
+    """Unified storage manager for LightRAG data (except embeddings)"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -30,37 +31,31 @@ class MongoStorage:
         self.relationships = self.db['relationships']
         self.graph_nodes = self.db['graph_nodes']
         self.graph_edges = self.db['graph_edges']
-        self.embeddings = self.db['embeddings']
-        
         
         self._create_indexes()
     
     def _create_indexes(self):
         """Create indexes for efficient queries"""
-        
+        # Documents
         self.documents.create_index([('user_id', 1), ('doc_id', 1)])
         
-        
+        # Chunks
         self.chunks.create_index([('user_id', 1), ('doc_id', 1)])
         self.chunks.create_index([('chunk_id', 1)])
         
-        
+        # Entities
         self.entities.create_index([('user_id', 1), ('entity_name', 1)])
         self.entities.create_index([('user_id', 1), ('entity_type', 1)])
         
-        
+        # Relationships
         self.relationships.create_index([('user_id', 1), ('source_id', 1)])
         self.relationships.create_index([('user_id', 1), ('target_id', 1)])
         
-        
+        # Graph
         self.graph_nodes.create_index([('user_id', 1), ('node_id', 1)], unique=True)
         self.graph_edges.create_index([('user_id', 1), ('source', 1), ('target', 1)])
-        
-        
-        self.embeddings.create_index([('user_id', 1), ('chunk_id', 1)])
-        self.embeddings.create_index([('user_id', 1), ('doc_id', 1)])
     
-    
+    # ================= DOCUMENTS =================
     
     def save_document(self, doc_id: str, filename: str, filepath: str, 
                      metadata: Dict = None) -> str:
@@ -106,22 +101,21 @@ class MongoStorage:
         ).sort('uploaded_at', -1))
     
     def delete_document(self, doc_id: str) -> bool:
-        """Delete document and all related data"""
+        """Delete document and all related data (except embeddings in FAISS)"""
         try:
-            
-            self.documents.delete_one({'user_id': self.user_id, 'doc_id': doc_id})          
+            self.documents.delete_one({'user_id': self.user_id, 'doc_id': doc_id})
             self.chunks.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
             self.entities.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
             self.relationships.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            self.embeddings.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-                        
-            logger.info(f"🗑️ Deleted document and related data: {doc_id}")
+            
+            logger.info(f"🗑️ Deleted document from MongoDB: {doc_id}")
+            logger.warning(f"⚠️ Remember to delete embeddings from FAISS manually!")
             return True
         except Exception as e:
             logger.error(f"❌ Error deleting document: {e}")
             return False
     
-    
+    # ================= CHUNKS =================
     
     def save_chunks(self, doc_id: str, chunks: List[Dict]):
         """Save chunks for document"""
@@ -154,7 +148,7 @@ class MongoStorage:
         """Get single chunk by ID"""
         return self.chunks.find_one({'chunk_id': chunk_id})
     
-    
+    # ================= ENTITIES =================
     
     def save_entities(self, doc_id: str, entities_dict: Dict[str, List[Dict]]):
         """Save extracted entities"""
@@ -194,7 +188,7 @@ class MongoStorage:
             'entity_name': entity_name
         })
     
-
+    # ================= RELATIONSHIPS =================
     
     def save_relationships(self, doc_id: str, relationships_dict: Dict[tuple, List[Dict]]):
         """Save extracted relationships"""
@@ -231,11 +225,11 @@ class MongoStorage:
         
         return list(self.relationships.find(query))
     
-
+    # ================= KNOWLEDGE GRAPH =================
     
     def save_graph(self, graph_data: Dict):
         """Save knowledge graph nodes and edges"""
-        
+        # Save nodes
         node_docs = []
         for node in graph_data.get('nodes', []):
             node_docs.append({
@@ -248,7 +242,7 @@ class MongoStorage:
                 'updated_at': datetime.now()
             })
         
-        
+        # Upsert nodes
         for node_doc in node_docs:
             self.graph_nodes.update_one(
                 {'user_id': self.user_id, 'node_id': node_doc['node_id']},
@@ -256,7 +250,7 @@ class MongoStorage:
                 upsert=True
             )
         
-        
+        # Save edges
         edge_docs = []
         for link in graph_data.get('links', []):
             edge_docs.append({
@@ -271,7 +265,7 @@ class MongoStorage:
                 'updated_at': datetime.now()
             })
         
-        
+        # Upsert edges
         for edge_doc in edge_docs:
             self.graph_edges.update_one(
                 {
@@ -290,7 +284,7 @@ class MongoStorage:
         nodes = list(self.graph_nodes.find({'user_id': self.user_id}))
         edges = list(self.graph_edges.find({'user_id': self.user_id}))
         
-        
+        # Convert to graph format
         graph_data = {
             'nodes': [
                 {
@@ -323,7 +317,7 @@ class MongoStorage:
         nodes_count = self.graph_nodes.count_documents({'user_id': self.user_id})
         edges_count = self.graph_edges.count_documents({'user_id': self.user_id})
         
-        
+        # Count entity types
         pipeline = [
             {'$match': {'user_id': self.user_id}},
             {'$group': {'_id': '$type', 'count': {'$sum': 1}}}
@@ -339,81 +333,7 @@ class MongoStorage:
             'entity_types': type_counts
         }
     
-
-    
-    def save_embeddings(self, doc_id: str, embeddings: List[Dict]):
-        """Save embeddings"""
-        emb_docs = []
-        for emb in embeddings:
-            emb_docs.append({
-                'user_id': self.user_id,
-                'doc_id': doc_id,
-                'chunk_id': emb['id'],
-                'text': emb['text'],
-                'embedding': emb['embedding'],  
-                'entity_name': emb.get('entity_name'),
-                'entity_type': emb.get('entity_type', 'CHUNK'),
-                'hierarchy': emb.get('hierarchy', ''),
-                'tokens': emb.get('tokens', 0),
-                'created_at': datetime.now()
-            })
-        
-        if emb_docs:
-            self.embeddings.insert_many(emb_docs)
-            logger.info(f"🧮 Saved {len(emb_docs)} embeddings for {doc_id}")
-    
-    def get_embeddings(self, doc_id: str = None, 
-                      entity_type: str = None) -> List[Dict]:
-        """Get embeddings with filters"""
-        query = {'user_id': self.user_id}
-        if doc_id:
-            query['doc_id'] = doc_id
-        if entity_type:
-            query['entity_type'] = entity_type
-        
-        return list(self.embeddings.find(query))
-    
-    def search_similar_chunks(self, query_embedding: List[float], 
-                             top_k: int = 5) -> List[Dict]:
-        """
-        Search similar chunks using vector similarity
-        Note: For production, use MongoDB Atlas Vector Search or external vector DB
-        This is a simple implementation using cosine similarity
-        """
-        import numpy as np
-        
-    
-        all_embeddings = list(self.embeddings.find(
-            {'user_id': self.user_id, 'entity_type': 'CHUNK'}
-        ))
-        
-        if not all_embeddings:
-            return []
-        
-        
-        query_vec = np.array(query_embedding)
-        
-        results = []
-        for emb_doc in all_embeddings:
-            emb_vec = np.array(emb_doc['embedding'])
-            similarity = np.dot(query_vec, emb_vec) / (
-                np.linalg.norm(query_vec) * np.linalg.norm(emb_vec)
-            )
-            
-            results.append({
-                'chunk_id': emb_doc['chunk_id'],
-                'text': emb_doc['text'],
-                'similarity': float(similarity),
-                'doc_id': emb_doc['doc_id'],
-                'hierarchy': emb_doc.get('hierarchy', ''),
-            })
-        
-        
-        results.sort(key=lambda x: x['similarity'], reverse=True)
-        
-        return results[:top_k]
-    
-    
+    # ================= STATISTICS =================
     
     def get_user_statistics(self) -> Dict:
         """Get overall statistics for user"""
@@ -423,6 +343,5 @@ class MongoStorage:
             'total_entities': self.entities.count_documents({'user_id': self.user_id}),
             'total_relationships': self.relationships.count_documents({'user_id': self.user_id}),
             'graph_nodes': self.graph_nodes.count_documents({'user_id': self.user_id}),
-            'graph_edges': self.graph_edges.count_documents({'user_id': self.user_id}),
-            'total_embeddings': self.embeddings.count_documents({'user_id': self.user_id})
+            'graph_edges': self.graph_edges.count_documents({'user_id': self.user_id})
         }
