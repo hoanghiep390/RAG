@@ -79,8 +79,7 @@ class MongoStorage:
         logger.info(f"📄 Saved document: {doc_id}")
         return str(result.inserted_id)
     
-    def update_document_status(self, doc_id: str, status: str, 
-                              stats: Dict = None):
+    def update_document_status(self, doc_id: str, status: str, stats: Dict = None):
         """Update document processing status"""
         update_data = {
             'status': status,

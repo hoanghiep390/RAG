@@ -1,7 +1,5 @@
 # backend/core/graph_builder.py
-"""
-✅ FIXED: Graph Builder with NetworkX 3.6 compatibility
-"""
+
 
 import networkx as nx
 import logging
@@ -364,8 +362,6 @@ class KnowledgeGraph:
         return self.G.has_edge(src, tgt)
     
     def to_dict(self) -> Dict[str, Any]:
-        """✅ FIXED: Convert to dict for JSON with NetworkX 3.6 compatibility"""
-        # ✅ FIX: Explicitly set edges="links" to avoid deprecation warning
         data = nx.node_link_data(self.G, edges="links")
         
         # Convert sets to lists

@@ -41,10 +41,6 @@ def get_model() -> EmbeddingModel:
 
 def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64, 
                        use_cache: bool = False) -> List[Dict[str, Any]]:
-    """
-    ✅ CLEANED: Generate embeddings - NO CACHING, NO FILE SAVING
-    Pure processing function that returns data
-    """
     if not chunks:
         return []
     
@@ -77,9 +73,6 @@ def generate_embeddings(chunks: List[Dict[str, Any]], batch_size: int = 64,
 
 def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]], 
                               knowledge_graph=None, batch_size: int = 64) -> List[Dict[str, Any]]:
-    """
-    ✅ CLEANED: Generate entity embeddings - NO FILE SAVING
-    """
     texts = []
     metadata = []
     
@@ -114,9 +107,6 @@ def generate_entity_embeddings(entities_dict: Dict[str, List[Dict]],
 
 def generate_relationship_embeddings(relationships_dict: Dict[str, List[Dict]], 
                                     batch_size: int = 64) -> List[Dict[str, Any]]:
-    """
-    ✅ CLEANED: Generate relationship embeddings - NO FILE SAVING
-    """
     texts = []
     metadata = []
     

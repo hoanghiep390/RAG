@@ -1,8 +1,5 @@
 # backend/core/chunking.py
-"""
-✅ CLEANED: Chunking module - NO FILE SAVING
-Chỉ xử lý và return data, không tạo file
-"""
+
 from __future__ import annotations
 import re
 import uuid
@@ -36,7 +33,7 @@ import xml.etree.ElementTree as ET
 import yaml
 
 
-# ==================== CONFIG ====================
+
 @dataclass
 class ChunkConfig:
     """Chunking configuration"""
@@ -46,7 +43,7 @@ class ChunkConfig:
     merge_small_segments: bool = True
 
 
-# ==================== TOKENIZER ====================
+
 class Tokenizer:
     """Optimized tokenizer with LRU cache"""
     
@@ -65,7 +62,7 @@ class Tokenizer:
         return len(self.encode(text))
 
 
-# ==================== DATA STRUCTURES ====================
+
 class Segment:
     """Document segment with hierarchy"""
     
@@ -116,7 +113,7 @@ class Chunk:
         }
 
 
-# ==================== EXTRACTION ====================
+
 def extract_pdf(path: str) -> List[Segment]:
     """Extract from PDF"""
     if not pdfplumber:
@@ -129,7 +126,7 @@ def extract_pdf(path: str) -> List[Segment]:
             if text.strip():
                 segments.append(Segment([f"Page {page_num}"], text))
             
-            # Extract tables
+            
             for i, table in enumerate(page.extract_tables() or []):
                 if table:
                     df = pd.DataFrame(table[1:], columns=table[0]) if len(table) > 1 else pd.DataFrame(table)
@@ -152,7 +149,7 @@ def extract_docx(path: str) -> List[Segment]:
         if not text:
             continue
         
-        # Handle headings
+        
         if para.style.name.startswith('Heading'):
             level = int(para.style.name.replace('Heading', '').strip() or '1')
             section_stack = section_stack[:level]
@@ -160,7 +157,7 @@ def extract_docx(path: str) -> List[Segment]:
         
         segments.append(Segment(section_stack.copy(), text))
     
-    # Extract tables
+    
     for i, table in enumerate(doc.tables):
         df = pd.DataFrame([[cell.text for cell in row.cells] for row in table.rows])
         segments.append(Segment(["Document", f"Table {i+1}"], df.to_string(index=False)))
@@ -179,7 +176,6 @@ def extract_text(path: str) -> List[Segment]:
         if not text:
             continue
         
-        # Handle markdown headings
         if text.startswith('#'):
             level = len(text) - len(text.lstrip('#'))
             heading = text.lstrip('#').strip()
@@ -227,7 +223,7 @@ def extract_segments(path: str) -> List[Segment]:
     return extractors.get(ext, extract_text)(path)
 
 
-# ==================== CHUNKER ====================
+
 class Chunker:
     """Smart chunker with optimization"""
     
@@ -238,18 +234,12 @@ class Chunker:
     
     def chunk_segments(self, segments: List[Segment], file_path: str) -> List[Chunk]:
         """Convert segments to chunks"""
-        # Count tokens
         for seg in segments:
             seg.tokens = self.tokenizer.count(seg.content)
-        
-        # Merge small segments
         if self.config.merge_small_segments:
             segments = self._merge_small(segments)
-        
-        # Split large segments
         segments = self._split_large(segments)
         
-        # Pack with overlap
         return self._pack_with_overlap(segments, file_path)
     
     def _merge_small(self, segments: List[Segment]) -> List[Segment]:
@@ -263,7 +253,6 @@ class Chunker:
                 buffer.append(seg)
                 buffer_tokens += seg.tokens
             else:
-                # Flush buffer
                 if buffer:
                     if len(buffer) == 1:
                         merged.append(buffer[0])
@@ -275,7 +264,6 @@ class Chunker:
                 buffer = [seg]
                 buffer_tokens = seg.tokens
         
-        # Flush remaining
         if buffer:
             merged.append(buffer[0] if len(buffer) == 1 else 
                          Segment(buffer[0].hierarchy, "\n".join(s.content for s in buffer)))
@@ -290,7 +278,6 @@ class Chunker:
             if seg.tokens <= self.config.max_tokens:
                 result.append(seg)
             else:
-                # Split at sentence boundaries
                 parts = self._soft_split(seg.content)
                 for i, part in enumerate(parts):
                     new_seg = Segment(seg.hierarchy + [f"Part {i+1}/{len(parts)}"], part)
@@ -312,7 +299,6 @@ class Chunker:
             end = min(start + self.config.max_tokens, len(ids))
             chunk = self.tokenizer.decode(ids[start:end])
             
-            # Try to break at sentence
             if end < len(ids):
                 sentences = self.sentence_break.split(chunk)
                 if len(sentences) > 1:
@@ -332,12 +318,10 @@ class Chunker:
         while i < len(segments):
             chunk = Chunk(order, file_path, get_file_extension(file_path).upper())
             
-            # Add segments until full
             while i < len(segments) and chunk.tokens + segments[i].tokens <= self.config.max_tokens:
                 chunk.add_segment(segments[i])
                 i += 1
             
-            # Force add if empty
             if not chunk.segments and i < len(segments):
                 chunk.add_segment(segments[i])
                 i += 1
@@ -345,7 +329,6 @@ class Chunker:
             chunks.append(chunk)
             order += 1
             
-            # Apply overlap
             if i < len(segments) and self.config.overlap_tokens > 0:
                 overlap = 0
                 backtrack = 0
@@ -359,12 +342,8 @@ class Chunker:
         return chunks
 
 
-# ==================== MAIN FUNCTION ====================
 def process_document_to_chunks(path: str, config: ChunkConfig = None, use_cache: bool = False) -> List[Dict[str, Any]]:
-    """
-    ✅ CLEANED: Main entry point - NO CACHING, NO FILE SAVING
-    Pure processing function that returns data
-    
+    """    
     Args:
         path: File path
         config: Chunking configuration

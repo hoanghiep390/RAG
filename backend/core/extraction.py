@@ -1,8 +1,5 @@
 # backend/core/extraction.py
-"""
-✅ Extraction module following LightRAG architecture
-Includes: entity/relation handlers, normalization, robust parsing
-"""
+
 import asyncio
 import logging
 import os
