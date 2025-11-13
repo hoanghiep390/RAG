@@ -109,22 +109,12 @@ class MongoStorage:
         """Delete document and all related data"""
         try:
             
-            self.documents.delete_one({'user_id': self.user_id, 'doc_id': doc_id})
-            
-            
+            self.documents.delete_one({'user_id': self.user_id, 'doc_id': doc_id})          
             self.chunks.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            
-            
             self.entities.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            
-            
             self.relationships.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            
-            
             self.embeddings.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            
-            
-            
+                        
             logger.info(f"🗑️ Deleted document and related data: {doc_id}")
             return True
         except Exception as e:
