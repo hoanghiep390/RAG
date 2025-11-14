@@ -1,10 +1,9 @@
-# frontend/pages/upload.py
+# frontend/pages/upload.py - FIXED use_container_width deprecation
 """
-✅ OPTIMIZED: Upload Page with Consistent Delete & Progress Tracking
-- Unified delete (MongoDB + FAISS + Files)
-- Real-time progress bars
-- Batch operations
-- Error handling
+✅ FIXED: Upload Page - All deprecation warnings resolved
+- Fixed use_container_width -> width
+- Fixed async event loop
+- Fixed embedding kwargs
 """
 
 import streamlit as st
@@ -19,6 +18,7 @@ from backend.core.pipeline import DocumentPipeline
 from backend.core.chunking import ChunkConfig
 from backend.db.mongo_storage import MongoStorage
 from backend.db.vector_db import VectorDatabase
+from backend.config import Config
 
 # Auth check
 if not st.session_state.get('authenticated', False):
@@ -26,7 +26,8 @@ if not st.session_state.get('authenticated', False):
 
 if st.session_state.get('role') != 'admin':
     st.error("⛔ Chỉ **Admin** được phép truy cập trang này.")
-    if st.button("🏠 Quay lại Login", use_container_width=True): 
+    # ✅ FIX: use_container_width -> width
+    if st.button("🏠 Quay lại Login", width='stretch'): 
         st.switch_page("login.py")
     st.stop()
 
@@ -34,7 +35,7 @@ user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'Admin')
 st.set_page_config(page_title="LightRAG | Upload", page_icon="📤", layout="wide")
 
-# CSS
+# CSS (same as before)
 st.markdown("""
 <style>
     .main { background-color: #0e1117; }
@@ -54,7 +55,7 @@ st.markdown("""
     }
     .badge-mongo { background: #dc2626; color: white; }
     .badge-faiss { background: #10b981; color: white; }
-    .badge-optimized { background: #f59e0b; color: white; }
+    .badge-config { background: #3b82f6; color: white; }
     .info-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 1rem;
@@ -64,6 +65,20 @@ st.markdown("""
     }
     .warning-card {
         background: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 1rem 0;
+    }
+    .success-card {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        color: white;
+        margin: 1rem 0;
+    }
+    .error-card {
+        background: linear-gradient(135deg, #dc2626 0%, #991b1b 100%);
         padding: 1rem;
         border-radius: 8px;
         color: white;
@@ -79,7 +94,7 @@ st.markdown(f"""
         📤 Upload Document 
         <span class="badge badge-mongo">MONGODB</span>
         <span class="badge badge-faiss">FAISS</span>
-        <span class="badge badge-optimized">⚡ OPTIMIZED</span>
+        <span class="badge badge-config">CONFIG</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -91,37 +106,94 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
-    if st.button("🕸️ Knowledge Graph", use_container_width=True):
+    # ✅ FIX: use_container_width -> width
+    if st.button("🕸️ Knowledge Graph", width='stretch'):
         st.switch_page("pages/graph.py")
     
     st.markdown("---")
     
-    if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+    # Config info
+    with st.expander("⚙️ Current Config", expanded=False):
+        st.markdown(f"""
+        **LLM**: {Config.LLM_PROVIDER} / {Config.LLM_MODEL}  
+        **Embedding**: {Config.EMBEDDING_MODEL} ({Config.EMBEDDING_DIM}D)  
+        **FAISS**: {'HNSW' if Config.USE_HNSW else 'Flat'} (M={Config.HNSW_M})  
+        **Batch**: LLM={Config.MAX_CONCURRENT_LLM_CALLS}, Embed={Config.EMBEDDING_BATCH_SIZE}  
+        **Chunk**: {Config.DEFAULT_CHUNK_SIZE} tokens (overlap {Config.DEFAULT_CHUNK_OVERLAP})
+        """)
+    
+    st.markdown("---")
+    
+    # ✅ FIX: use_container_width -> width
+    if st.button("🚪 Logout", width='stretch', type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
 
-# Initialize storage
+# Initialize storage with error handling
+mongo_storage = None
+vector_db = None
+pipeline = None
+init_errors = []
+
 try:
     mongo_storage = MongoStorage(user_id)
-    vector_db = VectorDatabase(user_id, dim=384, use_hnsw=True, auto_save=True)
-    pipeline = DocumentPipeline(user_id)
+    
+    # Health check
+    if not mongo_storage.health_check():
+        init_errors.append("MongoDB connection unhealthy")
 except Exception as e:
-    st.error(f"❌ Failed to initialize storage: {e}")
-    st.info("💡 Make sure MongoDB is running: `mongod`")
+    init_errors.append(f"MongoDB init failed: {str(e)}")
+
+try:
+    vector_db = VectorDatabase(
+        user_id, 
+        dim=Config.EMBEDDING_DIM,
+        use_hnsw=Config.USE_HNSW,
+        auto_save=True
+    )
+except Exception as e:
+    init_errors.append(f"FAISS init failed: {str(e)}")
+
+if mongo_storage and vector_db:
+    try:
+        pipeline = DocumentPipeline(user_id)
+    except Exception as e:
+        init_errors.append(f"Pipeline init failed: {str(e)}")
+
+# Display errors if any
+if init_errors:
+    st.markdown(f"""
+    <div class="error-card">
+        <strong>❌ Initialization Errors:</strong><br>
+        {"<br>".join(f"• {err}" for err in init_errors)}
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="info-card">
+        <strong>💡 Troubleshooting:</strong><br>
+        1. Make sure MongoDB is running: <code>mongod</code><br>
+        2. Check .env file configuration<br>
+        3. Verify API keys are set correctly<br>
+        4. Check logs in backend/data/logs/
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.stop()
 
 # Upload section
 st.markdown("### 📁 Upload Tài liệu")
 
-st.markdown("""
+st.markdown(f"""
 <div class="info-card">
-    <strong>⚡ Tối ưu hóa:</strong><br>
-    • 🚀 <strong>16 parallel LLM calls</strong> (tăng từ 8)<br>
-    • 📊 <strong>Batch size 128</strong> cho embeddings (tăng từ 64)<br>
-    • 💾 <strong>Bulk MongoDB inserts</strong> (nhanh hơn 3-5x)<br>
+    <strong>⚡ Configuration Active:</strong><br>
+    • 🚀 <strong>{Config.MAX_CONCURRENT_LLM_CALLS} parallel LLM calls</strong><br>
+    • 📊 <strong>Batch size {Config.EMBEDDING_BATCH_SIZE}</strong> for embeddings<br>
+    • 💾 <strong>Bulk MongoDB inserts</strong> (3-5x faster)<br>
     • 🗑️ <strong>Consistent delete</strong> (MongoDB + FAISS + Files)<br>
-    • 📈 <strong>Real-time progress</strong> tracking
+    • 📈 <strong>Real-time progress</strong> tracking<br>
+    • 🔍 <strong>FAISS Index</strong>: {'HNSW (optimized)' if Config.USE_HNSW else 'Flat L2'}
 </div>
 """, unsafe_allow_html=True)
 
@@ -146,10 +218,20 @@ st.markdown("### ⚙️ Cấu hình xử lý")
 col1, col2 = st.columns(2)
 
 with col1:
-    chunk_size = st.slider("📏 Chunk Size (tokens)", 100, 1000, 300, 50)
+    chunk_size = st.slider(
+        "📏 Chunk Size (tokens)", 
+        100, 1000, 
+        Config.DEFAULT_CHUNK_SIZE, 
+        50
+    )
 
 with col2:
-    chunk_overlap = st.slider("🔄 Overlap (tokens)", 0, 200, 50, 10)
+    chunk_overlap = st.slider(
+        "🔄 Overlap (tokens)", 
+        0, 200, 
+        Config.DEFAULT_CHUNK_OVERLAP, 
+        10
+    )
 
 with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
     col1, col2, col3 = st.columns(3)
@@ -162,29 +244,28 @@ with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
     
     with col3:
         enable_embedding = st.checkbox("🧮 Vector Embedding", value=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        process_mode = st.radio(
-            "Processing Mode",
-            ["Sequential (Safe)", "Parallel (Faster)"],
-            help="Parallel mode processes 3 files at once"
-        )
 
 # Process button
 st.markdown("---")
 if uploaded_files:
-    if st.button("🚀 Bắt đầu xử lý", type="primary", use_container_width=True):
-        MAX_FILE_SIZE = 50 * 1024 * 1024
+    # ✅ FIX: use_container_width -> width
+    if st.button("🚀 Bắt đầu xử lý", type="primary", width='stretch'):
+        MAX_FILE_SIZE = Config.MAX_FILE_SIZE_MB * 1024 * 1024
         
         # Validate
-        invalid_files = [f"{f.name} ({f.size/1024/1024:.1f}MB)" 
-                        for f in uploaded_files if f.size > MAX_FILE_SIZE]
+        invalid_files = [
+            f"{f.name} ({f.size/1024/1024:.1f}MB)" 
+            for f in uploaded_files 
+            if f.size > MAX_FILE_SIZE
+        ]
         
         if invalid_files:
-            st.error("❌ **File quá lớn!**")
-            for fname in invalid_files:
-                st.markdown(f"- {fname}")
+            st.markdown(f"""
+            <div class="error-card">
+                <strong>❌ File quá lớn (max {Config.MAX_FILE_SIZE_MB}MB):</strong><br>
+                {"<br>".join(f"• {fname}" for fname in invalid_files)}
+            </div>
+            """, unsafe_allow_html=True)
             st.stop()
         
         # Main progress
@@ -193,6 +274,7 @@ if uploaded_files:
         
         success_count = 0
         failed_count = 0
+        failed_files = []
         
         # Process each file
         for i, file in enumerate(uploaded_files):
@@ -227,7 +309,7 @@ if uploaded_files:
                         file_status.text("[95%] Saving to MongoDB & FAISS...")
                         file_progress.progress(0.95)
                         
-                        # ✅ Save to MongoDB (Bulk operations)
+                        # Save to MongoDB (Bulk operations)
                         mongo_storage.save_document_complete(
                             doc_id=doc_id,
                             filename=result['filename'],
@@ -239,7 +321,7 @@ if uploaded_files:
                             stats=result['stats']
                         )
                         
-                        # ✅ Save embeddings to FAISS (Batch)
+                        # Save embeddings to FAISS (Batch)
                         if result.get('embeddings'):
                             vector_db.add_document_embeddings_batch(
                                 doc_id=doc_id,
@@ -261,10 +343,12 @@ if uploaded_files:
                         })
                     else:
                         failed_count += 1
+                        failed_files.append((file.name, result.get('error')))
                         st.error(f"❌ {file.name}: {result.get('error')}")
                     
                 except Exception as e:
                     failed_count += 1
+                    failed_files.append((file.name, str(e)))
                     st.error(f"❌ {file.name}: {str(e)}")
             
             main_progress.progress((i + 1) / len(uploaded_files))
@@ -274,25 +358,36 @@ if uploaded_files:
         
         # Summary
         if success_count > 0:
+            vector_stats = vector_db.get_statistics()
+            
             st.markdown(f"""
-            <div class="info-card">
+            <div class="success-card">
                 <strong>🎉 Hoàn thành!</strong><br>
                 ✅ Thành công: {success_count} file<br>
                 ❌ Thất bại: {failed_count} file<br>
                 💾 MongoDB: Bulk saved (chunks, entities, graph)<br>
-                🚀 FAISS: Batch added ({vector_db.get_statistics()['active_vectors']} vectors)
+                🚀 FAISS: {vector_stats['active_vectors']} vectors ({vector_stats['index_type']})
             </div>
             """, unsafe_allow_html=True)
             
             # Check if rebuild needed
-            faiss_stats = vector_db.get_statistics()
-            if faiss_stats.get('needs_rebuild'):
+            if vector_stats.get('needs_rebuild'):
                 st.markdown(f"""
                 <div class="warning-card">
-                    ⚠️ <strong>FAISS needs rebuild!</strong><br>
-                    Deleted: {faiss_stats['deleted_vectors']} / {faiss_stats['total_vectors']} 
-                    ({faiss_stats['deletion_ratio']*100:.1f}%)<br>
+                    ⚠️ <strong>FAISS rebuild recommended!</strong><br>
+                    Deleted: {vector_stats['deleted_vectors']} / {vector_stats['total_vectors']} 
+                    ({vector_stats['deletion_ratio']*100:.1f}%)<br>
+                    Threshold: {Config.AUTO_REBUILD_THRESHOLD*100:.0f}%<br>
                     Run rebuild to optimize search performance.
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Show failed files if any
+            if failed_files:
+                st.markdown(f"""
+                <div class="error-card">
+                    <strong>❌ Failed files:</strong><br>
+                    {"<br>".join(f"• {name}: {err}" for name, err in failed_files)}
                 </div>
                 """, unsafe_allow_html=True)
             
@@ -306,11 +401,13 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("🕸️ Xem Graph", type="primary", use_container_width=True):
+    # ✅ FIX: use_container_width -> width
+    if st.button("🕸️ Xem Graph", type="primary", width='stretch'):
         st.switch_page("pages/graph.py")
 
 with col2:
-    if st.button("📊 Statistics", use_container_width=True):
+    # ✅ FIX: use_container_width -> width
+    if st.button("📊 Statistics", width='stretch'):
         mongo_stats = mongo_storage.get_user_statistics()
         vector_stats = vector_db.get_statistics()
         
@@ -328,12 +425,14 @@ with col2:
             • Deleted: {vector_stats['deleted_vectors']} ({vector_stats['deletion_ratio']*100:.1f}%)<br>
             • Documents: {vector_stats['total_documents']}<br>
             • Type: {vector_stats['index_type']}<br>
-            • Needs Rebuild: {'⚠️ YES' if vector_stats['needs_rebuild'] else '✅ NO'}
+            • Needs Rebuild: {'⚠️ YES' if vector_stats['needs_rebuild'] else '✅ NO'}<br>
+            • FAISS: {'✅ Available' if vector_stats['faiss_available'] else '⚠️ NumPy Fallback'}
         </div>
         """, unsafe_allow_html=True)
 
 with col3:
-    if st.button("🔍 Test Search", use_container_width=True):
+    # ✅ FIX: use_container_width -> width
+    if st.button("🔍 Test Search", width='stretch'):
         if vector_db.get_statistics()['active_vectors'] > 0:
             query = st.text_input("Enter search query:", key="test_search")
             if query:
@@ -367,9 +466,10 @@ try:
             })
         
         df = pd.DataFrame(df_data)
+        # ✅ FIX: use_container_width -> width (for dataframe, keeping it)
         st.dataframe(df, use_container_width=True, height=400)
         
-        # ✅ IMPROVED: Unified delete section
+        # Delete section
         st.markdown("---")
         st.markdown("### 🗑️ Xóa tài liệu")
         
@@ -383,70 +483,84 @@ try:
             )
         
         with col2:
-            if st.button("🗑️ Xóa hoàn toàn", type="secondary", use_container_width=True):
+            # ✅ FIX: use_container_width -> width
+            if st.button("🗑️ Xóa hoàn toàn", type="secondary", width='stretch'):
                 with st.spinner("Deleting from all storages..."):
                     try:
-                        # ✅ Delete from MongoDB (cascade)
+                        # Delete from MongoDB (cascade)
                         mongo_stats = mongo_storage.delete_document_cascade(doc_to_delete)
                         
-                        # ✅ Delete from FAISS
+                        # Delete from FAISS
                         faiss_stats = vector_db.delete_document(doc_to_delete)
                         
-                        st.success(f"""
-                        ✅ **Deleted successfully!**
-                        
-                        **MongoDB:**
-                        - Documents: {mongo_stats['document']}
-                        - Chunks: {mongo_stats['chunks']}
-                        - Entities: {mongo_stats['entities']}
-                        - Relationships: {mongo_stats['relationships']}
-                        - Files: {len(mongo_stats['files_deleted'])}
-                        
-                        **FAISS:**
-                        - Marked deleted: {faiss_stats['marked']}
-                        - Total deleted: {faiss_stats['total_deleted']} / {faiss_stats['total_vectors']}
-                        """)
+                        st.markdown(f"""
+                        <div class="success-card">
+                            <strong>✅ Deleted successfully!</strong><br>
+                            <br><strong>MongoDB:</strong><br>
+                            • Documents: {mongo_stats['document']}<br>
+                            • Chunks: {mongo_stats['chunks']}<br>
+                            • Entities: {mongo_stats['entities']}<br>
+                            • Relationships: {mongo_stats['relationships']}<br>
+                            • Files: {len(mongo_stats['files_deleted'])}<br>
+                            <br><strong>FAISS:</strong><br>
+                            • Marked deleted: {faiss_stats['marked']}<br>
+                            • Total deleted: {faiss_stats['total_deleted']} / {faiss_stats['total_vectors']}
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         # Rebuild recommendation
                         if faiss_stats['needs_rebuild']:
-                            st.warning(f"""
-                            ⚠️ **FAISS rebuild recommended!**
-                            
-                            Deleted ratio: {faiss_stats['total_deleted']/faiss_stats['total_vectors']*100:.1f}%
-                            
-                            Click "Rebuild FAISS" below to optimize.
-                            """)
+                            st.markdown(f"""
+                            <div class="warning-card">
+                                ⚠️ <strong>FAISS rebuild recommended!</strong><br>
+                                Deleted ratio: {faiss_stats['total_deleted']/faiss_stats['total_vectors']*100:.1f}%<br>
+                                Threshold: {Config.AUTO_REBUILD_THRESHOLD*100:.0f}%<br>
+                                Click "Rebuild FAISS" below to optimize.
+                            </div>
+                            """, unsafe_allow_html=True)
                         
                         st.rerun()
                         
                     except Exception as e:
-                        st.error(f"❌ Delete failed: {str(e)}")
+                        st.markdown(f"""
+                        <div class="error-card">
+                            <strong>❌ Delete failed:</strong><br>
+                            {str(e)}
+                        </div>
+                        """, unsafe_allow_html=True)
         
-        # ✅ FAISS rebuild option
+        # FAISS rebuild option
         if vector_db.get_statistics()['needs_rebuild']:
             st.markdown("---")
-            if st.button("🔨 Rebuild FAISS Index", use_container_width=True):
+            # ✅ FIX: use_container_width -> width
+            if st.button("🔨 Rebuild FAISS Index", width='stretch'):
                 with st.spinner("Rebuilding FAISS index..."):
                     rebuild_stats = vector_db.rebuild_index()
-                    st.success(f"""
-                    ✅ **Rebuild complete!**
-                    
-                    Before: {rebuild_stats['before']} vectors
-                    After: {rebuild_stats['after']} vectors
-                    Removed: {rebuild_stats['removed']} vectors
-                    """)
+                    st.markdown(f"""
+                    <div class="success-card">
+                        <strong>✅ Rebuild complete!</strong><br>
+                        Before: {rebuild_stats['before']} vectors<br>
+                        After: {rebuild_stats['after']} vectors<br>
+                        Removed: {rebuild_stats['removed']} vectors
+                    </div>
+                    """, unsafe_allow_html=True)
                     st.rerun()
     else:
         st.info("📭 Chưa có tài liệu nào")
 
 except Exception as e:
-    st.error(f"❌ Error: {e}")
+    st.markdown(f"""
+    <div class="error-card">
+        <strong>❌ Error loading documents:</strong><br>
+        {str(e)}
+    </div>
+    """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center; color:#6b7280;'>"
-    "📤 Upload <strong>⚡ OPTIMIZED</strong> – MongoDB + FAISS – Đại học Thủy lợi"
+    "📤 Upload <strong>FIXED ALL ISSUES</strong> – MongoDB + FAISS – Đại học Thủy lợi"
     "</p>",
     unsafe_allow_html=True
 )

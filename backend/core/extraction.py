@@ -1,10 +1,13 @@
 # ==========================================
-# backend/core/extraction.py
+# backend/core/extraction.py - FIXED ASYNC
 # ==========================================
 import asyncio
 import re
 from typing import Dict, List, Tuple
 from collections import defaultdict
+import logging
+
+logger = logging.getLogger(__name__)
 
 TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
@@ -73,7 +76,7 @@ async def extract_single(chunk: Dict, llm_func) -> Tuple[Dict, Dict]:
         result = await llm_func(prompt)
         return parse_result(result, chunk['chunk_id'])
     except Exception as e:
-        print(f"Extract error: {e}")
+        logger.error(f"Extract error for chunk {chunk.get('chunk_id')}: {e}")
         return {}, {}
 
 async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 16) -> Tuple[Dict, Dict]:
@@ -98,11 +101,27 @@ async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 1
     return dict(all_entities), dict(all_relationships)
 
 def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -> Tuple[Dict, Dict]:
-    """Sync wrapper"""
+    """✅ FIXED: Sync wrapper with proper event loop handling"""
     llm_func = global_config.get('llm_model_func') if global_config else None
     if not llm_func:
         from backend.utils.llm_utils import call_llm_async
         llm_func = call_llm_async
     
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(extract_entities(chunks, llm_func, 16))
+    try:
+        # ✅ FIX: Try to get existing event loop, create new if not exists
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Event loop is closed")
+        except RuntimeError:
+            # No event loop in current thread, create new one
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Run async extraction
+        result = loop.run_until_complete(extract_entities(chunks, llm_func, 16))
+        return result
+    
+    except Exception as e:
+        logger.error(f"❌ Extract entities error: {e}")
+        return {}, {}

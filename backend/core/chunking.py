@@ -1,5 +1,5 @@
 # ==========================================
-# backend/core/chunking.py
+# backend/core/chunking.py - FIXED VERSION
 # ==========================================
 from dataclasses import dataclass
 from typing import List, Dict, Any
@@ -160,47 +160,139 @@ class Chunker:
 
         return chunks
 
-# ================= File extraction =================
+# ================= File extraction (FIXED) =================
 def extract_text_from_file(filepath: str) -> str:
+    """Extract text from various file formats"""
     ext = Path(filepath).suffix.lower()
 
-    # PDF/DOCX handled as before...
+    # ========== PDF ==========
+    if ext == '.pdf':
+        try:
+            import pdfplumber
+            text_parts = []
+            with pdfplumber.open(filepath) as pdf:
+                for page in pdf.pages:
+                    text = page.extract_text()
+                    if text:
+                        text_parts.append(text)
+            return "\n\n".join(text_parts)
+        except Exception as e:
+            print(f"❌ PDF extraction error: {e}")
+            return ""
 
-    # Excel
-    if ext in ['.xlsx', '.xls']:
+    # ========== DOCX ==========
+    elif ext in ['.docx', '.doc']:
+        try:
+            import docx2txt
+            text = docx2txt.process(filepath)
+            return text if text else ""
+        except Exception as e:
+            print(f"❌ DOCX extraction error: {e}")
+            return ""
+
+    # ========== Markdown ==========
+    elif ext in ['.md', '.markdown']:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception as e:
+            print(f"❌ Markdown extraction error: {e}")
+            return ""
+
+    # ========== HTML ==========
+    elif ext in ['.html', '.htm']:
+        try:
+            from bs4 import BeautifulSoup
+            with open(filepath, 'r', encoding='utf-8') as f:
+                soup = BeautifulSoup(f.read(), 'html.parser')
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.decompose()
+                return soup.get_text(separator='\n', strip=True)
+        except Exception as e:
+            print(f"❌ HTML extraction error: {e}")
+            return ""
+
+    # ========== JSON ==========
+    elif ext == '.json':
+        try:
+            import json
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return json.dumps(data, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"❌ JSON extraction error: {e}")
+            return ""
+
+    # ========== XML ==========
+    elif ext == '.xml':
+        try:
+            from bs4 import BeautifulSoup
+            with open(filepath, 'r', encoding='utf-8') as f:
+                soup = BeautifulSoup(f.read(), 'xml')
+                return soup.get_text(separator='\n', strip=True)
+        except Exception as e:
+            print(f"❌ XML extraction error: {e}")
+            return ""
+
+    # ========== Text & Code Files ==========
+    elif ext in ['.txt', '.py', '.js', '.java', '.cpp', '.c', '.h', '.hpp', 
+                 '.css', '.scss', '.sql', '.sh', '.bash', '.yml', '.yaml',
+                 '.toml', '.ini', '.cfg', '.conf', '.log', '.r', '.rb', 
+                 '.php', '.go', '.rs', '.swift', '.kt', '.ts', '.jsx', '.tsx']:
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return f.read()
+        except UnicodeDecodeError:
+            # Try with different encoding
+            try:
+                with open(filepath, 'r', encoding='latin-1') as f:
+                    return f.read()
+            except Exception as e:
+                print(f"❌ Text file extraction error: {e}")
+                return ""
+        except Exception as e:
+            print(f"❌ Text file extraction error: {e}")
+            return ""
+
+    # ========== Excel ==========
+    elif ext in ['.xlsx', '.xls']:
         try:
             import pandas as pd
             dfs = pd.read_excel(filepath, sheet_name=None)
             text_parts = []
+            enc = tiktoken.encoding_for_model("gpt-4o-mini")
+            
             for sheet_name, df in dfs.items():
                 if df.empty:
                     continue
-                header = " | ".join(df.columns)
+                header = " | ".join(str(col) for col in df.columns)
                 rows = [" | ".join(map(str, row)) for row in df.values]
                 sheet_prefix = f"=== Sheet: {sheet_name} ==="
-                text_parts.extend(_split_table_text(header, rows, sheet_prefix, tiktoken.encoding_for_model("gpt-4o-mini"),
+                text_parts.extend(_split_table_text(header, rows, sheet_prefix, enc,
                                                     max_tokens=300, overlap=50))
             return "\n\n".join(text_parts)
         except Exception as e:
-            print(f"Excel extraction error: {e}")
+            print(f"❌ Excel extraction error: {e}")
             return ""
 
-    # CSV
+    # ========== CSV ==========
     elif ext == '.csv':
         try:
             import pandas as pd
             df = pd.read_csv(filepath)
             if df.empty:
                 return ""
-            header = " | ".join(df.columns)
+            enc = tiktoken.encoding_for_model("gpt-4o-mini")
+            header = " | ".join(str(col) for col in df.columns)
             rows = [" | ".join(map(str, row)) for row in df.values]
-            return "\n\n".join(_split_table_text(header, rows, "", tiktoken.encoding_for_model("gpt-4o-mini"),
+            return "\n\n".join(_split_table_text(header, rows, "", enc,
                                                 max_tokens=300, overlap=50))
         except Exception as e:
-            print(f"CSV extraction error: {e}")
+            print(f"❌ CSV extraction error: {e}")
             return ""
 
-    # PPTX
+    # ========== PPTX ==========
     elif ext in ['.pptx', '.ppt']:
         try:
             from pptx import Presentation
@@ -215,18 +307,30 @@ def extract_text_from_file(filepath: str) -> str:
                     text_parts.append(f"=== Slide {idx} ===\n" + "\n".join(slide_text))
             return "\n\n".join(text_parts)
         except Exception as e:
-            print(f"PPTX extraction error: {e}")
+            print(f"❌ PPTX extraction error: {e}")
             return ""
 
-    # Các định dạng khác (PDF, DOCX, Markdown, HTML, JSON, code, text…) vẫn giữ nguyên như trước
-    return ""  # fallback
+    # ========== Unsupported ==========
+    else:
+        print(f"⚠️ Unsupported file type: {ext}")
+        return ""
 
 # ================= Main entry =================
 def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> List[Dict]:
+    """Main entry point for document processing"""
     config = config or ChunkConfig()
+    
+    print(f"📄 Processing: {filepath}")
     text = extract_text_from_file(filepath)
+    
     if not text.strip():
-        print(f"Warning: No text extracted from {filepath}")
+        print(f"⚠️ Warning: No text extracted from {filepath}")
         return []
+    
+    print(f"✅ Extracted {len(text)} characters")
+    
     chunker = Chunker(config)
-    return chunker.chunk_text(text, filepath)
+    chunks = chunker.chunk_text(text, filepath)
+    
+    print(f"✅ Created {len(chunks)} chunks")
+    return chunks

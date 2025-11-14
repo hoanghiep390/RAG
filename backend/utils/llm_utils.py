@@ -16,10 +16,6 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-# ============================================
-# ✅ OPENAI FUNCTIONS - CLEAN
-# ============================================
-
 async def call_openai_async(
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -99,15 +95,10 @@ def call_openai_sync(
         logger.error(f"OpenAI API error: {str(e)}")
         raise
 
-
-# ============================================
-# ✅ GROQ FUNCTIONS - CLEAN
-# ============================================
-
 async def call_groq_async(
     prompt: str,
     system_prompt: Optional[str] = None,
-    model: str = "llama-3.1-70b-versatile",
+    model: str = "llama-3.3-70b-versatile",
     temperature: float = 0.3,
     max_tokens: int = 2000,
     **kwargs
@@ -184,9 +175,6 @@ def call_groq_sync(
         raise
 
 
-# ============================================
-# ✅ UNIVERSAL LLM FUNCTIONS - CLEAN
-# ============================================
 
 async def call_llm_async(
     prompt: str,
@@ -246,9 +234,6 @@ def call_llm(
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-# ============================================
-# ✅ BATCH & RETRY FUNCTIONS - CLEAN
-# ============================================
 
 async def call_llm_batch(
     prompts: List[str],
