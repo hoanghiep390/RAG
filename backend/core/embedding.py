@@ -1,4 +1,4 @@
-# backend/core/embedding.py - FIXED KWARGS
+# backend/core/embedding.py
 """
 Embedding generation with Config integration - FIXED show_progress issue
 """

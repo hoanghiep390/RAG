@@ -1,4 +1,3 @@
-# frontend/pages/upload.py - FIXED use_container_width deprecation
 """
 ✅ FIXED: Upload Page - All deprecation warnings resolved
 - Fixed use_container_width -> width
@@ -26,8 +25,7 @@ if not st.session_state.get('authenticated', False):
 
 if st.session_state.get('role') != 'admin':
     st.error("⛔ Chỉ **Admin** được phép truy cập trang này.")
-    # ✅ FIX: use_container_width -> width
-    if st.button("🏠 Quay lại Login", width='stretch'): 
+    if st.button("🏠 Quay lại Login", use_container_width=True): 
         st.switch_page("login.py")
     st.stop()
 
@@ -35,7 +33,7 @@ user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'Admin')
 st.set_page_config(page_title="LightRAG | Upload", page_icon="📤", layout="wide")
 
-# CSS (same as before)
+# CSS
 st.markdown("""
 <style>
     .main { background-color: #0e1117; }
@@ -106,8 +104,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
-    # ✅ FIX: use_container_width -> width
-    if st.button("🕸️ Knowledge Graph", width='stretch'):
+    if st.button("🕸️ Knowledge Graph", use_container_width=True):
         st.switch_page("pages/graph.py")
     
     st.markdown("---")
@@ -124,8 +121,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # ✅ FIX: use_container_width -> width
-    if st.button("🚪 Logout", width='stretch', type="secondary"):
+    if st.button("🚪 Logout", use_container_width=True, type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
@@ -248,8 +244,7 @@ with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
 # Process button
 st.markdown("---")
 if uploaded_files:
-    # ✅ FIX: use_container_width -> width
-    if st.button("🚀 Bắt đầu xử lý", type="primary", width='stretch'):
+    if st.button("🚀 Bắt đầu xử lý", type="primary", use_container_width=True):
         MAX_FILE_SIZE = Config.MAX_FILE_SIZE_MB * 1024 * 1024
         
         # Validate
@@ -401,13 +396,11 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # ✅ FIX: use_container_width -> width
-    if st.button("🕸️ Xem Graph", type="primary", width='stretch'):
+    if st.button("🕸️ Xem Graph", type="primary", use_container_width=True):
         st.switch_page("pages/graph.py")
 
 with col2:
-    # ✅ FIX: use_container_width -> width
-    if st.button("📊 Statistics", width='stretch'):
+    if st.button("📊 Statistics", use_container_width=True):
         mongo_stats = mongo_storage.get_user_statistics()
         vector_stats = vector_db.get_statistics()
         
@@ -431,8 +424,7 @@ with col2:
         """, unsafe_allow_html=True)
 
 with col3:
-    # ✅ FIX: use_container_width -> width
-    if st.button("🔍 Test Search", width='stretch'):
+    if st.button("🔍 Test Search", use_container_width=True):
         if vector_db.get_statistics()['active_vectors'] > 0:
             query = st.text_input("Enter search query:", key="test_search")
             if query:
@@ -466,7 +458,6 @@ try:
             })
         
         df = pd.DataFrame(df_data)
-        # ✅ FIX: use_container_width -> width (for dataframe, keeping it)
         st.dataframe(df, use_container_width=True, height=400)
         
         # Delete section
@@ -483,8 +474,7 @@ try:
             )
         
         with col2:
-            # ✅ FIX: use_container_width -> width
-            if st.button("🗑️ Xóa hoàn toàn", type="secondary", width='stretch'):
+            if st.button("🗑️ Xóa hoàn toàn", type="secondary", use_container_width=True):
                 with st.spinner("Deleting from all storages..."):
                     try:
                         # Delete from MongoDB (cascade)
@@ -532,8 +522,7 @@ try:
         # FAISS rebuild option
         if vector_db.get_statistics()['needs_rebuild']:
             st.markdown("---")
-            # ✅ FIX: use_container_width -> width
-            if st.button("🔨 Rebuild FAISS Index", width='stretch'):
+            if st.button("🔨 Rebuild FAISS Index", use_container_width=True):
                 with st.spinner("Rebuilding FAISS index..."):
                     rebuild_stats = vector_db.rebuild_index()
                     st.markdown(f"""

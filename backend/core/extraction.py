@@ -1,5 +1,5 @@
 # ==========================================
-# backend/core/extraction.py - FIXED ASYNC
+# backend/core/extraction.py
 # ==========================================
 import asyncio
 import re

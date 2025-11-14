@@ -1,5 +1,5 @@
 # ==========================================
-# backend/db/vector_db.py - ENHANCED VERSION
+# backend/db/vector_db.py 
 # ==========================================
 from pathlib import Path
 import json

@@ -1,5 +1,5 @@
 # ==========================================
-# backend/core/chunking.py - FIXED VERSION
+# backend/core/chunking.py 
 # ==========================================
 from dataclasses import dataclass
 from typing import List, Dict, Any
@@ -15,7 +15,6 @@ class ChunkConfig:
     table_rows_per_chunk: int = 50 
     join_separator: str = "\n"
 
-# Compatibility alias: some modules expect DocChunkConfig name
 DocChunkConfig = ChunkConfig
 
 # ================= Helpers =================

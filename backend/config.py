@@ -89,46 +89,6 @@ class Config:
             raise ValueError(f"Configuration errors:\n" + "\n".join(f"- {e}" for e in errors))
         
         logger.info("✅ Configuration validated successfully")
-    
-    @classmethod
-    def print_config(cls):
-        """Print current configuration"""
-        config_str = f"""
-╔══════════════════════════════════════════════════════════╗
-║                   LIGHTRAG CONFIGURATION                  ║
-╠══════════════════════════════════════════════════════════╣
-║ MongoDB:                                                  ║
-║   URI: {cls.MONGODB_URI[:50]:<50} ║
-║   Database: {cls.MONGODB_DATABASE:<46} ║
-║                                                           ║
-║ Embeddings:                                               ║
-║   Model: {cls.EMBEDDING_MODEL:<47} ║
-║   Dimension: {cls.EMBEDDING_DIM:<44} ║
-║                                                           ║
-║ LLM:                                                      ║
-║   Provider: {cls.LLM_PROVIDER:<46} ║
-║   Model: {cls.LLM_MODEL:<49} ║
-║   Max Concurrent: {cls.MAX_CONCURRENT_LLM_CALLS:<39} ║
-║                                                           ║
-║ Processing:                                               ║
-║   Extraction Batch: {cls.EXTRACTION_BATCH_SIZE:<37} ║
-║   Embedding Batch: {cls.EMBEDDING_BATCH_SIZE:<38} ║
-║   Chunk Size: {cls.DEFAULT_CHUNK_SIZE:<42} ║
-║   Chunk Overlap: {cls.DEFAULT_CHUNK_OVERLAP:<39} ║
-║                                                           ║
-║ FAISS:                                                    ║
-║   Use HNSW: {str(cls.USE_HNSW):<44} ║
-║   HNSW M: {cls.HNSW_M:<46} ║
-║   EF Construction: {cls.HNSW_EF_CONSTRUCTION:<37} ║
-║   EF Search: {cls.HNSW_EF_SEARCH:<43} ║
-║                                                           ║
-║ Performance:                                              ║
-║   Max File Size: {cls.MAX_FILE_SIZE_MB:<38} MB ║
-║   Auto Rebuild Threshold: {cls.AUTO_REBUILD_THRESHOLD:<29} ║
-╚══════════════════════════════════════════════════════════╝
-"""
-        print(config_str)
-
 # ================= MongoDB Connection Manager =================
 class MongoDBConfig:
     """MongoDB configuration and connection manager"""
