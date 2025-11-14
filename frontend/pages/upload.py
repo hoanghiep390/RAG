@@ -16,7 +16,7 @@ import os
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.core.pipeline import DocumentPipeline
-from backend.core.chunking import DocChunkConfig
+from backend.core.chunking import ChunkConfig
 from backend.db.mongo_storage import MongoStorage
 from backend.db.vector_db import VectorDatabase
 
@@ -211,7 +211,7 @@ if uploaded_files:
                     # Process with pipeline
                     result = pipeline.process_file(
                         file,
-                        chunk_config=DocChunkConfig(
+                        chunk_config=ChunkConfig(
                             max_tokens=chunk_size,
                             overlap_tokens=chunk_overlap
                         ),
