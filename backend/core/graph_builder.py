@@ -10,7 +10,7 @@ from pathlib import Path
 from collections import Counter
 import time
 
-from backend.utils.file_utils import save_to_json, load_from_json
+from backend.utils.file_utils import load_from_json
 
 logger = logging.getLogger(__name__)
 
@@ -509,9 +509,5 @@ def merge_admin_graphs(user_id: str, enable_summarization: bool = False) -> Opti
                 )
         except Exception as e:
             logger.error(f"Failed to load {f}: {e}")
-
-    out_path = graphs_dir / "COMBINED_graph.json"
-    save_to_json(kg.to_dict(), str(out_path))
-    logger.info(f"Saved COMBINED_graph.json: {kg.G.number_of_nodes()} nodes, {kg.G.number_of_edges()} edges")
     
     return kg
