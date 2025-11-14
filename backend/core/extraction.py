@@ -1,31 +1,28 @@
 # backend/core/extraction.py
+"""
+✅ OPTIMIZED: Entity Extraction with Higher Concurrency
+- 16 parallel LLM calls (increased from 8)
+- Better error handling
+- Retry logic for failed calls
+- Progress tracking
+"""
 
 import asyncio
 import logging
 import os
 import re
 from typing import Dict, List, Tuple, Any, Optional
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
 COMPLETION_DELIMITER = "<|COMPLETE|>"
-
-GRAPH_FIELD_SEP = "; "  
+GRAPH_FIELD_SEP = "; "
 
 def normalize_extracted_info(text: str, is_entity: bool = False) -> str:
-    """
-    Normalize extracted text following LightRAG rules
-    
-    Args:
-        text: Text to normalize
-        is_entity: True if normalizing entity name
-    
-    Returns:
-        Normalized text
-    """
+    """Normalize extracted text following LightRAG rules"""
     if not text or not text.strip():
         return ""
     
@@ -47,22 +44,13 @@ def clean_str(text: str) -> str:
         return ""
     return text.strip().strip('"').strip("'")
 
+
 async def _handle_single_entity_extraction(
     record_attributes: list[str],
     chunk_key: str,
     file_path: str = "unknown_source",
 ) -> Optional[Dict]:
-    """
-    Handle single entity extraction following LightRAG logic
-    
-    Args:
-        record_attributes: ["entity", name, type, description]
-        chunk_key: Chunk ID
-        file_path: Source file path
-    
-    Returns:
-        Entity dict or None if invalid
-    """
+    """Handle single entity extraction following LightRAG logic"""
     if len(record_attributes) < 4 or '"entity"' not in record_attributes[0]:
         return None
 
@@ -104,22 +92,13 @@ async def _handle_single_entity_extraction(
         'file_path': file_path,
     }
 
+
 async def _handle_single_relationship_extraction(
     record_attributes: list[str],
     chunk_key: str,
     file_path: str = "unknown_source",
 ) -> Optional[Dict]:
-    """
-    Handle single relationship extraction following LightRAG logic
-    
-    Args:
-        record_attributes: ["relationship", source, target, description, keywords?, strength?]
-        chunk_key: Chunk ID
-        file_path: Source file path
-    
-    Returns:
-        Relationship dict or None if invalid
-    """
+    """Handle single relationship extraction following LightRAG logic"""
     if len(record_attributes) < 5 or '"relationship"' not in record_attributes[0]:
         return None
 
@@ -176,6 +155,7 @@ async def _handle_single_relationship_extraction(
         'file_path': file_path,
     }
 
+
 def split_string_by_multi_markers(text: str, markers: List[str]) -> List[str]:
     """Split string by multiple markers"""
     if not markers:
@@ -191,19 +171,7 @@ async def parse_extraction_result(
     chunk_key: str,
     file_path: str = "unknown_source"
 ) -> Tuple[Dict[str, List[Dict]], Dict[Tuple[str, str], List[Dict]]]:
-    """
-    Parse LLM extraction result into entities and relationships
-    
-    Args:
-        result: LLM output text
-        chunk_key: Chunk ID
-        file_path: Source file
-    
-    Returns:
-        (entities_dict, relationships_dict)
-        - entities_dict: {entity_name: [entity_data]}
-        - relationships_dict: {(source, target): [relation_data]}
-    """
+    """Parse LLM extraction result into entities and relationships"""
     maybe_nodes = defaultdict(list)
     maybe_edges = defaultdict(list)
 
@@ -227,12 +195,14 @@ async def parse_extraction_result(
         record_attributes = split_string_by_multi_markers(
             record_content, [context_base["tuple_delimiter"]]
         )
+        
         entity_data = await _handle_single_entity_extraction(
             record_attributes, chunk_key, file_path
         )
         if entity_data is not None:
             maybe_nodes[entity_data["entity_name"]].append(entity_data)
             continue
+        
         relationship_data = await _handle_single_relationship_extraction(
             record_attributes, chunk_key, file_path
         )
@@ -276,62 +246,56 @@ Float between 0.0 and 1.0 indicating relationship strength
 
 -Output-
 """
-async def extract_single_chunk(
+
+
+async def extract_single_chunk_with_retry(
     chunk: Dict,
     entity_types: List[str],
     llm_func,
-    cache_dict: Optional[Dict] = None
+    max_retries: int = 3
 ) -> Tuple[Dict, Dict]:
     """
-    Extract entities and relationships from single chunk
-    
-    Args:
-        chunk: Chunk data with 'chunk_id' and 'content'
-        entity_types: List of entity types to extract
-        llm_func: Async LLM function
-        cache_dict: Optional cache dictionary
-    
-    Returns:
-        (entities_dict, relationships_dict)
+    ✅ NEW: Extract with retry logic for failed calls
     """
     chunk_id = chunk.get("chunk_id", "")
     content = chunk.get("content", "")
     file_path = chunk.get("file_path", "unknown_source")
     
-    cache_key = f"{chunk_id}_{hash(content)}"
-    if cache_dict and cache_key in cache_dict:
-        return cache_dict[cache_key]
-    
     prompt = create_extraction_prompt(content, entity_types)
     
-    try:
-        result = await llm_func(prompt)
-        entities, relationships = await parse_extraction_result(
-            result, chunk_id, file_path
-        )
-        
-        if cache_dict is not None:
-            cache_dict[cache_key] = (entities, relationships)
-        
-        return entities, relationships
-        
-    except Exception as e:
-        logger.error(f"Extraction failed for chunk {chunk_id}: {e}")
-        return {}, {}
+    for attempt in range(max_retries):
+        try:
+            result = await llm_func(prompt)
+            entities, relationships = await parse_extraction_result(
+                result, chunk_id, file_path
+            )
+            return entities, relationships
+            
+        except Exception as e:
+            if attempt == max_retries - 1:
+                logger.error(f"Extraction failed for chunk {chunk_id} after {max_retries} attempts: {e}")
+                return {}, {}
+            else:
+                logger.warning(f"Extraction attempt {attempt+1} failed for chunk {chunk_id}: {e}, retrying...")
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+    
+    return {}, {}
 
 
 async def extract_entities(
     chunks: List[Dict],
     global_config: Dict,
-    max_concurrent: int = 8,
+    max_concurrent: int = 16,  # ✅ INCREASED from 8
+    progress_callback: Optional[callable] = None
 ) -> Tuple[Dict, Dict]:
     """
-    Extract entities and relationships from all chunks with concurrency control
+    ✅ OPTIMIZED: Extract entities with higher concurrency and progress tracking
     
     Args:
         chunks: List of chunk dicts
         global_config: Config with entity_types, llm_model_func
-        max_concurrent: Max concurrent LLM calls
+        max_concurrent: Max concurrent LLM calls (default 16)
+        progress_callback: Optional callback(current, total)
     
     Returns:
         (entities_dict, relationships_dict)
@@ -346,15 +310,22 @@ async def extract_entities(
         from backend.utils.llm_utils import call_llm_async
         llm_func = call_llm_async
     
-    cache_dict = {}
-    
     semaphore = asyncio.Semaphore(max_concurrent)
+    completed = 0
+    total = len(chunks)
     
     async def process_with_semaphore(chunk):
+        nonlocal completed
         async with semaphore:
-            return await extract_single_chunk(chunk, entity_types, llm_func, cache_dict)
+            result = await extract_single_chunk_with_retry(
+                chunk, entity_types, llm_func, max_retries=3
+            )
+            completed += 1
+            if progress_callback:
+                progress_callback(completed, total)
+            return result
     
-    logger.info(f"Extracting from {len(chunks)} chunks (max_concurrent={max_concurrent})")
+    logger.info(f"🔍 Extracting from {total} chunks (max_concurrent={max_concurrent})")
     
     tasks = [process_with_semaphore(c) for c in chunks]
     results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -378,21 +349,23 @@ async def extract_entities(
     total_ents = sum(len(v) for v in all_entities.values())
     total_rels = sum(len(v) for v in all_relationships.values())
     
-    logger.info(f"Extracted {total_ents} entities, {total_rels} relationships")
+    logger.info(f"✅ Extracted {total_ents} entities, {total_rels} relationships")
     
     return dict(all_entities), dict(all_relationships)
 
 
 def extract_entities_relations(
     chunks: List[Dict],
-    global_config: Optional[Dict] = None
+    global_config: Optional[Dict] = None,
+    progress_callback: Optional[callable] = None
 ) -> Tuple[Dict, Dict]:
     """
-    Sync wrapper for extraction
+    Sync wrapper for extraction with progress tracking
     
     Args:
         chunks: List of chunk dicts
         global_config: Configuration
+        progress_callback: Optional callback(current, total)
     
     Returns:
         (entities_dict, relationships_dict)
@@ -405,15 +378,15 @@ def extract_entities_relations(
             ]
         }
     
-    
-    max_concurrent = int(os.getenv('MAX_CONCURRENT_LLM_CALLS', 8))
+    # ✅ OPTIMIZED: Higher concurrency
+    max_concurrent = int(os.getenv('MAX_CONCURRENT_LLM_CALLS', 16))
     
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
- 
+    
     if loop.is_running():
         try:
             import nest_asyncio
@@ -422,5 +395,5 @@ def extract_entities_relations(
             logger.warning("nest_asyncio not available")
     
     return loop.run_until_complete(
-        extract_entities(chunks, global_config, max_concurrent)
+        extract_entities(chunks, global_config, max_concurrent, progress_callback)
     )

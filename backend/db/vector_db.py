@@ -1,8 +1,9 @@
 # backend/db/vector_db.py
 """
-FAISS Vector Database for Embeddings Storage
-Lưu trữ vector embeddings cho semantic search
-Metadata được lưu trong file JSON riêng
+✅ OPTIMIZED: FAISS Vector Database with Better Delete & Batch Operations
+- Efficient batch addition
+- Mark-and-sweep deletion
+- Auto-save after operations
 """
 
 from pathlib import Path
@@ -22,19 +23,22 @@ except ImportError:
 
 
 class VectorDatabase:
+    """Optimized FAISS vector database with consistent delete"""
     
-    def __init__(self, user_id: str, dim: int = 384, use_hnsw: bool = True):
+    def __init__(self, user_id: str, dim: int = 384, use_hnsw: bool = True, auto_save: bool = True):
         """
         Initialize vector database
         
         Args:
             user_id: User ID for data isolation
             dim: Embedding dimension (default 384 for all-MiniLM-L6-v2)
-            use_hnsw: Use HNSW index for faster search (recommended)
+            use_hnsw: Use HNSW index for faster search
+            auto_save: Auto-save after operations
         """
         self.user_id = user_id
         self.dim = dim
         self.use_hnsw = use_hnsw
+        self.auto_save = auto_save
         
         # Setup directories
         self.base_dir = Path("backend/data") / user_id / "vectors"
@@ -47,8 +51,9 @@ class VectorDatabase:
         
         # Initialize
         self.index = None
-        self.metadata = {} 
-        self.document_map = {}  
+        self.metadata = {}
+        self.document_map = {}
+        self._deleted_count = 0
         
         self._load_or_create()
     
@@ -74,6 +79,7 @@ class VectorDatabase:
         
         self.metadata = {}
         self.document_map = {}
+        self._deleted_count = 0
         logger.info(f"✅ Created new vector store for {self.user_id}")
     
     def _load(self):
@@ -88,37 +94,37 @@ class VectorDatabase:
                 with open(self.doc_map_path, 'r', encoding='utf-8') as f:
                     self.document_map = json.load(f)
             
-            logger.info(f"✅ Loaded vector store: {len(self.metadata)} vectors, {len(self.document_map)} docs")
+            # Count deleted
+            self._deleted_count = sum(1 for m in self.metadata.values() if m.get('_deleted'))
+            
+            logger.info(f"✅ Loaded vector store: {len(self.metadata)} vectors, "
+                       f"{len(self.document_map)} docs, {self._deleted_count} deleted")
         except Exception as e:
             logger.error(f"❌ Error loading vector store: {e}")
             self._create_new()
     
-    def add_document_embeddings(self, 
-                                doc_id: str,
-                                filename: str,
-                                embeddings: List[Dict[str, Any]],
-                                tags: List[str] = None):
+    def add_document_embeddings_batch(self, 
+                                      doc_id: str,
+                                      filename: str,
+                                      embeddings: List[Dict[str, Any]],
+                                      tags: List[str] = None) -> int:
         """
-        Add embeddings from a new document
+        ✅ OPTIMIZED: Batch add embeddings for a document
         
-        Args:
-            doc_id: Document ID
-            filename: Document filename
-            embeddings: List of embedding dicts from generate_embeddings()
-            tags: Optional tags for filtering
+        Returns:
+            Number of embeddings added
         """
         if not FAISS_AVAILABLE or not embeddings:
             logger.warning(f"Cannot add embeddings for {doc_id}")
-            return
+            return 0
         
-        # Get current index position
         start_idx = self.index.ntotal
         
-        # Extract vectors and add to FAISS
+        # Extract vectors and add to FAISS in batch
         vectors = np.array([e['embedding'] for e in embeddings], dtype=np.float32)
         self.index.add(vectors)
         
-        # Add metadata
+        # Add metadata in batch
         for i, emb in enumerate(embeddings):
             idx = start_idx + i
             self.metadata[str(idx)] = {
@@ -132,7 +138,8 @@ class VectorDatabase:
                 'order': emb.get('order', i),
                 'file_path': emb.get('file_path', ''),
                 'file_type': emb.get('file_type', ''),
-                'entity_type': emb.get('entity_type', 'CHUNK')
+                'entity_type': emb.get('entity_type', 'CHUNK'),
+                '_deleted': False
             }
         
         # Update document map
@@ -144,43 +151,44 @@ class VectorDatabase:
             'tags': tags or []
         }
         
-        logger.info(f"✅ Added {len(embeddings)} embeddings for {filename} (idx: {start_idx}-{end_idx})")
+        logger.info(f"✅ Batch added {len(embeddings)} embeddings for {filename} (idx: {start_idx}-{end_idx})")
+        
+        if self.auto_save:
+            self.save()
+        
+        return len(embeddings)
     
     def search(self, 
                query_embedding: List[float],
                top_k: int = 5,
                doc_ids: Optional[List[str]] = None,
-               tags: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+               tags: Optional[List[str]] = None,
+               skip_deleted: bool = True) -> List[Dict[str, Any]]:
         """
-        Search for similar chunks
-        
-        Args:
-            query_embedding: Query vector
-            top_k: Number of results
-            doc_ids: Filter by specific documents
-            tags: Filter by tags
-        
-        Returns:
-            List of results with metadata
+        ✅ OPTIMIZED: Search with deleted items filtering
         """
         if not FAISS_AVAILABLE or not self.index or self.index.ntotal == 0:
             logger.warning("Empty or unavailable index")
             return []
         
-        # Search in FAISS
         query_array = np.array([query_embedding], dtype=np.float32)
         
         # Get more results for filtering
-        search_k = min(top_k * 3, self.index.ntotal)
+        search_k = min(top_k * 5, self.index.ntotal)
         distances, indices = self.index.search(query_array, search_k)
         
-        # Build results with metadata
+        # Build results with metadata and filters
         results = []
         for dist, idx in zip(distances[0], indices[0]):
             if str(idx) not in self.metadata:
                 continue
             
             meta = self.metadata[str(idx)].copy()
+            
+            # Skip deleted
+            if skip_deleted and meta.get('_deleted'):
+                continue
+            
             doc_id = meta['doc_id']
             
             # Apply filters
@@ -205,17 +213,7 @@ class VectorDatabase:
                        query_text: str,
                        top_k: int = 5,
                        **kwargs) -> List[Dict[str, Any]]:
-        """
-        Search by text query (generates embedding first)
-        
-        Args:
-            query_text: Text query
-            top_k: Number of results
-            **kwargs: Additional filters (doc_ids, tags)
-        
-        Returns:
-            Search results
-        """
+        """Search by text query (generates embedding first)"""
         from backend.core.embedding import get_model
         
         model = get_model()
@@ -223,7 +221,7 @@ class VectorDatabase:
         
         return self.search(query_emb.tolist(), top_k=top_k, **kwargs)
     
-    def get_document_chunks(self, doc_id: str) -> List[Dict[str, Any]]:
+    def get_document_chunks(self, doc_id: str, include_deleted: bool = False) -> List[Dict[str, Any]]:
         """Get all chunks for a specific document"""
         if doc_id not in self.document_map:
             return []
@@ -233,42 +231,68 @@ class VectorDatabase:
         chunks = []
         for idx in range(start, end + 1):
             if str(idx) in self.metadata:
-                chunks.append(self.metadata[str(idx)])
+                meta = self.metadata[str(idx)]
+                if include_deleted or not meta.get('_deleted'):
+                    chunks.append(meta)
         
         return chunks
     
-    def delete_document(self, doc_id: str) -> bool:
+    def delete_document(self, doc_id: str) -> Dict[str, int]:
         """
-        Delete document embeddings (mark as deleted)
+        ✅ IMPROVED: Mark document embeddings as deleted
         
-        Note: FAISS doesn't support deletion, so we mark as deleted
-        Call rebuild_index() periodically to clean up
+        Returns:
+            Statistics: {'marked': count, 'needs_rebuild': bool}
         """
         if doc_id not in self.document_map:
-            logger.warning(f"Document {doc_id} not found")
-            return False
+            logger.warning(f"Document {doc_id} not found in FAISS")
+            return {'marked': 0, 'needs_rebuild': False}
         
         # Mark chunks as deleted
         start, end = self.document_map[doc_id]['embedding_range']
+        marked_count = 0
+        
         for idx in range(start, end + 1):
             if str(idx) in self.metadata:
                 self.metadata[str(idx)]['_deleted'] = True
+                marked_count += 1
         
         # Remove from document map
         del self.document_map[doc_id]
         
-        logger.info(f"✅ Marked {doc_id} for deletion (rebuild needed)")
-        return True
+        self._deleted_count += marked_count
+        
+        # Check if rebuild needed (>20% deleted)
+        total = len(self.metadata)
+        needs_rebuild = self._deleted_count > total * 0.2
+        
+        logger.info(f"✅ Marked {marked_count} embeddings as deleted for {doc_id}")
+        
+        if needs_rebuild:
+            logger.warning(f"⚠️ {self._deleted_count}/{total} deleted ({self._deleted_count/total*100:.1f}%). Consider rebuild.")
+        
+        if self.auto_save:
+            self.save()
+        
+        return {
+            'marked': marked_count,
+            'needs_rebuild': needs_rebuild,
+            'total_deleted': self._deleted_count,
+            'total_vectors': total
+        }
     
-    def rebuild_index(self):
+    def rebuild_index(self) -> Dict[str, int]:
         """
-        Rebuild index (remove deleted chunks, compact)
-        Call this periodically or after multiple deletions
+        ✅ OPTIMIZED: Rebuild index (remove deleted chunks, compact)
+        
+        Returns:
+            Statistics: {'before': int, 'after': int, 'removed': int}
         """
         if not FAISS_AVAILABLE:
-            return
+            return {}
         
-        logger.info("🔄 Rebuilding index...")
+        before_count = len(self.metadata)
+        logger.info(f"🔄 Rebuilding index ({self._deleted_count} deleted)...")
         
         # Collect active embeddings
         active_vectors = []
@@ -281,23 +305,27 @@ class VectorDatabase:
             start, end = doc_info['embedding_range']
             doc_vectors = []
             doc_metadata = []
+            doc_indices = []
             
             for old_idx in range(start, end + 1):
                 meta = self.metadata.get(str(old_idx))
-                if meta and not meta.get('_deleted', False):
+                if meta and not meta.get('_deleted'):
                     doc_vectors.append(old_idx)
                     doc_metadata.append(meta)
+                    doc_indices.append(old_idx)
             
             if doc_vectors:
                 # Get vectors from old index
                 vectors = np.zeros((len(doc_vectors), self.dim), dtype=np.float32)
-                for i, old_idx in enumerate(doc_vectors):
+                for i, old_idx in enumerate(doc_indices):
                     vectors[i] = self.index.reconstruct(int(old_idx))
                 
                 # Add to new metadata
                 new_start = current_idx
                 for i, meta in enumerate(doc_metadata):
-                    new_metadata[str(current_idx)] = meta
+                    meta_copy = meta.copy()
+                    meta_copy['_deleted'] = False
+                    new_metadata[str(current_idx)] = meta_copy
                     active_vectors.append(vectors[i])
                     current_idx += 1
                 new_end = current_idx - 1
@@ -312,6 +340,8 @@ class VectorDatabase:
         # Create new index
         if self.use_hnsw:
             new_index = faiss.IndexHNSWFlat(self.dim, 32)
+            new_index.hnsw.efConstruction = 200
+            new_index.hnsw.efSearch = 50
         else:
             new_index = faiss.IndexFlatL2(self.dim)
         
@@ -320,11 +350,25 @@ class VectorDatabase:
             vectors_array = np.array(active_vectors, dtype=np.float32)
             new_index.add(vectors_array)
         
+        # Replace old with new
         self.index = new_index
         self.metadata = new_metadata
         self.document_map = new_doc_map
+        self._deleted_count = 0
         
-        logger.info(f"✅ Rebuild complete: {len(new_metadata)} chunks, {len(new_doc_map)} docs")
+        after_count = len(new_metadata)
+        removed = before_count - after_count
+        
+        logger.info(f"✅ Rebuild complete: {before_count} → {after_count} ({removed} removed)")
+        
+        if self.auto_save:
+            self.save()
+        
+        return {
+            'before': before_count,
+            'after': after_count,
+            'removed': removed
+        }
     
     def save(self):
         """Save index and metadata to disk"""
@@ -340,15 +384,43 @@ class VectorDatabase:
         with open(self.doc_map_path, 'w', encoding='utf-8') as f:
             json.dump(self.document_map, f, ensure_ascii=False, indent=2)
         
-        logger.info(f"💾 Saved vector store: {self.index.ntotal if self.index else 0} vectors")
+        logger.info(f"💾 Saved vector store: {self.index.ntotal if self.index else 0} vectors, "
+                   f"{self._deleted_count} deleted")
     
     def get_statistics(self) -> Dict[str, Any]:
         """Get store statistics"""
+        total = len(self.metadata)
+        active = total - self._deleted_count
+        
         return {
-            'total_chunks': len(self.metadata),
+            'total_vectors': total,
+            'active_vectors': active,
+            'deleted_vectors': self._deleted_count,
+            'deletion_ratio': self._deleted_count / total if total > 0 else 0,
             'total_documents': len(self.document_map),
             'index_size': self.index.ntotal if self.index else 0,
             'dimension': self.dim,
             'index_type': 'HNSW' if self.use_hnsw else 'Flat',
+            'needs_rebuild': self._deleted_count > total * 0.2,
             'documents': list(self.document_map.keys())
         }
+    
+    def cleanup_orphans(self):
+        """Remove metadata for vectors not in document_map"""
+        doc_ranges = set()
+        for doc_info in self.document_map.values():
+            start, end = doc_info['embedding_range']
+            doc_ranges.update(range(start, end + 1))
+        
+        orphans = []
+        for idx_str in list(self.metadata.keys()):
+            if int(idx_str) not in doc_ranges:
+                orphans.append(idx_str)
+                del self.metadata[idx_str]
+        
+        if orphans:
+            logger.info(f"🧹 Cleaned up {len(orphans)} orphaned metadata entries")
+            if self.auto_save:
+                self.save()
+        
+        return len(orphans)

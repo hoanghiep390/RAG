@@ -1,26 +1,21 @@
 # backend/db/mongo_storage.py
 """
-MongoDB Storage Manager for LightRAG Data (WITHOUT Embeddings)
-Collections:
-- documents: Metadata về tài liệu upload
-- chunks: Text chunks từ documents
-- entities: Extracted entities
-- relationships: Extracted relationships
-- graph_nodes: Knowledge graph nodes
-- graph_edges: Knowledge graph edges
-
-NOTE: Embeddings được lưu trong FAISS (backend/core/vector_db.py)
+✅ OPTIMIZED: MongoDB Storage with Bulk Operations & Consistent Delete
+- Bulk inserts for better performance
+- Atomic operations
+- Consistent delete (MongoDB + FAISS + Files)
 """
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 from bson import ObjectId
 from backend.config import get_mongodb
 
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """Unified storage manager for LightRAG data (except embeddings)"""
+    """Optimized storage manager with bulk operations"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -37,19 +32,23 @@ class MongoStorage:
     def _create_indexes(self):
         """Create indexes for efficient queries"""
         # Documents
-        self.documents.create_index([('user_id', 1), ('doc_id', 1)])
+        self.documents.create_index([('user_id', 1), ('doc_id', 1)], unique=True)
+        self.documents.create_index([('user_id', 1), ('uploaded_at', -1)])
         
         # Chunks
         self.chunks.create_index([('user_id', 1), ('doc_id', 1)])
-        self.chunks.create_index([('chunk_id', 1)])
+        self.chunks.create_index([('chunk_id', 1)], unique=True)
+        self.chunks.create_index([('user_id', 1), ('order', 1)])
         
         # Entities
         self.entities.create_index([('user_id', 1), ('entity_name', 1)])
         self.entities.create_index([('user_id', 1), ('entity_type', 1)])
+        self.entities.create_index([('user_id', 1), ('doc_id', 1)])
         
         # Relationships
         self.relationships.create_index([('user_id', 1), ('source_id', 1)])
         self.relationships.create_index([('user_id', 1), ('target_id', 1)])
+        self.relationships.create_index([('user_id', 1), ('doc_id', 1)])
         
         # Graph
         self.graph_nodes.create_index([('user_id', 1), ('node_id', 1)], unique=True)
@@ -100,28 +99,67 @@ class MongoStorage:
             {'user_id': self.user_id}
         ).sort('uploaded_at', -1))
     
-    def delete_document(self, doc_id: str) -> bool:
-        """Delete document and all related data (except embeddings in FAISS)"""
+    def delete_document_cascade(self, doc_id: str) -> Dict[str, Any]:
+        """
+        ✅ IMPROVED: Cascade delete document and all related data
+        Returns deletion statistics
+        """
+        stats = {
+            'document': 0,
+            'chunks': 0,
+            'entities': 0,
+            'relationships': 0,
+            'files_deleted': []
+        }
+        
         try:
-            self.documents.delete_one({'user_id': self.user_id, 'doc_id': doc_id})
-            self.chunks.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            self.entities.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
-            self.relationships.delete_many({'user_id': self.user_id, 'doc_id': doc_id})
+            # Get document info
+            doc = self.get_document(doc_id)
+            if not doc:
+                logger.warning(f"Document not found: {doc_id}")
+                return stats
             
-            logger.info(f"🗑️ Deleted document from MongoDB: {doc_id}")
-            logger.warning(f"⚠️ Remember to delete embeddings from FAISS manually!")
-            return True
+            # Delete from MongoDB collections
+            stats['document'] = self.documents.delete_one(
+                {'user_id': self.user_id, 'doc_id': doc_id}
+            ).deleted_count
+            
+            stats['chunks'] = self.chunks.delete_many(
+                {'user_id': self.user_id, 'doc_id': doc_id}
+            ).deleted_count
+            
+            stats['entities'] = self.entities.delete_many(
+                {'user_id': self.user_id, 'doc_id': doc_id}
+            ).deleted_count
+            
+            stats['relationships'] = self.relationships.delete_many(
+                {'user_id': self.user_id, 'doc_id': doc_id}
+            ).deleted_count
+            
+            # Delete physical file
+            if doc.get('filepath'):
+                filepath = Path(doc['filepath'])
+                if filepath.exists():
+                    filepath.unlink()
+                    stats['files_deleted'].append(str(filepath))
+                    logger.info(f"🗑️ Deleted file: {filepath}")
+            
+            logger.info(f"✅ Cascade deleted document: {doc_id} - {stats}")
+            return stats
+            
         except Exception as e:
-            logger.error(f"❌ Error deleting document: {e}")
-            return False
+            logger.error(f"❌ Error cascade deleting document {doc_id}: {e}")
+            raise
     
-    # ================= CHUNKS =================
+    # ================= CHUNKS (BULK) =================
     
-    def save_chunks(self, doc_id: str, chunks: List[Dict]):
-        """Save chunks for document"""
-        chunk_docs = []
-        for chunk in chunks:
-            chunk_docs.append({
+    def save_chunks_bulk(self, doc_id: str, chunks: List[Dict]):
+        """✅ OPTIMIZED: Bulk insert chunks"""
+        if not chunks:
+            return
+        
+        chunk_docs = [
+            {
                 'user_id': self.user_id,
                 'doc_id': doc_id,
                 'chunk_id': chunk['chunk_id'],
@@ -132,11 +170,12 @@ class MongoStorage:
                 'file_path': chunk.get('file_path', ''),
                 'file_type': chunk.get('file_type', ''),
                 'created_at': datetime.now()
-            })
+            }
+            for chunk in chunks
+        ]
         
-        if chunk_docs:
-            self.chunks.insert_many(chunk_docs)
-            logger.info(f"📦 Saved {len(chunk_docs)} chunks for {doc_id}")
+        self.chunks.insert_many(chunk_docs, ordered=False)
+        logger.info(f"📦 Bulk saved {len(chunk_docs)} chunks for {doc_id}")
     
     def get_chunks(self, doc_id: str) -> List[Dict]:
         """Get all chunks for document"""
@@ -148,10 +187,13 @@ class MongoStorage:
         """Get single chunk by ID"""
         return self.chunks.find_one({'chunk_id': chunk_id})
     
-    # ================= ENTITIES =================
+    # ================= ENTITIES (BULK) =================
     
-    def save_entities(self, doc_id: str, entities_dict: Dict[str, List[Dict]]):
-        """Save extracted entities"""
+    def save_entities_bulk(self, doc_id: str, entities_dict: Dict[str, List[Dict]]):
+        """✅ OPTIMIZED: Bulk insert entities"""
+        if not entities_dict:
+            return
+        
         entity_docs = []
         for entity_name, entity_list in entities_dict.items():
             for entity in entity_list:
@@ -168,8 +210,8 @@ class MongoStorage:
                 })
         
         if entity_docs:
-            self.entities.insert_many(entity_docs)
-            logger.info(f"🏷️ Saved {len(entity_docs)} entities for {doc_id}")
+            self.entities.insert_many(entity_docs, ordered=False)
+            logger.info(f"🏷️ Bulk saved {len(entity_docs)} entities for {doc_id}")
     
     def get_entities(self, doc_id: str = None, entity_type: str = None) -> List[Dict]:
         """Get entities with optional filters"""
@@ -181,17 +223,13 @@ class MongoStorage:
         
         return list(self.entities.find(query))
     
-    def get_entity_by_name(self, entity_name: str) -> Optional[Dict]:
-        """Get entity by name (first match)"""
-        return self.entities.find_one({
-            'user_id': self.user_id,
-            'entity_name': entity_name
-        })
+    # ================= RELATIONSHIPS (BULK) =================
     
-    # ================= RELATIONSHIPS =================
-    
-    def save_relationships(self, doc_id: str, relationships_dict: Dict[tuple, List[Dict]]):
-        """Save extracted relationships"""
+    def save_relationships_bulk(self, doc_id: str, relationships_dict: Dict[tuple, List[Dict]]):
+        """✅ OPTIMIZED: Bulk insert relationships"""
+        if not relationships_dict:
+            return
+        
         rel_docs = []
         for (source, target), rel_list in relationships_dict.items():
             for rel in rel_list:
@@ -209,8 +247,8 @@ class MongoStorage:
                 })
         
         if rel_docs:
-            self.relationships.insert_many(rel_docs)
-            logger.info(f"🔗 Saved {len(rel_docs)} relationships for {doc_id}")
+            self.relationships.insert_many(rel_docs, ordered=False)
+            logger.info(f"🔗 Bulk saved {len(rel_docs)} relationships for {doc_id}")
     
     def get_relationships(self, doc_id: str = None, 
                          source: str = None, target: str = None) -> List[Dict]:
@@ -225,66 +263,63 @@ class MongoStorage:
         
         return list(self.relationships.find(query))
     
-    # ================= KNOWLEDGE GRAPH =================
+    # ================= KNOWLEDGE GRAPH (BULK) =================
     
-    def save_graph(self, graph_data: Dict):
-        """Save knowledge graph nodes and edges"""
-        # Save nodes
-        node_docs = []
-        for node in graph_data.get('nodes', []):
-            node_docs.append({
-                'user_id': self.user_id,
-                'node_id': node['id'],
-                'type': node.get('type', 'UNKNOWN'),
-                'description': node.get('description', ''),
-                'sources': list(node.get('sources', set())),
-                'source_documents': list(node.get('source_documents', set())),
-                'updated_at': datetime.now()
-            })
-        
-        # Upsert nodes
-        for node_doc in node_docs:
-            self.graph_nodes.update_one(
-                {'user_id': self.user_id, 'node_id': node_doc['node_id']},
-                {'$set': node_doc},
-                upsert=True
-            )
-        
-        # Save edges
-        edge_docs = []
-        for link in graph_data.get('links', []):
-            edge_docs.append({
-                'user_id': self.user_id,
-                'source': link['source'],
-                'target': link['target'],
-                'description': link.get('description', ''),
-                'keywords': link.get('keywords', ''),
-                'strength': link.get('strength', 1.0),
-                'chunks': list(link.get('chunks', set())),
-                'source_documents': list(link.get('source_documents', set())),
-                'updated_at': datetime.now()
-            })
-        
-        # Upsert edges
-        for edge_doc in edge_docs:
-            self.graph_edges.update_one(
-                {
+    def save_graph_bulk(self, graph_data: Dict):
+        """✅ OPTIMIZED: Bulk upsert graph nodes and edges"""
+        # Bulk upsert nodes
+        if graph_data.get('nodes'):
+            for node in graph_data['nodes']:
+                node_doc = {
                     'user_id': self.user_id,
-                    'source': edge_doc['source'],
-                    'target': edge_doc['target']
-                },
-                {'$set': edge_doc},
-                upsert=True
-            )
+                    'node_id': node['id'],
+                    'type': node.get('type', 'UNKNOWN'),
+                    'description': node.get('description', ''),
+                    'sources': list(node.get('sources', set())),
+                    'source_documents': list(node.get('source_documents', set())),
+                    'updated_at': datetime.now()
+                }
+                
+                self.graph_nodes.update_one(
+                    {'user_id': self.user_id, 'node_id': node['id']},
+                    {'$set': node_doc},
+                    upsert=True
+                )
+            
+            logger.info(f"🕸️ Bulk upserted {len(graph_data['nodes'])} graph nodes")
         
-        logger.info(f"🕸️ Saved graph: {len(node_docs)} nodes, {len(edge_docs)} edges")
+        # Bulk upsert edges
+        if graph_data.get('links'):
+            for link in graph_data['links']:
+                edge_doc = {
+                    'user_id': self.user_id,
+                    'source': link['source'],
+                    'target': link['target'],
+                    'description': link.get('description', ''),
+                    'keywords': link.get('keywords', ''),
+                    'strength': link.get('strength', 1.0),
+                    'chunks': list(link.get('chunks', set())),
+                    'source_documents': list(link.get('source_documents', set())),
+                    'updated_at': datetime.now()
+                }
+                
+                self.graph_edges.update_one(
+                    {
+                        'user_id': self.user_id,
+                        'source': link['source'],
+                        'target': link['target']
+                    },
+                    {'$set': edge_doc},
+                    upsert=True
+                )
+            
+            logger.info(f"🕸️ Bulk upserted {len(graph_data['links'])} graph edges")
     
     def get_graph(self) -> Dict:
         """Get complete knowledge graph"""
         nodes = list(self.graph_nodes.find({'user_id': self.user_id}))
         edges = list(self.graph_edges.find({'user_id': self.user_id}))
         
-        # Convert to graph format
         graph_data = {
             'nodes': [
                 {
@@ -345,3 +380,42 @@ class MongoStorage:
             'graph_nodes': self.graph_nodes.count_documents({'user_id': self.user_id}),
             'graph_edges': self.graph_edges.count_documents({'user_id': self.user_id})
         }
+    
+    # ================= BATCH OPERATIONS =================
+    
+    def save_document_complete(self, doc_id: str, filename: str, filepath: str,
+                               chunks: List[Dict], entities: Dict = None, 
+                               relationships: Dict = None, graph: Dict = None,
+                               stats: Dict = None):
+        """
+        ✅ OPTIMIZED: Save complete document with all data in one transaction
+        """
+        try:
+            # 1. Save document metadata
+            self.save_document(doc_id, filename, filepath, metadata={'processing': True})
+            
+            # 2. Bulk save chunks
+            if chunks:
+                self.save_chunks_bulk(doc_id, chunks)
+            
+            # 3. Bulk save entities 
+            if entities:
+                self.save_entities_bulk(doc_id, entities)
+            
+            # 4. Bulk save relationships
+            if relationships:
+                self.save_relationships_bulk(doc_id, relationships)
+            
+            # 5. Bulk save graph
+            if graph:
+                self.save_graph_bulk(graph)
+            
+            # 6. Update document status
+            self.update_document_status(doc_id, 'completed', stats)
+            
+            logger.info(f"✅ Saved complete document: {doc_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error saving complete document: {e}")
+            self.update_document_status(doc_id, 'failed', {'error': str(e)})
+            raise

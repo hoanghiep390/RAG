@@ -1,91 +1,129 @@
-mini_lightrag_graph/
+mini-lightrag/
 │
-├── backend/                              # Backend xử lý logic LightRAG mini
+├── 📁 backend/                              # Backend processing logic
 │   │
-│   ├── core/                             # Các module chính 
-│   │   ├── chunking.py                   # → Tách văn bản thành các chunk nhỏ 
-│   │   ├── embedding.py                  # → Sinh embedding vector từ mỗi chunk
-│   │   ├── extraction.py                 # → Trích xuất entity và relationship từ văn bản 
-│   │   ├── graph_builder.py              # → Xây dựng Knowledge Graph 
-│   │   ├── retriever.py                  # → Tìm kiếm các chunk hoặc node liên quan đến truy vấn
-│   │   ├── generator.py                  # → Gọi LLM để tạo câu trả lời từ ngữ cảnh đã truy xuất
-│   │   └── pipeline.py                   # → Điều phối toàn bộ flow: upload → chunk → embed → graph → retrieve → answer
+│   ├── 📁 core/                             # Core processing modules (Pure functions)
+│   │   ├── 📄 chunking.py                   # ✂️ Text → Chunks (300 tokens default)
+│   │   │   ├── extract_segments()           # PDF, DOCX, TXT, CSV, JSON, XML
+│   │   │   ├── Chunker class               # Smart chunking with overlap
+│   │   │   └── process_document_to_chunks() # Main entry point
+│   │   │
+│   │   ├── 📄 embedding.py                  # 🧮 Text → Vectors (384-dim)
+│   │   │   ├── EmbeddingModel              # SentenceTransformer wrapper
+│   │   │   ├── generate_embeddings()       # Chunk embeddings (batch 128)
+│   │   │   ├── generate_entity_embeddings() # Entity embeddings
+│   │   │   └── generate_relationship_embeddings()
+│   │   │
+│   │   ├── 📄 extraction.py                 # 🔍 Chunks → Entities/Relations
+│   │   │   ├── extract_entities()          # 16 parallel LLM calls
+│   │   │   ├── parse_extraction_result()   # LightRAG format parser
+│   │   │   └── extract_entities_relations() # Sync wrapper
+│   │   │
+│   │   ├── 📄 graph_builder.py              # 🕸️ Entities → Knowledge Graph
+│   │   │   ├── KnowledgeGraph class        # NetworkX DiGraph wrapper
+│   │   │   ├── build_knowledge_graph()     # Async graph builder
+│   │   │   ├── _merge_nodes_then_upsert()  # Smart node merging
+│   │   │   └── _merge_edges_then_upsert()  # Smart edge merging
+│   │   │
+│   │   └── 📄 pipeline.py                   # 🔄 Main orchestrator
+│   │       ├── DocumentPipeline class      # Unified processing
+│   │       ├── process_file()              # Single file (progress tracking)
+│   │       └── process_multiple_files_parallel() # Multi-file (3x parallel)
 │   │
-│   ├── db/                               #  Quản lý lưu trữ dữ liệu 
-│   │   ├── vector_db.py                  # → Lưu trữ và truy vấn embedding 
-│   │   ├── graph_storage.py              # → Lưu và tải Knowledge Graph 
-│   │   ├── conversation_store.py         # → Lưu hội thoại tạm 
-│   │   ├── conversation_mongo.py         # → Phiên bản lưu hội thoại bằng MongoDB 
-│   │   └── user_store.py                 # → Quản lý người dùng: đăng ký, đăng nhập, hash mật khẩu
+│   ├── 📁 db/                               # Storage layer
+│   │   ├── 📄 mongo_storage.py              # 🗄️ MongoDB operations
+│   │   │   ├── save_document()             # Document metadata
+│   │   │   ├── save_chunks_bulk()          # Bulk chunk insert
+│   │   │   ├── save_entities_bulk()        # Bulk entity insert
+│   │   │   ├── save_relationships_bulk()   # Bulk relationship insert
+│   │   │   ├── save_graph_bulk()           # Bulk graph upsert
+│   │   │   ├── delete_document_cascade()   # Cascade delete
+│   │   │   └── save_document_complete()    # All-in-one save
+│   │   │
+│   │   └── 📄 vector_db.py                  # 🚀 FAISS operations
+│   │       ├── VectorDatabase class        # FAISS manager
+│   │       ├── add_document_embeddings_batch() # Batch add
+│   │       ├── search()                    # Vector search
+│   │       ├── delete_document()           # Mark deleted
+│   │       └── rebuild_index()             # Compact index
 │   │
-│   ├── utils/                            # Hàm tiện ích, dùng chung trong toàn hệ thống
-│   │   ├── file_utils.py                 # → Xử lý file 
-│   │   ├── text_utils.py                 # → Xử lý văn bản 
-│   │   ├── llm_utils.py                  # → Gọi API LLM 
-│   │   └── utils.py                      # → Ghi log hệ thống 
+│   ├── 📁 utils/                            # Utility functions
+│   │   ├── 📄 file_utils.py                 # 📁 File operations
+│   │   │   ├── save_uploaded_file()        # Save to uploads/
+│   │   │   ├── read_file_content()         # Read text files
+│   │   │   ├── get_file_info()             # File metadata
+│   │   │   └── delete_uploaded_file()      # Remove file
+│   │   │
+│   │   ├── 📄 llm_utils.py                  # 🤖 LLM API calls
+│   │   │   ├── call_openai_async()         # OpenAI GPT
+│   │   │   ├── call_groq_async()           # Groq Llama
+│   │   │   ├── call_llm_async()            # Universal async
+│   │   │   └── call_llm_batch()            # Batch processing
+│   │   │
+│   │   ├── 📄 utils.py                      # 📝 Logging setup
+│   │   │   └── logger                      # Configured logger
+│   │   │
+│   │   └── 📄 cache_utils.py                # ⚠️ DEPRECATED (do not use)
 │   │
-│   └── data/                             # Lưu trữ dữ liệu người dùng (dạng file, cho demo)
-│       ├── uploads/                      # → Tài liệu gốc do người dùng upload
-│       ├── chunks/                       # → Kết quả sau khi chia chunk
-│       ├── graphs/                       # → File graph (JSON hoặc pickle)
-│       ├── conversations/                # → Lịch sử hội thoại đã lưu
-│       ├── logs/                         # → Log ghi lại hoạt động hệ thống
-│       └── users.json                    # → File lưu thông tin người dùng (demo, không có DB)
+│   ├── 📄 config.py                         # ⚙️ MongoDB configuration
+│   │   ├── MongoDBConfig class             # Connection manager
+│   │   ├── get_mongodb()                   # Get DB instance
+│   │   └── close_mongodb()                 # Close connection
+│   │
+│   ├── 📄 main.py                           # (Empty placeholder)
+│   │
+│   └── 📁 data/                             # 💾 User data storage
+│       └── {user_id}/                       # Per-user isolation
+│           ├── uploads/                     # 📄 Original uploaded files
+│           ├── vectors/                     # 🚀 FAISS indexes
+│           │   ├── combined.index          # FAISS index file
+│           │   ├── combined_metadata.json  # Chunk metadata
+│           │   └── document_map.json       # Doc-to-index mapping
+│           └── logs/                        # 📝 Processing logs
 │
-├── frontend/                             # Frontend: giao diện người dùng bằng Streamlit
-│   ├── login.py                          # → Trang đăng nhập / đăng ký người dùng
-│   ├── upload.py                         # → Giao diện upload tài liệu và chạy pipeline xử lý
-│   ├── chat.py                           # → Giao diện chat hỏi đáp theo tài liệu đã nạp
-│   ├── graph.py                          # → Hiển thị đồ thị kiến thức (interactive graph viewer)
-│   └── sidebar.py                        # → Thanh menu / hiển thị user info / chuyển trang
-│
-├── requirements.txt                      #  Danh sách thư viện cần cài đặt (streamlit, openai, faiss,…)
-├── .env                                  #  Cấu hình môi trường (API key, DB URI,…)
-├── .env.example                          #  Mẫu file .env để tham khảo
-├── README.md                             #  Hướng dẫn cài đặt, chạy demo
-│
-└── docs/                                 # Tài liệu kiến trúc và hướng dẫn kỹ thuật
-    ├── architecture.md                   # → Mô tả kiến trúc hệ thống và các module
-    ├── data_flow.png                     # → Sơ đồ luồng dữ liệu qua các module
-    └── api_reference.md                  # → Mô tả chi tiết API nội bộ (core/db/utils)
-
-
-mini_lightrag_graph/
-│
-├── backend/                              # Backend: Core processing logic
+├── 📁 frontend/                             # Streamlit UI
+│   ├── 📄 login.py                          # 🔐 Login/Register page
+│   │   ├── User authentication             # SHA256 password hashing
+│   │   ├── Session management              # st.session_state
+│   │   └── Default admin account           # admin/admin123
 │   │
-│   ├── core/                             # Core modules (Pure functions)
-│   │   ├── chunking.py                   # ✅ Text → Chunks (no file I/O)
-│   │   ├── embedding.py                  # ✅ Chunks → Embeddings (no file I/O)
-│   │   ├── extraction.py                 # ✅ Text → Entities/Relations (no file I/O)
-│   │   ├── graph_builder.py              # ✅ Entities → Knowledge Graph (no file I/O)
-│   │   └── pipeline.py                   # ✅ Orchestrator + MongoDB Auto-Save
-│   │
-│   ├── db/                               # 💾 Database & Storage
-│   │   └── mongo_storage.py              # ✅ MongoDB CRUD operations
-│   │
-│   ├── utils/                            # 🔧 Utilities
-│   │   ├── file_utils.py                 # ✅ File operations (uploads only)
-│   │   ├── llm_utils.py                  # ✅ LLM API calls
-│   │   └── utils.py                      # ✅ Logging setup
-│   │
-│   ├── config.py                         # ⚙️ MongoDB connection config
-│   │
-│   └── data/                             # 📂 User data (only uploads)
-│       └── {user_id}/
-│           └── uploads/                  # ✅ Original uploaded files ONLY
+│   └── 📁 pages/                            # Multi-page app
+│       ├── 📄 upload.py                     # 📤 Document upload & processing
+│       │   ├── File uploader               # Multiple files support
+│       │   ├── Processing pipeline         # With progress bars
+│       │   ├── MongoDB + FAISS save        # Bulk operations
+│       │   ├── Document list               # View processed docs
+│       │   ├── Unified delete              # MongoDB + FAISS + Files
+│       │   └── FAISS rebuild UI            # Optimize index
+│       │
+│       └── 📄 graph.py                      # 🕸️ Knowledge graph viewer
+│           ├── Load from MongoDB           # Get combined graph
+│           ├── Interactive visualization   # PyVis network graph
+│           ├── Statistics dashboard        # Nodes, edges, types
+│           ├── Entity browser              # Search & filter
+│           └── Relationship browser        # View connections
 │
-├── frontend/                             # 🎨 Frontend: Streamlit UI
-│   ├── login.py                          # 🔐 Login/Register page
-│   └── pages/
-│       ├── upload.py                     # 📤 Upload & process documents
-│       └── graph.py                      # 🕸️ Visualize knowledge graph
+├── 📁 scripts/                              # Utility scripts (if any)
 │
-├── scripts/                              # 🔧 Utility scripts
-│   └── migrate_to_mongodb.py             # 🔄 Migration script (file → MongoDB)
+├── 📄 .env                                  # 🔑 Environment variables
+│   ├── MONGODB_URI                         # MongoDB connection string
+│   ├── MONGODB_DATABASE                    # Database name
+│   ├── LLM_PROVIDER                        # openai / groq
+│   ├── LLM_MODEL                           # Model name
+│   ├── OPENAI_API_KEY                      # OpenAI API key
+│   ├── GROQ_API_KEY                        # Groq API key
+│   ├── MAX_CONCURRENT_LLM_CALLS            # 16 (default)
+│   ├── EXTRACTION_BATCH_SIZE               # 20 (default)
+│   └── EMBEDDING_BATCH_SIZE                # 128 (default)
 │
-├── .env                                  # 🔑 Environment variables
-├── .env.example                          # 📝 Example config
-├── requirements.txt                      # 📦 Python dependencies
-├── README.md                             # 📖 Documentation
-└── structure.md                          # 📁 This file
+├── 📄 .env.example                          # 📝 Example config
+├── 📄 .gitignore                            # Git ignore rules
+│
+├── 📄 requirements.txt                      # 📦 Python dependencies
+│
+├── 📄 structure.md                          # 📁 This file
+├── 📄 README.md                             # 📖 Project documentation
+│
+├── 📄 integration_test.py                   # 🧪 Integration tests
+│
+└── 📁 .cursor/                              # (IDE specific, ignored)
