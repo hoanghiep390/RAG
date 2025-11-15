@@ -1,5 +1,5 @@
 # ==========================================
-# backend/db/mongo_storage.py 
+# backend/db/mongo_storage.py - FULL FIXED VERSION
 # ==========================================
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -268,20 +268,22 @@ class MongoStorage:
             return False
     
     def delete_document_cascade(self, doc_id: str) -> Dict:
-        """Cascade delete everything for a document"""
+        """✅ FIXED: Cascade delete with proper error handling"""
         stats = {
             'document': 0, 
             'chunks': 0, 
             'entities': 0, 
             'relationships': 0, 
-            'files_deleted': []
+            'files_deleted': [],
+            'errors': []
         }
         
         try:
             # Get document info
             doc = self.get_document(doc_id)
             if not doc:
-                logger.warning(f"⚠️ Document {doc_id} not found")
+                logger.warning(f"⚠️ Document {doc_id} not found in MongoDB")
+                stats['errors'].append(f"Document {doc_id} not found")
                 return stats
             
             # Delete from collections
@@ -301,7 +303,7 @@ class MongoStorage:
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
             
-            # Delete physical file
+            # ✅ FIX: Delete physical file with proper error handling
             if doc.get('filepath'):
                 filepath = Path(doc['filepath'])
                 if filepath.exists():
@@ -310,13 +312,21 @@ class MongoStorage:
                         stats['files_deleted'].append(str(filepath))
                         logger.info(f"✅ Deleted file: {filepath}")
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to delete file {filepath}: {e}")
+                        error_msg = f"Failed to delete file {filepath}: {e}"
+                        logger.warning(f"⚠️ {error_msg}")
+                        stats['errors'].append(error_msg)
+                else:
+                    # File already deleted or moved
+                    logger.warning(f"⚠️ File not found (already deleted?): {filepath}")
+                    stats['errors'].append(f"File not found: {filepath.name}")
             
             logger.info(f"✅ Cascade delete completed for {doc_id}: {stats}")
             return stats
         
         except Exception as e:
-            logger.error(f"❌ Failed to cascade delete {doc_id}: {e}")
+            error_msg = f"Failed to cascade delete {doc_id}: {e}"
+            logger.error(f"❌ {error_msg}")
+            stats['errors'].append(error_msg)
             return stats
     
     def delete_user_cascade(self, user_id: str = None) -> Dict:

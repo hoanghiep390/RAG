@@ -97,19 +97,19 @@ with st.sidebar:
     st.markdown(f"**{username}**<br>`{user_id}`", unsafe_allow_html=True)
     st.markdown("---")
     
-    if st.button("📤 Upload", use_container_width=True): 
+    if st.button("📤 Upload", width="stretch"): 
         st.switch_page("pages/upload.py")
     
     st.markdown("---")
     
     st.markdown("### ⚡ Quick Actions")
-    if st.button("🔄 Refresh Graph", use_container_width=True):
+    if st.button("🔄 Refresh Graph", width="stretch"):
         st.cache_data.clear()
         st.rerun()
     
     st.markdown("---")
     
-    if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+    if st.button("🚪 Logout", width="stretch", type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']: 
             st.session_state.pop(k, None)
         st.switch_page("login.py")
@@ -168,7 +168,7 @@ if G is None or G.number_of_nodes() == 0:
     st.warning("⚠️ Không tìm thấy knowledge graph.")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📤 Upload Tài liệu", use_container_width=True):
+        if st.button("📤 Upload Tài liệu", width="stretch"):
             st.switch_page("pages/upload.py")
     with col2:
         st.info("💡 Upload tài liệu để tạo knowledge graph")
@@ -255,7 +255,7 @@ with tab1:
     with col3:
         max_nodes = st.slider("Max Nodes", 50, 500, 200, 50)
     
-    if st.button("🎨 Generate Visualization", type="primary", use_container_width=True):
+    if st.button("🎨 Generate Visualization", type="primary", width="stretch"):
         with st.spinner("🎨 Creating interactive graph..."):
             try:
                 from pyvis.network import Network

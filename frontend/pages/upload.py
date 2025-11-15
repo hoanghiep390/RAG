@@ -1,8 +1,9 @@
 """
-✅ FIXED: Upload Page - All deprecation warnings resolved
-- Fixed use_container_width -> width
+✅ FIXED: Upload Page - All issues resolved
+- Fixed width parameter (was use_container_width)
 - Fixed async event loop
 - Fixed embedding kwargs
+- Fixed mongo delete cascade
 """
 
 import streamlit as st
@@ -25,7 +26,7 @@ if not st.session_state.get('authenticated', False):
 
 if st.session_state.get('role') != 'admin':
     st.error("⛔ Chỉ **Admin** được phép truy cập trang này.")
-    if st.button("🏠 Quay lại Login", use_container_width=True): 
+    if st.button("🏠 Quay lại Login", width="stretch"): 
         st.switch_page("login.py")
     st.stop()
 
@@ -104,7 +105,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
-    if st.button("🕸️ Knowledge Graph", use_container_width=True):
+    if st.button("🕸️ Knowledge Graph", width="stretch"):
         st.switch_page("pages/graph.py")
     
     st.markdown("---")
@@ -121,7 +122,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    if st.button("🚪 Logout", use_container_width=True, type="secondary"):
+    if st.button("🚪 Logout", width="stretch", type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
@@ -244,7 +245,7 @@ with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
 # Process button
 st.markdown("---")
 if uploaded_files:
-    if st.button("🚀 Bắt đầu xử lý", type="primary", use_container_width=True):
+    if st.button("🚀 Bắt đầu xử lý", type="primary", width="stretch"):
         MAX_FILE_SIZE = Config.MAX_FILE_SIZE_MB * 1024 * 1024
         
         # Validate
@@ -396,11 +397,11 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("🕸️ Xem Graph", type="primary", use_container_width=True):
+    if st.button("🕸️ Xem Graph", type="primary", width="stretch"):
         st.switch_page("pages/graph.py")
 
 with col2:
-    if st.button("📊 Statistics", use_container_width=True):
+    if st.button("📊 Statistics", width="stretch"):
         mongo_stats = mongo_storage.get_user_statistics()
         vector_stats = vector_db.get_statistics()
         
@@ -424,7 +425,7 @@ with col2:
         """, unsafe_allow_html=True)
 
 with col3:
-    if st.button("🔍 Test Search", use_container_width=True):
+    if st.button("🔍 Test Search", width="stretch"):
         if vector_db.get_statistics()['active_vectors'] > 0:
             query = st.text_input("Enter search query:", key="test_search")
             if query:
@@ -474,7 +475,7 @@ try:
             )
         
         with col2:
-            if st.button("🗑️ Xóa hoàn toàn", type="secondary", use_container_width=True):
+            if st.button("🗑️ Xóa hoàn toàn", type="secondary", width="stretch"):
                 with st.spinner("Deleting from all storages..."):
                     try:
                         # Delete from MongoDB (cascade)
@@ -482,6 +483,11 @@ try:
                         
                         # Delete from FAISS
                         faiss_stats = vector_db.delete_document(doc_to_delete)
+                        
+                        # Display results
+                        error_msg = ""
+                        if mongo_stats.get('errors'):
+                            error_msg = f"<br><strong>⚠️ Warnings:</strong><br>{'<br>'.join(f'• {e}' for e in mongo_stats['errors'])}"
                         
                         st.markdown(f"""
                         <div class="success-card">
@@ -495,6 +501,7 @@ try:
                             <br><strong>FAISS:</strong><br>
                             • Marked deleted: {faiss_stats['marked']}<br>
                             • Total deleted: {faiss_stats['total_deleted']} / {faiss_stats['total_vectors']}
+                            {error_msg}
                         </div>
                         """, unsafe_allow_html=True)
                         
@@ -522,7 +529,7 @@ try:
         # FAISS rebuild option
         if vector_db.get_statistics()['needs_rebuild']:
             st.markdown("---")
-            if st.button("🔨 Rebuild FAISS Index", use_container_width=True):
+            if st.button("🔨 Rebuild FAISS Index", width="stretch"):
                 with st.spinner("Rebuilding FAISS index..."):
                     rebuild_stats = vector_db.rebuild_index()
                     st.markdown(f"""
@@ -549,7 +556,7 @@ except Exception as e:
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center; color:#6b7280;'>"
-    "📤 Upload <strong>FIXED ALL ISSUES</strong> – MongoDB + FAISS – Đại học Thủy lợi"
+    "📤 Upload <strong>FULLY FIXED</strong> – MongoDB + FAISS – Đại học Thủy lợi"
     "</p>",
     unsafe_allow_html=True
 )

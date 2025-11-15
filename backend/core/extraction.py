@@ -1,5 +1,5 @@
 # ==========================================
-# backend/core/extraction.py
+# backend/core/extraction.py - FULL FIXED VERSION
 # ==========================================
 import asyncio
 import re
@@ -13,22 +13,76 @@ TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
 
 def create_prompt(text: str) -> str:
-    """Tạo prompt cho LLM"""
+    """Tạo prompt cho LLM với hướng dẫn rõ ràng về format"""
     return f"""Extract entities and relationships from this text.
 
-Format:
-("entity"{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
-("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength>){RECORD_DELIMITER}
+IMPORTANT: Follow this EXACT format:
 
-Types: PERSON, ORGANIZATION, LOCATION, EVENT, PRODUCT, CONCEPT, TECHNOLOGY
+For entities:
+("entity"{TUPLE_DELIMITER}<entity_name>{TUPLE_DELIMITER}<entity_type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
 
-Text:
+For relationships:
+("relationship"{TUPLE_DELIMITER}<source_entity>{TUPLE_DELIMITER}<target_entity>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength_0_to_1>){RECORD_DELIMITER}
+
+RULES:
+1. Entity types MUST be one of: PERSON, ORGANIZATION, LOCATION, EVENT, PRODUCT, CONCEPT, TECHNOLOGY
+2. Strength MUST be a number between 0 and 1 (e.g., 0.8, 0.5, 1.0)
+3. DO NOT use words like "strong", "weak", "HIGH" for strength - only numbers!
+4. Use {TUPLE_DELIMITER} to separate fields
+5. End each record with {RECORD_DELIMITER}
+
+Example:
+("entity"{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}TECHNOLOGY{TUPLE_DELIMITER}Advanced language model){RECORD_DELIMITER}
+("relationship"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}developed by{TUPLE_DELIMITER}AI, development{TUPLE_DELIMITER}0.9){RECORD_DELIMITER}
+
+Text to extract from:
 {text}
 
 Output:"""
 
+def safe_float_convert(value: str, default: float = 1.0) -> float:
+    """✅ NEW: Safely convert string to float with fallback
+    
+    Handles cases where LLM returns words instead of numbers:
+    - "strong" / "HIGH" -> 0.9
+    - "medium" / "MEDIUM" -> 0.7
+    - "weak" / "LOW" -> 0.5
+    - Invalid -> default (1.0)
+    """
+    value = str(value).strip().strip('"\'').lower()
+    
+    # Try direct conversion first
+    try:
+        return float(value)
+    except ValueError:
+        pass
+    
+    # Map common words to scores
+    strength_map = {
+        'very strong': 0.95,
+        'strong': 0.9,
+        'high': 0.9,
+        'medium high': 0.8,
+        'medium': 0.7,
+        'moderate': 0.7,
+        'medium low': 0.6,
+        'low': 0.5,
+        'weak': 0.5,
+        'very weak': 0.3
+    }
+    
+    # Check if value matches any keyword
+    for keyword, score in strength_map.items():
+        if keyword in value:
+            logger.debug(f"Mapped strength '{value}' to {score}")
+            return score
+    
+    # Default fallback
+    logger.warning(f"Could not parse strength '{value}', using default {default}")
+    return default
+
 def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
-    """Parse LLM output"""
+    """✅ FIXED: Parse LLM output with robust float conversion"""
     entities = defaultdict(list)
     relationships = defaultdict(list)
     
@@ -58,12 +112,16 @@ def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             src = parts[1].strip().strip('"\'')
             tgt = parts[2].strip().strip('"\'')
             if src and tgt and src != tgt:
+                # ✅ FIX: Use safe_float_convert for strength
+                strength_str = parts[5].strip().strip('"\'') if len(parts) > 5 else '1.0'
+                strength = safe_float_convert(strength_str, default=1.0)
+                
                 relationships[(src, tgt)].append({
                     'source_id': src,
                     'target_id': tgt,
                     'description': parts[3].strip().strip('"\''),
                     'keywords': parts[4].strip().strip('"\''),
-                    'weight': float(parts[5].strip().strip('"\'')) if len(parts) > 5 else 1.0,
+                    'weight': strength,  # ✅ Now guaranteed to be float
                     'chunk_id': chunk_id
                 })
     
@@ -102,6 +160,10 @@ async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 1
 
 def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -> Tuple[Dict, Dict]:
     """✅ FIXED: Sync wrapper with proper event loop handling"""
+    if not chunks:
+        logger.warning("⚠️ No chunks provided for extraction")
+        return {}, {}
+    
     llm_func = global_config.get('llm_model_func') if global_config else None
     if not llm_func:
         from backend.utils.llm_utils import call_llm_async
@@ -118,8 +180,17 @@ def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
+        logger.info(f"🔍 Extracting entities from {len(chunks)} chunks...")
+        
         # Run async extraction
         result = loop.run_until_complete(extract_entities(chunks, llm_func, 16))
+        
+        entities, relationships = result
+        logger.info(
+            f"✅ Extracted {sum(len(v) for v in entities.values())} entities, "
+            f"{sum(len(v) for v in relationships.values())} relationships"
+        )
+        
         return result
     
     except Exception as e:

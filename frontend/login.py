@@ -1,4 +1,4 @@
-# login.py 
+# login.py - FULL FIXED VERSION
 import streamlit as st
 import hashlib
 import json
@@ -55,7 +55,7 @@ create_default_admin()
 
 st.set_page_config(
     page_title="LightRAG | Login",
-    page_icon="lock",
+    page_icon="🔒",
     layout="centered"
 )
 
@@ -166,7 +166,7 @@ with st.container():
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
 
     if st.session_state.login_mode == "login":
-        st.markdown("<h1 class='login-title'>lock Đăng Nhập</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 class='login-title'>🔒 Đăng Nhập</h1>", unsafe_allow_html=True)
         st.markdown("<p class='login-subtitle'>Chào mừng trở lại! Vui lòng nhập thông tin.</p>", unsafe_allow_html=True)
 
         with st.form("login_form"):
@@ -175,15 +175,15 @@ with st.container():
 
             col1, col2 = st.columns([1, 1])
             with col1:
-                login_btn = st.form_submit_button("Đăng Nhập", use_container_width=True)
+                login_btn = st.form_submit_button("Đăng Nhập", width="stretch")
             with col2:
-                if st.form_submit_button("Đăng Ký", use_container_width=True):
+                if st.form_submit_button("Đăng Ký", width="stretch"):
                     st.session_state.login_mode = "signup"
                     st.rerun()
 
             if login_btn:
                 if not username or not password:
-                    st.markdown("<div class='error-msg'>Vui lòng nhập đầy đủ thông tin.</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='error-msg'>❌ Vui lòng nhập đầy đủ thông tin.</div>", unsafe_allow_html=True)
                 else:
                     users = load_users()
                     user_key = username.lower()
@@ -197,13 +197,13 @@ with st.container():
                         ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
                         ensure_dir(Path(f"backend/data/{st.session_state.user_id}/graphs"))
 
-                        st.success(f"Đăng nhập thành công! Chào {st.session_state.role.title()}.")
+                        st.success(f"✅ Đăng nhập thành công! Chào {st.session_state.role.title()}.")
                         st.rerun()
                     else:
-                        st.markdown("<div class='error-msg'>Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
+                        st.markdown("<div class='error-msg'>❌ Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
 
     else:  
-        st.markdown("<h1 class='login-title'>note Đăng Ký</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 class='login-title'>📝 Đăng Ký</h1>", unsafe_allow_html=True)
         st.markdown("<p class='login-subtitle'>Tạo tài khoản mới để bắt đầu.</p>", unsafe_allow_html=True)
 
         with st.form("signup_form"):
@@ -213,24 +213,24 @@ with st.container():
 
             col1, col2 = st.columns([1, 1])
             with col1:
-                signup_btn = st.form_submit_button("Tạo Tài Khoản", use_container_width=True)
+                signup_btn = st.form_submit_button("Tạo Tài Khoản", width="stretch")
             with col2:
-                if st.form_submit_button("Quay Lại", use_container_width=True):
+                if st.form_submit_button("Quay Lại", width="stretch"):
                     st.session_state.login_mode = "login"
                     st.rerun()
 
             if signup_btn:
                 error = None
                 if not validate_username(new_username):
-                    error = "Tên người dùng phải từ 3-20 ký tự, chỉ chứa chữ cái và số."
+                    error = "❌ Tên người dùng phải từ 3-20 ký tự, chỉ chứa chữ cái và số."
                 elif not validate_password(new_password):
-                    error = "Mật khẩu phải có ít nhất 6 ký tự."
+                    error = "❌ Mật khẩu phải có ít nhất 6 ký tự."
                 elif new_password != confirm_password:
-                    error = "Mật khẩu xác nhận không khớp."
+                    error = "❌ Mật khẩu xác nhận không khớp."
                 else:
                     users = load_users()
                     if new_username.lower() in users:
-                        error = "Tên người dùng đã tồn tại."
+                        error = "❌ Tên người dùng đã tồn tại."
 
                 if error:
                     st.markdown(f"<div class='error-msg'>{error}</div>", unsafe_allow_html=True)
@@ -250,13 +250,13 @@ with st.container():
                     ensure_dir(Path(f"backend/data/{user_id}/chunks"))
                     ensure_dir(Path(f"backend/data/{user_id}/graphs"))
 
-                    st.markdown("<div class='success-msg'>Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='success-msg'>✅ Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
                     st.session_state.login_mode = "login"
                     st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-with st.expander("Thông tin tài khoản mẫu", expanded=False):
+with st.expander("ℹ️ Thông tin tài khoản mẫu", expanded=False):
     st.markdown("""
     <div class='info-msg'>
         <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
@@ -266,6 +266,6 @@ with st.expander("Thông tin tài khoản mẫu", expanded=False):
 
 st.markdown("""
 <div style='text-align: center; margin-top: 3rem; color: #6b7280; font-size: 0.8rem;'>
-    <p>mini-lightrag - Đại học Thủy lợi</p>
+    <p>🚀 mini-lightrag v2.0 - Đại học Thủy lợi</p>
 </div>
 """, unsafe_allow_html=True)
