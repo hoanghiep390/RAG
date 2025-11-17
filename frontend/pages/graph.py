@@ -13,7 +13,7 @@ from collections import Counter
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.db.mongo_storage import MongoStorage
 
-# ================= AUTH =================
+#  AUTH 
 if not st.session_state.get('authenticated', False):
     st.switch_page("login.py")
 if st.session_state.get('role') != 'admin':
@@ -25,7 +25,7 @@ user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'Admin')
 st.set_page_config(page_title="LightRAG | Graph", page_icon="🕸️", layout="wide")
 
-# ================= CSS =================
+# CSS 
 st.markdown("""
 <style>
     .main { background-color: #0e1117; }
@@ -84,14 +84,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================= HEADER =================
+# HEADER 
 st.markdown(f"""
 <div class="header-container">
     <div class="header-title">🕸️ Combined Knowledge Graph <span class="admin-badge">MONGODB</span></div>
 </div>
 """, unsafe_allow_html=True)
 
-# ================= SIDEBAR =================
+# SIDEBAR 
 with st.sidebar:
     st.markdown("## 👤 Admin")
     st.markdown(f"**{username}**<br>`{user_id}`", unsafe_allow_html=True)
@@ -114,7 +114,7 @@ with st.sidebar:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
 
-# ================= LOAD GRAPH FROM MONGODB =================
+# LOAD GRAPH FROM MONGODB 
 @st.cache_data
 def load_graph_from_mongodb(user_id: str):
     """✅ NEW: Load graph from MongoDB"""
@@ -174,7 +174,7 @@ if G is None or G.number_of_nodes() == 0:
         st.info("💡 Upload tài liệu để tạo knowledge graph")
     st.stop()
 
-# ================= STATISTICS =================
+#  STATISTICS 
 stats = {
     'num_entities': G.number_of_nodes(),
     'num_relationships': G.number_of_edges(),
@@ -220,7 +220,7 @@ with col4:
 
 st.markdown("---")
 
-# ================= ENTITY COLORS =================
+#  ENTITY COLORS 
 ENTITY_COLORS = {
     'PERSON': '#FF6B6B',
     'ORGANIZATION': '#4ECDC4',
@@ -232,7 +232,7 @@ ENTITY_COLORS = {
     'UNKNOWN': '#95A5A6'
 }
 
-# ================= TABS =================
+# TABS 
 tab1, tab2, tab3, tab4 = st.tabs([
     "🌐 Visualization", 
     "🔍 Search", 
@@ -240,7 +240,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🔗 Relationships"
 ])
 
-# ================= TAB 1: VISUALIZATION =================
+# TAB 1: VISUALIZATION 
 with tab1:
     st.markdown("### Interactive Graph Visualization")
     
@@ -337,7 +337,7 @@ with tab1:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-# ================= TAB 2: SEARCH =================
+#  TAB 2: SEARCH 
 with tab2:
     st.markdown("### 🔍 Search Entities")
     
@@ -385,7 +385,7 @@ with tab2:
                 )
                 st.markdown(r['desc'][:300])
 
-# ================= TAB 3: ENTITIES =================
+#  TAB 3: ENTITIES 
 with tab3:
     st.markdown("### 🏷️ Entity Browser")
     
@@ -427,7 +427,7 @@ with tab3:
             )
             st.write(e['desc'][:300] if e['desc'] else "_No description_")
 
-# ================= TAB 4: RELATIONSHIPS =================
+#  TAB 4: RELATIONSHIPS
 with tab4:
     st.markdown("### 🔗 Relationship Browser")
     
@@ -475,7 +475,7 @@ with tab4:
                 )
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ================= FOOTER =================
+# FOOTER
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center; color:#6b7280;'>"

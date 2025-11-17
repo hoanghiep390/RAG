@@ -1,3 +1,4 @@
+# frontend/pages/upload.py
 """
 ✅ FIXED: Upload Page - All issues resolved
 - Fixed width parameter (was use_container_width)

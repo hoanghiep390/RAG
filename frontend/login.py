@@ -1,4 +1,4 @@
-# login.py - FULL FIXED VERSION
+# login.py 
 import streamlit as st
 import hashlib
 import json

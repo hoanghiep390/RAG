@@ -159,12 +159,12 @@ class Chunker:
 
         return chunks
 
-# ================= File extraction (FIXED) =================
+# File extraction
 def extract_text_from_file(filepath: str) -> str:
     """Extract text from various file formats"""
     ext = Path(filepath).suffix.lower()
 
-    # ========== PDF ==========
+    #  PDF
     if ext == '.pdf':
         try:
             import pdfplumber
@@ -179,7 +179,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ PDF extraction error: {e}")
             return ""
 
-    # ========== DOCX ==========
+    # DOCX 
     elif ext in ['.docx', '.doc']:
         try:
             import docx2txt
@@ -189,7 +189,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ DOCX extraction error: {e}")
             return ""
 
-    # ========== Markdown ==========
+    # Markdown 
     elif ext in ['.md', '.markdown']:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
@@ -198,7 +198,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ Markdown extraction error: {e}")
             return ""
 
-    # ========== HTML ==========
+    # HTML 
     elif ext in ['.html', '.htm']:
         try:
             from bs4 import BeautifulSoup
@@ -212,7 +212,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ HTML extraction error: {e}")
             return ""
 
-    # ========== JSON ==========
+    #JSON
     elif ext == '.json':
         try:
             import json
@@ -223,7 +223,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ JSON extraction error: {e}")
             return ""
 
-    # ========== XML ==========
+    #  XML
     elif ext == '.xml':
         try:
             from bs4 import BeautifulSoup
@@ -234,7 +234,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ XML extraction error: {e}")
             return ""
 
-    # ========== Text & Code Files ==========
+    # Text & Code Files 
     elif ext in ['.txt', '.py', '.js', '.java', '.cpp', '.c', '.h', '.hpp', 
                  '.css', '.scss', '.sql', '.sh', '.bash', '.yml', '.yaml',
                  '.toml', '.ini', '.cfg', '.conf', '.log', '.r', '.rb', 
@@ -243,7 +243,6 @@ def extract_text_from_file(filepath: str) -> str:
             with open(filepath, 'r', encoding='utf-8') as f:
                 return f.read()
         except UnicodeDecodeError:
-            # Try with different encoding
             try:
                 with open(filepath, 'r', encoding='latin-1') as f:
                     return f.read()
@@ -254,7 +253,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ Text file extraction error: {e}")
             return ""
 
-    # ========== Excel ==========
+    #  Excel
     elif ext in ['.xlsx', '.xls']:
         try:
             import pandas as pd
@@ -275,7 +274,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ Excel extraction error: {e}")
             return ""
 
-    # ========== CSV ==========
+    #  CSV 
     elif ext == '.csv':
         try:
             import pandas as pd
@@ -291,7 +290,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ CSV extraction error: {e}")
             return ""
 
-    # ========== PPTX ==========
+    # PPTX
     elif ext in ['.pptx', '.ppt']:
         try:
             from pptx import Presentation
@@ -309,12 +308,12 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ PPTX extraction error: {e}")
             return ""
 
-    # ========== Unsupported ==========
+    #  Unsupported 
     else:
         print(f"⚠️ Unsupported file type: {ext}")
         return ""
 
-# ================= Main entry =================
+# Main entry 
 def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> List[Dict]:
     """Main entry point for document processing"""
     config = config or ChunkConfig()
