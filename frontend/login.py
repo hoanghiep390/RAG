@@ -11,23 +11,29 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from backend.utils.file_utils import ensure_dir
 
-USER_DATA_FILE = Path("backend/data/users.json")
-ensure_dir(USER_DATA_FILE.parent)
-
-if not USER_DATA_FILE.exists():
-    with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump({}, f, indent=2)
-
-def load_users():
-    try:
-        with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_users(users):
-    with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(users, f, indent=2, ensure_ascii=False)
+# ✅ NEW: Import MongoDB user manager
+try:
+    from backend.db.user_manager import load_users, save_users
+    USE_MONGODB = True
+except:
+    USE_MONGODB = False
+    # Fallback to JSON if MongoDB not available
+    USER_DATA_FILE = Path("backend/data/users.json")
+    ensure_dir(USER_DATA_FILE.parent)
+    if not USER_DATA_FILE.exists():
+        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump({}, f, indent=2)
+    
+    def load_users():
+        try:
+            with open(USER_DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except:
+            return {}
+    
+    def save_users(users):
+        with open(USER_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(users, f, indent=2, ensure_ascii=False)
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
@@ -49,7 +55,10 @@ def create_default_admin():
             "created_at": datetime.now().isoformat()
         }
         save_users(users)
-        st.success("Tài khoản admin đã được tạo: `admin` / `admin123`")
+        if USE_MONGODB:
+            st.success("✅ Tài khoản admin đã được tạo trong MongoDB: `admin` / `admin123`")
+        else:
+            st.success("Tài khoản admin đã được tạo: `admin` / `admin123`")
 
 create_default_admin()
 
@@ -175,11 +184,13 @@ with st.container():
 
             col1, col2 = st.columns([1, 1])
             with col1:
-                login_btn = st.form_submit_button("Đăng Nhập", width="stretch")
+                login_btn = st.form_submit_button("Đăng Nhập", type="primary")
             with col2:
-                if st.form_submit_button("Đăng Ký", width="stretch"):
-                    st.session_state.login_mode = "signup"
-                    st.rerun()
+                signup_nav = st.form_submit_button("Đăng Ký")
+
+            if signup_nav:
+                st.session_state.login_mode = "signup"
+                st.rerun()
 
             if login_btn:
                 if not username or not password:
@@ -213,11 +224,13 @@ with st.container():
 
             col1, col2 = st.columns([1, 1])
             with col1:
-                signup_btn = st.form_submit_button("Tạo Tài Khoản", width="stretch")
+                signup_btn = st.form_submit_button("Tạo Tài Khoản", type="primary")
             with col2:
-                if st.form_submit_button("Quay Lại", width="stretch"):
-                    st.session_state.login_mode = "login"
-                    st.rerun()
+                back_nav = st.form_submit_button("Quay Lại")
+
+            if back_nav:
+                st.session_state.login_mode = "login"
+                st.rerun()
 
             if signup_btn:
                 error = None
@@ -250,19 +263,31 @@ with st.container():
                     ensure_dir(Path(f"backend/data/{user_id}/chunks"))
                     ensure_dir(Path(f"backend/data/{user_id}/graphs"))
 
-                    st.markdown("<div class='success-msg'>✅ Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
+                    if USE_MONGODB:
+                        st.markdown("<div class='success-msg'>✅ Đăng ký thành công vào MongoDB! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
+                    else:
+                        st.markdown("<div class='success-msg'>✅ Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
                     st.session_state.login_mode = "login"
                     st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 with st.expander("ℹ️ Thông tin tài khoản mẫu", expanded=False):
-    st.markdown("""
-    <div class='info-msg'>
-        <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
-        <strong>User:</strong> Tạo mới → Chỉ Chat
-    </div>
-    """, unsafe_allow_html=True)
+    if USE_MONGODB:
+        st.markdown("""
+        <div class='info-msg'>
+            <strong>🗄️ MongoDB Active</strong><br>
+            <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
+            <strong>User:</strong> Tạo mới → Chỉ Chat
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div class='info-msg'>
+            <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
+            <strong>User:</strong> Tạo mới → Chỉ Chat
+        </div>
+        """, unsafe_allow_html=True)
 
 st.markdown("""
 <div style='text-align: center; margin-top: 3rem; color: #6b7280; font-size: 0.8rem;'>

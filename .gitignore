@@ -92,10 +92,9 @@ node_modules/
 .cursor/rules/kluster-code-verify.mdc
 .kluster
 
-# Test files
-test_env.py
-test_document.txt
-temp_graph.html
+.env
+.env.local
+
 
 # User data
 backend/data/users.json

@@ -1,5 +1,7 @@
 # frontend/pages/graph.py
-
+"""
+✅ CLEANED: Graph page - No UI warnings
+"""
 import streamlit as st
 import networkx as nx
 from pathlib import Path
@@ -13,12 +15,13 @@ from collections import Counter
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from backend.db.mongo_storage import MongoStorage
 
-#  AUTH 
+# AUTH 
 if not st.session_state.get('authenticated', False):
     st.switch_page("login.py")
 if st.session_state.get('role') != 'admin':
     st.error("Chỉ Admin được xem.")
-    if st.button("Upload"): st.switch_page("pages/upload.py")
+    if st.button("Upload"): 
+        st.switch_page("pages/upload.py")
     st.stop()
 
 user_id = st.session_state.get('user_id', 'admin_00000000')
@@ -97,19 +100,19 @@ with st.sidebar:
     st.markdown(f"**{username}**<br>`{user_id}`", unsafe_allow_html=True)
     st.markdown("---")
     
-    if st.button("📤 Upload", width="stretch"): 
+    if st.button("📤 Upload"):
         st.switch_page("pages/upload.py")
     
     st.markdown("---")
     
     st.markdown("### ⚡ Quick Actions")
-    if st.button("🔄 Refresh Graph", width="stretch"):
+    if st.button("🔄 Refresh Graph"):
         st.cache_data.clear()
         st.rerun()
     
     st.markdown("---")
     
-    if st.button("🚪 Logout", width="stretch", type="secondary"):
+    if st.button("🚪 Logout", type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']: 
             st.session_state.pop(k, None)
         st.switch_page("login.py")
@@ -117,7 +120,7 @@ with st.sidebar:
 # LOAD GRAPH FROM MONGODB 
 @st.cache_data
 def load_graph_from_mongodb(user_id: str):
-    """✅ NEW: Load graph from MongoDB"""
+    """✅ Load graph from MongoDB"""
     try:
         storage = MongoStorage(user_id)
         graph_data = storage.get_graph()
@@ -168,13 +171,13 @@ if G is None or G.number_of_nodes() == 0:
     st.warning("⚠️ Không tìm thấy knowledge graph.")
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("📤 Upload Tài liệu", width="stretch"):
+        if st.button("📤 Upload Tài liệu"):
             st.switch_page("pages/upload.py")
     with col2:
         st.info("💡 Upload tài liệu để tạo knowledge graph")
     st.stop()
 
-#  STATISTICS 
+# STATISTICS 
 stats = {
     'num_entities': G.number_of_nodes(),
     'num_relationships': G.number_of_edges(),
@@ -220,7 +223,7 @@ with col4:
 
 st.markdown("---")
 
-#  ENTITY COLORS 
+# ENTITY COLORS 
 ENTITY_COLORS = {
     'PERSON': '#FF6B6B',
     'ORGANIZATION': '#4ECDC4',
@@ -255,7 +258,7 @@ with tab1:
     with col3:
         max_nodes = st.slider("Max Nodes", 50, 500, 200, 50)
     
-    if st.button("🎨 Generate Visualization", type="primary", width="stretch"):
+    if st.button("🎨 Generate Visualization", type="primary"):
         with st.spinner("🎨 Creating interactive graph..."):
             try:
                 from pyvis.network import Network
@@ -337,7 +340,7 @@ with tab1:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-#  TAB 2: SEARCH 
+# TAB 2: SEARCH 
 with tab2:
     st.markdown("### 🔍 Search Entities")
     
@@ -385,7 +388,7 @@ with tab2:
                 )
                 st.markdown(r['desc'][:300])
 
-#  TAB 3: ENTITIES 
+# TAB 3: ENTITIES 
 with tab3:
     st.markdown("### 🏷️ Entity Browser")
     
@@ -427,7 +430,7 @@ with tab3:
             )
             st.write(e['desc'][:300] if e['desc'] else "_No description_")
 
-#  TAB 4: RELATIONSHIPS
+# TAB 4: RELATIONSHIPS
 with tab4:
     st.markdown("### 🔗 Relationship Browser")
     

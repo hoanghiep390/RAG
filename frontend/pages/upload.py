@@ -1,11 +1,5 @@
 # frontend/pages/upload.py
-"""
-✅ FIXED: Upload Page - All issues resolved
-- Fixed width parameter (was use_container_width)
-- Fixed async event loop
-- Fixed embedding kwargs
-- Fixed mongo delete cascade
-"""
+
 
 import streamlit as st
 import pandas as pd
@@ -27,7 +21,7 @@ if not st.session_state.get('authenticated', False):
 
 if st.session_state.get('role') != 'admin':
     st.error("⛔ Chỉ **Admin** được phép truy cập trang này.")
-    if st.button("🏠 Quay lại Login", width="stretch"): 
+    if st.button("🏠 Quay lại Login"): 
         st.switch_page("login.py")
     st.stop()
 
@@ -106,7 +100,7 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
-    if st.button("🕸️ Knowledge Graph", width="stretch"):
+    if st.button("🕸️ Knowledge Graph"):
         st.switch_page("pages/graph.py")
     
     st.markdown("---")
@@ -123,7 +117,7 @@ with st.sidebar:
     
     st.markdown("---")
     
-    if st.button("🚪 Logout", width="stretch", type="secondary"):
+    if st.button("🚪 Logout", type="secondary"):
         for k in ['authenticated', 'user_id', 'username', 'role']:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
@@ -246,7 +240,7 @@ with st.expander("🔧 Tùy chọn nâng cao", expanded=False):
 # Process button
 st.markdown("---")
 if uploaded_files:
-    if st.button("🚀 Bắt đầu xử lý", type="primary", width="stretch"):
+    if st.button("🚀 Bắt đầu xử lý", type="primary"):
         MAX_FILE_SIZE = Config.MAX_FILE_SIZE_MB * 1024 * 1024
         
         # Validate
@@ -398,11 +392,11 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("🕸️ Xem Graph", type="primary", width="stretch"):
+    if st.button("🕸️ Xem Graph", type="primary"):
         st.switch_page("pages/graph.py")
 
 with col2:
-    if st.button("📊 Statistics", width="stretch"):
+    if st.button("📊 Statistics"):
         mongo_stats = mongo_storage.get_user_statistics()
         vector_stats = vector_db.get_statistics()
         
@@ -426,7 +420,7 @@ with col2:
         """, unsafe_allow_html=True)
 
 with col3:
-    if st.button("🔍 Test Search", width="stretch"):
+    if st.button("🔍 Test Search"):
         if vector_db.get_statistics()['active_vectors'] > 0:
             query = st.text_input("Enter search query:", key="test_search")
             if query:
@@ -460,7 +454,7 @@ try:
             })
         
         df = pd.DataFrame(df_data)
-        st.dataframe(df, use_container_width=True, height=400)
+        st.dataframe(df, height=400)
         
         # Delete section
         st.markdown("---")
@@ -476,7 +470,7 @@ try:
             )
         
         with col2:
-            if st.button("🗑️ Xóa hoàn toàn", type="secondary", width="stretch"):
+            if st.button("🗑️ Xóa hoàn toàn", type="secondary"):
                 with st.spinner("Deleting from all storages..."):
                     try:
                         # Delete from MongoDB (cascade)
@@ -530,7 +524,7 @@ try:
         # FAISS rebuild option
         if vector_db.get_statistics()['needs_rebuild']:
             st.markdown("---")
-            if st.button("🔨 Rebuild FAISS Index", width="stretch"):
+            if st.button("🔨 Rebuild FAISS Index"):
                 with st.spinner("Rebuilding FAISS index..."):
                     rebuild_stats = vector_db.rebuild_index()
                     st.markdown(f"""
