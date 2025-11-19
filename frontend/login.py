@@ -11,13 +11,13 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from backend.utils.file_utils import ensure_dir
 
-# ✅ NEW: Import MongoDB user manager
+
 try:
     from backend.db.user_manager import load_users, save_users
     USE_MONGODB = True
 except:
     USE_MONGODB = False
-    # Fallback to JSON if MongoDB not available
+    
     USER_DATA_FILE = Path("backend/data/users.json")
     ensure_dir(USER_DATA_FILE.parent)
     if not USER_DATA_FILE.exists():

@@ -1,6 +1,5 @@
-# ==========================================
-# backend/core/extraction.py - FULL FIXED VERSION
-# ==========================================
+# backend/core/extraction.py 
+
 import asyncio
 import re
 from typing import Dict, List, Tuple
@@ -41,7 +40,7 @@ Text to extract from:
 Output:"""
 
 def safe_float_convert(value: str, default: float = 1.0) -> float:
-    """✅ NEW: Safely convert string to float with fallback
+    """ Safely convert string to float with fallback
     
     Handles cases where LLM returns words instead of numbers:
     - "strong" / "HIGH" -> 0.9
@@ -51,13 +50,13 @@ def safe_float_convert(value: str, default: float = 1.0) -> float:
     """
     value = str(value).strip().strip('"\'').lower()
     
-    # Try direct conversion first
+    
     try:
         return float(value)
     except ValueError:
         pass
     
-    # Map common words to scores
+    
     strength_map = {
         'very strong': 0.95,
         'strong': 0.9,
@@ -71,18 +70,18 @@ def safe_float_convert(value: str, default: float = 1.0) -> float:
         'very weak': 0.3
     }
     
-    # Check if value matches any keyword
+    
     for keyword, score in strength_map.items():
         if keyword in value:
             logger.debug(f"Mapped strength '{value}' to {score}")
             return score
     
-    # Default fallback
+    
     logger.warning(f"Could not parse strength '{value}', using default {default}")
     return default
 
 def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
-    """✅ FIXED: Parse LLM output with robust float conversion"""
+    """ Parse LLM output with robust float conversion"""
     entities = defaultdict(list)
     relationships = defaultdict(list)
     
@@ -112,7 +111,7 @@ def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             src = parts[1].strip().strip('"\'')
             tgt = parts[2].strip().strip('"\'')
             if src and tgt and src != tgt:
-                # ✅ FIX: Use safe_float_convert for strength
+                
                 strength_str = parts[5].strip().strip('"\'') if len(parts) > 5 else '1.0'
                 strength = safe_float_convert(strength_str, default=1.0)
                 
@@ -121,7 +120,7 @@ def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
                     'target_id': tgt,
                     'description': parts[3].strip().strip('"\''),
                     'keywords': parts[4].strip().strip('"\''),
-                    'weight': strength,  # ✅ Now guaranteed to be float
+                    'weight': strength,  
                     'chunk_id': chunk_id
                 })
     

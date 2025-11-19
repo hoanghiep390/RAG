@@ -1,6 +1,6 @@
-# ==========================================
+
 # backend/core/chunking.py 
-# ==========================================
+
 from dataclasses import dataclass
 from typing import List, Dict, Any
 from pathlib import Path
@@ -40,7 +40,7 @@ def _soft_split(text: str, enc, max_size: int, overlap: int, lookback_ratio: flo
         window_ids = ids[start:end]
         window_text = enc.decode(window_ids)
 
-        # tìm ngắt đẹp trong lookback
+        
         if end < n:
             lb_chars = max(10, int(len(window_text)*(1-lookback_ratio)))
             tail = window_text[lb_chars:]
@@ -234,7 +234,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ XML extraction error: {e}")
             return ""
 
-    # Text & Code Files 
+    # Text & Code
     elif ext in ['.txt', '.py', '.js', '.java', '.cpp', '.c', '.h', '.hpp', 
                  '.css', '.scss', '.sql', '.sh', '.bash', '.yml', '.yaml',
                  '.toml', '.ini', '.cfg', '.conf', '.log', '.r', '.rb', 
@@ -313,22 +313,22 @@ def extract_text_from_file(filepath: str) -> str:
         print(f"⚠️ Unsupported file type: {ext}")
         return ""
 
-# Main entry 
+# Main 
 def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> List[Dict]:
     """Main entry point for document processing"""
     config = config or ChunkConfig()
     
-    print(f"📄 Processing: {filepath}")
+    print(f" Processing: {filepath}")
     text = extract_text_from_file(filepath)
     
     if not text.strip():
         print(f"⚠️ Warning: No text extracted from {filepath}")
         return []
     
-    print(f"✅ Extracted {len(text)} characters")
+    print(f"Extracted {len(text)} characters")
     
     chunker = Chunker(config)
     chunks = chunker.chunk_text(text, filepath)
     
-    print(f"✅ Created {len(chunks)} chunks")
+    print(f"Created {len(chunks)} chunks")
     return chunks

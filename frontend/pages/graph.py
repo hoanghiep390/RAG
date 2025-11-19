@@ -1,7 +1,5 @@
 # frontend/pages/graph.py
-"""
-✅ CLEANED: Graph page - No UI warnings
-"""
+
 import streamlit as st
 import networkx as nx
 from pathlib import Path
@@ -235,7 +233,7 @@ ENTITY_COLORS = {
     'UNKNOWN': '#95A5A6'
 }
 
-# TABS 
+
 tab1, tab2, tab3, tab4 = st.tabs([
     "🌐 Visualization", 
     "🔍 Search", 
@@ -243,7 +241,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🔗 Relationships"
 ])
 
-# TAB 1: VISUALIZATION 
+
 with tab1:
     st.markdown("### Interactive Graph Visualization")
     
@@ -340,7 +338,7 @@ with tab1:
             except Exception as e:
                 st.error(f"❌ Error: {str(e)}")
 
-# TAB 2: SEARCH 
+
 with tab2:
     st.markdown("### 🔍 Search Entities")
     
@@ -388,7 +386,7 @@ with tab2:
                 )
                 st.markdown(r['desc'][:300])
 
-# TAB 3: ENTITIES 
+ 
 with tab3:
     st.markdown("### 🏷️ Entity Browser")
     
@@ -430,7 +428,7 @@ with tab3:
             )
             st.write(e['desc'][:300] if e['desc'] else "_No description_")
 
-# TAB 4: RELATIONSHIPS
+
 with tab4:
     st.markdown("### 🔗 Relationship Browser")
     

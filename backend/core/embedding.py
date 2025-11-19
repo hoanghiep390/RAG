@@ -1,12 +1,13 @@
 # backend/core/embedding.py
 """
-Embedding generation with Config integration - FIXED show_progress issue
+Embedding generation with Config integration 
 """
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict
 import numpy as np
 import torch
 import logging
+from backend.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,6 @@ def get_model():
         logger.info(f"Loading embedding model: {model_name} on {device}")
         _model = SentenceTransformer(model_name, device=device)
         
-        # Verify dimension
         test_emb = _model.encode(["test"])
         actual_dim = test_emb.shape[1]
         
@@ -39,15 +39,7 @@ def get_model():
     return _model
 
 def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict]:
-    """✅ FIXED: Generate embeddings without show_progress parameter
-    
-    Args:
-        chunks: List of chunk dictionaries with 'content' and 'chunk_id'
-        batch_size: Batch size for encoding (default from Config)
-    
-    Returns:
-        List of embedding dictionaries
-    """
+    """Generate embeddings for chunks"""
     if not chunks:
         logger.warning("⚠️ No chunks provided for embedding")
         return []
@@ -61,7 +53,6 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
         
         logger.info(f"Generating embeddings for {len(texts)} chunks (batch={batch_size})...")
         
-        # ✅ FIX: Remove show_progress_bar parameter if not supported
         try:
             embeddings = model.encode(
                 texts, 
@@ -70,8 +61,6 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
                 show_progress_bar=True
             )
         except TypeError:
-            # Model doesn't support show_progress_bar, encode without it
-            logger.debug("Model doesn't support show_progress_bar, encoding without it")
             embeddings = model.encode(
                 texts, 
                 batch_size=batch_size, 
@@ -100,15 +89,7 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
         return []
 
 def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> List[Dict]:
-    """✅ FIXED: Generate embeddings for entities without show_progress
-    
-    Args:
-        entities_dict: Dictionary of entity_name -> list of entity dicts
-        batch_size: Batch size for encoding (default from Config)
-    
-    Returns:
-        List of entity embedding dictionaries
-    """
+    """Generate embeddings for entities"""
     from backend.config import Config
     batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE
     
@@ -116,7 +97,6 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
     
     for chunk_id, entities in entities_dict.items():
         for entity in entities:
-            # Create rich text representation
             entity_text = (
                 f"{entity['entity_name']} "
                 f"({entity['entity_type']}): "
@@ -140,7 +120,6 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
         
         model = get_model()
         
-        # ✅ FIX: Try with show_progress_bar, fallback without it
         try:
             embeddings = model.encode(
                 texts, 
@@ -167,19 +146,83 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
         logger.error(f"❌ Failed to generate entity embeddings: {e}")
         return []
 
-def generate_text_embedding(text: str) -> np.ndarray:
-    """✅ FIXED: Generate embedding for a single text (for queries)
+
+def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int = None) -> List[Dict]:
+    """Generate embeddings for relationships (global retrieval)
     
     Args:
-        text: Input text
+        relationships_dict: Dict of (source, target) -> list of relationships
+        batch_size: Batch size for encoding
     
     Returns:
-        Numpy array of embedding
+        List of relationship embedding dicts with entity_type='RELATIONSHIP'
     """
+    from backend.config import Config
+    batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE
+    
+    texts, metadata = [], []
+    
+    for (source, target), rels in relationships_dict.items():
+        for rel in rels:
+            # Create rich text for relationship
+            rel_text = (
+                f"{source} -> {target}: "
+                f"{rel.get('description', '')} "
+                f"[{rel.get('keywords', '')}]"
+            )
+            texts.append(rel_text)
+            
+            metadata.append({
+                'id': f"rel_{source}_{target}_{rel.get('chunk_id', '')}",
+                'source_id': source,
+                'target_id': target,
+                'description': rel.get('description', ''),
+                'keywords': rel.get('keywords', ''),
+                'weight': rel.get('weight', 1.0),
+                'chunk_id': rel.get('chunk_id', ''),
+                'entity_type': 'RELATIONSHIP'  
+            })
+    
+    if not texts:
+        logger.warning("⚠️ No relationships to embed")
+        return []
+    
     try:
+        logger.info(f"🔗 Generating embeddings for {len(texts)} relationships (batch={batch_size})...")
+        
         model = get_model()
         
-        # ✅ FIX: Remove show_progress
+        try:
+            embeddings = model.encode(
+                texts, 
+                batch_size=batch_size, 
+                normalize_embeddings=True,
+                show_progress_bar=True
+            )
+        except TypeError:
+            embeddings = model.encode(
+                texts, 
+                batch_size=batch_size, 
+                normalize_embeddings=True
+            )
+        
+        result = [
+            {**meta, 'text': text, 'embedding': emb.tolist()}
+            for text, emb, meta in zip(texts, embeddings, metadata)
+        ]
+        
+        logger.info(f"✅ Generated {len(result)} relationship embeddings")
+        return result
+    
+    except Exception as e:
+        logger.error(f"❌ Failed to generate relationship embeddings: {e}")
+        return []
+
+# Remaining functions unchanged...
+def generate_text_embedding(text: str) -> np.ndarray:
+    """Generate embedding for a single text (for queries)"""
+    try:
+        model = get_model()
         embedding = model.encode([text], normalize_embeddings=True)[0]
         return embedding
     except Exception as e:
@@ -187,17 +230,8 @@ def generate_text_embedding(text: str) -> np.ndarray:
         return None
 
 def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
-    """✅ FIXED: Batch encode multiple texts
-    
-    Args:
-        texts: List of texts to encode
-        batch_size: Batch size (default from Config)
-    
-    Returns:
-        Numpy array of embeddings (N x D)
-    """
-    from backend.config import Config
-    batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE
+    """Batch encode multiple texts"""
+    batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE  
     
     if not texts:
         return np.array([])
@@ -205,37 +239,23 @@ def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
     try:
         model = get_model()
         
-        # ✅ FIX: Try with show_progress_bar, fallback without
-        try:
-            embeddings = model.encode(
-                texts,
-                batch_size=batch_size,
-                normalize_embeddings=True,
-                show_progress_bar=len(texts) > 100
-            )
-        except TypeError:
-            embeddings = model.encode(
-                texts,
-                batch_size=batch_size,
-                normalize_embeddings=True
-            )
-        
+        embeddings = model.encode(
+            texts,
+            batch_size=batch_size,
+            normalize_embeddings=True,        
+            show_progress_bar=len(texts) > 50  
+        )
         return embeddings
+        
     except Exception as e:
-        logger.error(f"❌ Batch encoding failed: {e}")
+        logger.error(f"Batch encoding failed: {e}")
         return np.array([])
-
 def get_embedding_dimension() -> int:
-    """Get actual embedding dimension from loaded model
-    
-    Returns:
-        Embedding dimension
-    """
+    """Get actual embedding dimension from loaded model"""
     try:
         model = get_model()
-        test_emb = model.encode(["test"])
+        test_emb = model.encode(["test"], normalize_embeddings=True)
         return test_emb.shape[1]
     except Exception as e:
-        logger.error(f"❌ Failed to get embedding dimension: {e}")
-        from backend.config import Config
+        logger.warning(f"Using config dimension fallback: {e}")
         return Config.EMBEDDING_DIM

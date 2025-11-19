@@ -39,62 +39,74 @@ class DocumentPipeline:
             # 1. Save file (5%)
             update("Saving file...", 5)
             filepath = save_uploaded_file(uploaded_file, self.user_id)
-            result['filepath'] = filepath
-            
+            result['filepath'] = str(filepath)  
+
             # 2. Chunk (20%)
             update("Chunking...", 20)
             config = chunk_config or ChunkConfig()
             chunks = process_document_to_chunks(filepath, config)
-            
+
             if not chunks:
-                result['error'] = 'No chunks'
+                result['error'] = 'No chunks generated from document'
                 return result
-            
+
             result['chunks'] = chunks
-            result['stats'] = {'chunks_count': len(chunks)}
-            
-            # 3. Extract (40%)
+            result['stats'] = {
+                'chunks_count': len(chunks),
+                'entities_count': 0,
+                'relationships_count': 0,
+                'graph_nodes': 0,
+                'graph_edges': 0,
+                'embeddings_count': 0
+            }
+
+            # 3. Extract entities & relations (40%)
             if enable_extraction:
-                update("Extracting entities...", 40)
-                try:
-                    entities, relationships = extract_entities_relations(chunks, {})
-                    result['entities'] = entities
-                    result['relationships'] = relationships
-                    result['stats']['entities_count'] = sum(len(v) for v in entities.values())
-                    result['stats']['relationships_count'] = sum(len(v) for v in relationships.values())
-                except Exception as e:
-                    print(f"Extract error: {e}")
-            
-            # 4. Graph (60%)
-            if enable_graph and result.get('entities'):
-                update("Building graph...", 60)
-                try:
-                    kg = build_knowledge_graph(result['entities'], result['relationships'])
-                    result['graph'] = kg.to_dict()
-                    result['stats']['graph_nodes'] = kg.G.number_of_nodes()
-                    result['stats']['graph_edges'] = kg.G.number_of_edges()
-                except Exception as e:
-                    print(f"Graph error: {e}")
-            
-            # 5. Embed (80%)
+                update("Extracting entities & relations...", 40)
+                entities, relationships = extract_entities_relations(chunks, {})
+                result['entities'] = entities
+                result['relationships'] = relationships
+                result['stats']['entities_count'] = sum(len(v) for v in entities.values())
+                result['stats']['relationships_count'] = sum(len(v) for v in relationships.values())
+            else:
+                result['entities'] = {}
+                result['relationships'] = {}
+
+            # 4. Build knowledge graph (60%)
+            if enable_graph and result['entities']:
+                update("Building knowledge graph...", 60)
+                kg = build_knowledge_graph(result['entities'], result['relationships'])
+                result['graph'] = kg.to_dict()
+                result['stats']['graph_nodes'] = kg.G.number_of_nodes()
+                result['stats']['graph_edges'] = kg.G.number_of_edges()
+
+            # 5. Generate embeddings (80%)
             if enable_embedding:
                 update("Generating embeddings...", 80)
-                try:
-                    embeddings = generate_embeddings(chunks, batch_size=128)
-                    
-                    if result.get('entities'):
-                        entity_embeds = generate_entity_embeddings(result['entities'], batch_size=128)
-                        embeddings.extend(entity_embeds)
-                    
-                    result['embeddings'] = embeddings
-                    result['stats']['embeddings_count'] = len(embeddings)
-                except Exception as e:
-                    print(f"Embed error: {e}")
-            
-            update("Complete!", 100)
+                embeddings = generate_embeddings(chunks, batch_size=128)
+
+                if result.get('entities'):
+                    entity_embeds = generate_entity_embeddings(result['entities'], batch_size=128)
+                    embeddings.extend(entity_embeds)
+
+                if result.get('relationships'):
+                    from backend.core.embedding import generate_relationship_embeddings
+                    rel_embeds = generate_relationship_embeddings(result['relationships'], batch_size=128)
+                    embeddings.extend(rel_embeds)
+
+                result['embeddings'] = embeddings
+                result['stats']['embeddings_count'] = len(embeddings)
+
+            # Final: Success
+            update("Processing completed!", 100)
             result['success'] = True
-            
+
         except Exception as e:
+            import traceback
+            print(f"Pipeline error: {e}")
+            traceback.print_exc()
             result['error'] = str(e)
-        
+            result['success'] = False
+
         return result
+    
