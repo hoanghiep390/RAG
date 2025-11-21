@@ -158,7 +158,7 @@ async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 1
     return dict(all_entities), dict(all_relationships)
 
 def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -> Tuple[Dict, Dict]:
-    """✅ FIXED: Sync wrapper with proper event loop handling"""
+    """Sync wrapper with proper event loop handling"""
     if not chunks:
         logger.warning("⚠️ No chunks provided for extraction")
         return {}, {}
@@ -169,7 +169,7 @@ def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -
         llm_func = call_llm_async
     
     try:
-        # ✅ FIX: Try to get existing event loop, create new if not exists
+        
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
