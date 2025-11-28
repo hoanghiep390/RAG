@@ -1,5 +1,4 @@
-# frontend/pages/upload.py
-
+# frontend/pages/upload.py - ✅ FIXED: Auto-save embeddings
 
 import streamlit as st
 import pandas as pd
@@ -8,7 +7,7 @@ from pathlib import Path
 import sys
 import os
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from backend.core.pipeline import DocumentPipeline
 from backend.core.chunking import ChunkConfig
 from backend.db.mongo_storage import MongoStorage
@@ -88,7 +87,7 @@ st.markdown(f"""
         📤 Upload Document 
         <span class="badge badge-mongo">MONGODB</span>
         <span class="badge badge-faiss">FAISS</span>
-        <span class="badge badge-config">CONFIG</span>
+        <span class="badge badge-config">AUTO-SAVE</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -100,6 +99,8 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("### 🧭 Navigation")
+    if st.button("💬 Chat"):
+        st.switch_page("pages/chat.py")
     if st.button("🕸️ Knowledge Graph"):
         st.switch_page("pages/graph.py")
     
@@ -147,9 +148,14 @@ try:
 except Exception as e:
     init_errors.append(f"FAISS init failed: {str(e)}")
 
+# ✅ FIXED: Pass vector_db and mongo_storage to pipeline
 if mongo_storage and vector_db:
     try:
-        pipeline = DocumentPipeline(user_id)
+        pipeline = DocumentPipeline(
+            user_id=user_id,
+            vector_db=vector_db,           # ✅ NEW: Pass VectorDB
+            mongo_storage=mongo_storage    # ✅ NEW: Pass MongoDB
+        )
     except Exception as e:
         init_errors.append(f"Pipeline init failed: {str(e)}")
 
@@ -179,10 +185,10 @@ st.markdown("### 📁 Upload Tài liệu")
 
 st.markdown(f"""
 <div class="info-card">
-    <strong>⚡ Configuration Active:</strong><br>
+    <strong>⚡ Pipeline Features:</strong><br>
     • 🚀 <strong>{Config.MAX_CONCURRENT_LLM_CALLS} parallel LLM calls</strong><br>
     • 📊 <strong>Batch size {Config.EMBEDDING_BATCH_SIZE}</strong> for embeddings<br>
-    • 💾 <strong>Bulk MongoDB inserts</strong> (3-5x faster)<br>
+    • 💾 <strong>AUTO-SAVE: MongoDB + VectorDB</strong> (no manual save needed)<br>
     • 🗑️ <strong>Consistent delete</strong> (MongoDB + FAISS + Files)<br>
     • 📈 <strong>Real-time progress</strong> tracking<br>
     • 🔍 <strong>FAISS Index</strong>: {'HNSW (optimized)' if Config.USE_HNSW else 'Flat L2'}
@@ -281,7 +287,7 @@ if uploaded_files:
                     file_progress.progress(pct / 100)
                 
                 try:
-                    # Process with pipeline
+                    # ✅ Process with auto_save=True (default)
                     result = pipeline.process_file(
                         file,
                         chunk_config=ChunkConfig(
@@ -291,34 +297,12 @@ if uploaded_files:
                         enable_extraction=enable_extraction,
                         enable_graph=enable_graph,
                         enable_embedding=enable_embedding,
+                        auto_save=True,  # ✅ Auto-save to MongoDB + VectorDB
                         progress_callback=progress_callback
                     )
                     
                     if result['success']:
-                        doc_id = result['doc_id']
-                        
-                        file_status.text("[95%] Saving to MongoDB & FAISS...")
-                        file_progress.progress(0.95)
-                        
-                        # Save to MongoDB (Bulk operations)
-                        mongo_storage.save_document_complete(
-                            doc_id=doc_id,
-                            filename=result['filename'],
-                            filepath=result['filepath'],
-                            chunks=result['chunks'],
-                            entities=result.get('entities'),
-                            relationships=result.get('relationships'),
-                            graph=result.get('graph'),
-                            stats=result['stats']
-                        )
-                        
-                        # Save embeddings to FAISS (Batch)
-                        if result.get('embeddings'):
-                            vector_db.add_document_embeddings_batch(
-                                doc_id=doc_id,
-                                filename=result['filename'],
-                                embeddings=result['embeddings']
-                            )
+                        # ✅ No manual save needed - already done in pipeline!
                         
                         file_status.text("✅ Complete!")
                         file_progress.progress(1.0)
@@ -330,8 +314,13 @@ if uploaded_files:
                             'Chunks': result['stats'].get('chunks_count', 0),
                             'Entities': result['stats'].get('entities_count', 0),
                             'Graph Nodes': result['stats'].get('graph_nodes', 0),
-                            'Embeddings': result['stats'].get('embeddings_count', 0)
+                            'Embeddings': result['stats'].get('embeddings_count', 0),
+                            'Vectors Added': result.get('vectors_added', 0)  # ✅ NEW
                         })
+                        
+                        # Show warning if any
+                        if 'warning' in result:
+                            st.warning(f"⚠️ {result['warning']}")
                     else:
                         failed_count += 1
                         failed_files.append((file.name, result.get('error')))
@@ -356,8 +345,9 @@ if uploaded_files:
                 <strong>🎉 Hoàn thành!</strong><br>
                 ✅ Thành công: {success_count} file<br>
                 ❌ Thất bại: {failed_count} file<br>
-                💾 MongoDB: Bulk saved (chunks, entities, graph)<br>
-                🚀 FAISS: {vector_stats['active_vectors']} vectors ({vector_stats['index_type']})
+                💾 MongoDB: Auto-saved (chunks, entities, graph)<br>
+                🚀 VectorDB: {vector_stats['active_vectors']} vectors ({vector_stats['index_type']})<br>
+                ⚡ Auto-save: Enabled (no manual save needed)
             </div>
             """, unsafe_allow_html=True)
             
@@ -392,10 +382,14 @@ st.markdown("---")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("🕸️ Xem Graph", type="primary"):
-        st.switch_page("pages/graph.py")
+    if st.button("💬 Chat", type="primary"):
+        st.switch_page("pages/chat.py")
 
 with col2:
+    if st.button("🕸️ Xem Graph"):
+        st.switch_page("pages/graph.py")
+
+with col3:
     if st.button("📊 Statistics"):
         mongo_stats = mongo_storage.get_user_statistics()
         vector_stats = vector_db.get_statistics()
@@ -418,18 +412,6 @@ with col2:
             • FAISS: {'✅ Available' if vector_stats['faiss_available'] else '⚠️ NumPy Fallback'}
         </div>
         """, unsafe_allow_html=True)
-
-with col3:
-    if st.button("🔍 Test Search"):
-        if vector_db.get_statistics()['active_vectors'] > 0:
-            query = st.text_input("Enter search query:", key="test_search")
-            if query:
-                results = vector_db.search_by_text(query, top_k=3)
-                for r in results:
-                    st.markdown(f"**Similarity: {r['similarity']:.3f}** (Doc: {r['filename']})")
-                    st.text(r['content'][:200] + "...")
-        else:
-            st.info("No embeddings yet. Upload documents first.")
 
 # Document list with delete
 st.markdown("---")
@@ -551,7 +533,7 @@ except Exception as e:
 st.markdown("---")
 st.markdown(
     "<p style='text-align:center; color:#6b7280;'>"
-    "📤 Upload <strong>FULLY FIXED</strong> – MongoDB + FAISS – Đại học Thủy lợi"
+    "📤 Upload <strong>AUTO-SAVE FIXED</strong> – MongoDB + FAISS – Đại học Thủy lợi"
     "</p>",
     unsafe_allow_html=True
 )

@@ -1,4 +1,3 @@
-
 # backend/core/pipeline.py 
 
 from pathlib import Path
@@ -12,18 +11,47 @@ from backend.core.embedding import generate_embeddings, generate_entity_embeddin
 from backend.utils.file_utils import save_uploaded_file
 
 class DocumentPipeline:
-    """Simple pipeline"""
     
-    def __init__(self, user_id: str = "default"):
+    def __init__(self, user_id: str = "default", vector_db=None, mongo_storage=None):
+        """
+        Args:
+            user_id: User ID for data isolation
+            vector_db: VectorDatabase instance (optional, for auto-save)
+            mongo_storage: MongoStorage instance (optional, for auto-save)
+        """
         self.user_id = user_id
         self.upload_dir = Path("backend/data") / user_id / "uploads"
         self.upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        
+        self.vector_db = vector_db
+        self.mongo_storage = mongo_storage
     
-    def process_file(self, uploaded_file, chunk_config: ChunkConfig = None,
-                    enable_extraction: bool = True, enable_graph: bool = True,
-                    enable_embedding: bool = True,
-                    progress_callback: Callable = None) -> Dict[str, Any]:
-        """Process 1 file"""
+    def process_file(
+        self, 
+        uploaded_file, 
+        chunk_config: ChunkConfig = None,
+        enable_extraction: bool = True, 
+        enable_graph: bool = True,
+        enable_embedding: bool = True,
+        auto_save: bool = True,  # ✅ NEW: Auto-save to databases
+        progress_callback: Callable = None
+    ) -> Dict[str, Any]:
+        """
+        Process 1 file and optionally auto-save to databases
+        
+        Args:
+            uploaded_file: Streamlit UploadedFile object
+            chunk_config: Chunking configuration
+            enable_extraction: Extract entities/relationships
+            enable_graph: Build knowledge graph
+            enable_embedding: Generate embeddings
+            auto_save: Auto-save to MongoDB + VectorDB (NEW)
+            progress_callback: Progress callback function
+        
+        Returns:
+            Result dict with success status and stats
+        """
         
         def update(msg: str, pct: float):
             if progress_callback:
@@ -39,7 +67,7 @@ class DocumentPipeline:
             # 1. Save file (5%)
             update("Saving file...", 5)
             filepath = save_uploaded_file(uploaded_file, self.user_id)
-            result['filepath'] = str(filepath)  
+            result['filepath'] = str(filepath)
 
             # 2. Chunk (20%)
             update("Chunking...", 20)
@@ -80,22 +108,76 @@ class DocumentPipeline:
                 result['stats']['graph_nodes'] = kg.G.number_of_nodes()
                 result['stats']['graph_edges'] = kg.G.number_of_edges()
 
-            # 5. Generate embeddings (80%)
+            # 5. Generate embeddings (75%)
             if enable_embedding:
-                update("Generating embeddings...", 80)
+                update("Generating embeddings...", 75)
+                
+                # Chunk embeddings
                 embeddings = generate_embeddings(chunks, batch_size=128)
-
+                
+                # Entity embeddings
                 if result.get('entities'):
                     entity_embeds = generate_entity_embeddings(result['entities'], batch_size=128)
                     embeddings.extend(entity_embeds)
-
+                
+                # Relationship embeddings
                 if result.get('relationships'):
                     from backend.core.embedding import generate_relationship_embeddings
                     rel_embeds = generate_relationship_embeddings(result['relationships'], batch_size=128)
                     embeddings.extend(rel_embeds)
-
+                
                 result['embeddings'] = embeddings
                 result['stats']['embeddings_count'] = len(embeddings)
+            
+            #  6. AUTO-SAVE to databases (85-95%)
+            if auto_save and self.mongo_storage and self.vector_db:
+                doc_id = result['doc_id']
+                
+                # 6a. Save to MongoDB (85%)
+                update("Saving to MongoDB...", 85)
+                try:
+                    mongo_success = self.mongo_storage.save_document_complete(
+                        doc_id=doc_id,
+                        filename=result['filename'],
+                        filepath=result['filepath'],
+                        chunks=result['chunks'],
+                        entities=result.get('entities'),
+                        relationships=result.get('relationships'),
+                        graph=result.get('graph'),
+                        stats=result['stats']
+                    )
+                    
+                    if not mongo_success:
+                        result['error'] = 'Failed to save to MongoDB'
+                        result['success'] = False
+                        return result
+                    
+                except Exception as e:
+                    result['error'] = f'MongoDB save error: {str(e)}'
+                    result['success'] = False
+                    return result
+                
+                # 6b. Save embeddings to VectorDB (90%)
+                update("Saving embeddings to VectorDB...", 90)
+                try:
+                    if result.get('embeddings'):
+                        added_count = self.vector_db.add_document_embeddings_batch(
+                            doc_id=doc_id,
+                            filename=result['filename'],
+                            embeddings=result['embeddings']
+                        )
+                        
+                        if added_count == 0:
+                            result['warning'] = 'No embeddings added to VectorDB'
+                        else:
+                            result['vectors_added'] = added_count
+                    else:
+                        result['warning'] = 'No embeddings to save'
+                        
+                except Exception as e:
+                    result['error'] = f'VectorDB save error: {str(e)}'
+                    result['success'] = False
+                    return result
 
             # Final: Success
             update("Processing completed!", 100)
@@ -109,4 +191,3 @@ class DocumentPipeline:
             result['success'] = False
 
         return result
-    

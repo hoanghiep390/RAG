@@ -122,8 +122,3 @@ mini-lightrag/
 ├── 📄 requirements.txt                      # 📦 Python dependencies
 │
 ├── 📄 structure.md                          # 📁 This file
-├── 📄 README.md                             # 📖 Project documentation
-│
-├── 📄 integration_test.py                   # 🧪 Integration tests
-│
-└── 📁 .cursor/                              # (IDE specific, ignored)

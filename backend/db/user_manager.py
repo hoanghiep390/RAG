@@ -1,6 +1,6 @@
 # backend/db/user_manager.py
 """
-✅ MINIMAL User Management với MongoDB
+User management with MongoDB integration
 """
 from datetime import datetime
 import hashlib

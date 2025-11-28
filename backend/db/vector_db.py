@@ -1,6 +1,6 @@
-# ==========================================
+
 # backend/db/vector_db.py 
-# ==========================================
+
 from pathlib import Path
 import json
 import numpy as np

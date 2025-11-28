@@ -33,14 +33,7 @@ test_doc.*
 
 # Môi trường ảo Python
 .env/
-venv/
-env/
-ENV/
-
-# ===================================
-# 🔒 CRITICAL: NEVER COMMIT THESE!
-# ===================================
-.env
+.venv/
 .env.*
 !.env.example
 *.key
@@ -91,10 +84,5 @@ node_modules/
 # Cursor rules
 .cursor/rules/kluster-code-verify.mdc
 .kluster
-
-.env
-.env.local
-
-
 # User data
 backend/data/users.json
