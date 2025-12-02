@@ -74,21 +74,21 @@ class GraphRetriever:
                 logger.warning("Empty knowledge graph")
                 return []
             
-            # Build lookup structures
+            
             node_map = {n['id']: n for n in graph['nodes']}
             edges_by_source = defaultdict(list)
             
             for edge in graph.get('links', []):
                 edges_by_source[edge['source']].append(edge)
             
-            # Find matching entities
+        
             matched_entities = self._find_entities(entity_names, node_map)
             
             if not matched_entities:
                 logger.info(f"No entities found for: {entity_names}")
                 return []
             
-            # Traverse graph
+        
             contexts = []
             visited = set()
             
@@ -110,7 +110,7 @@ class GraphRetriever:
                     contexts.append(context)
                     visited.add(entity_name)
             
-            # Sort by score
+            
             contexts.sort(key=lambda x: x.score, reverse=True)
             
             return contexts
@@ -127,12 +127,12 @@ class GraphRetriever:
         for node_id in node_map.keys():
             node_lower = node_id.lower()
             
-            # Exact match
+            
             if node_lower in query_lower:
                 matched.append(node_id)
                 continue
             
-            # Partial match
+            
             for q in query_lower:
                 if q in node_lower or node_lower in q:
                     matched.append(node_id)
@@ -156,7 +156,7 @@ class GraphRetriever:
         
         node = node_map[entity_name]
         
-        # Get neighbors (1-hop)
+        
         neighbors = []
         relationships = []
         
@@ -177,7 +177,7 @@ class GraphRetriever:
                     'keywords': edge.get('keywords', '')
                 })
         
-        # If k_hops=2, get 2-hop neighbors
+        
         if k_hops >= 2:
             second_hop = set()
             for neighbor in neighbors[:max_neighbors]:
@@ -186,11 +186,10 @@ class GraphRetriever:
                         second_hop.add(edge['target'])
             neighbors.extend(list(second_hop)[:max_neighbors])
         
-        # Limit neighbors
+    
         neighbors = neighbors[:max_neighbors]
         relationships = relationships[:max_neighbors]
         
-        # Calculate score (based on centrality)
         score = min(1.0, len(neighbors) / 10.0)  
         
         return GraphContext(
@@ -218,7 +217,6 @@ class GraphRetriever:
             graph = self._load_graph()
             node_map = {n['id']: n for n in graph['nodes']}
             
-            # BFS to find all nodes within k_hops
             to_visit = set(entity_names)
             visited = set()
             current_hop = 0
@@ -233,14 +231,14 @@ class GraphRetriever:
                     
                     visited.add(node_id)
                     
-                    # Add neighbors
+
                     for edge in graph.get('links', []):
                         if edge['source'] == node_id:
                             to_visit.add(edge['target'])
                 
                 current_hop += 1
             
-            # Extract subgraph
+            
             subgraph_nodes = [node_map[n] for n in visited if n in node_map]
             subgraph_links = [
                 e for e in graph.get('links', [])

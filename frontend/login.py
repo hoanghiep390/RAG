@@ -169,7 +169,7 @@ if st.session_state.authenticated:
     if st.session_state.role == 'admin':
         st.switch_page("pages/upload.py")
     else:
-        st.info("Tài khoản user chỉ có quyền chat. Coming soon!")
+        st.info("Tài khoản user chỉ có quyền chat.")
 
 with st.container():
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)

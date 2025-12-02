@@ -14,7 +14,6 @@ from backend.retrieval.graph_retriever import GraphRetriever, GraphContext
     
 logger = logging.getLogger(__name__)
 
-# ================= Data Classes =================
 @dataclass
 class RetrievalContext:
     """Final context for LLM"""
@@ -77,26 +76,24 @@ class HybridRetriever:
             import time
             start_time = time.time()
             
-            # Step 1: Analyze query
             analysis = self.query_analyzer.analyze(query)
             logger.info(f"Query analyzed: intent={analysis.intent}, mode={analysis.retrieval_mode}")
             
-            # Override if needed
+            
             mode = force_mode or analysis.retrieval_mode
             k = top_k or analysis.top_k
             
-            # Step 2: Route to appropriate retrieval
+            
             if mode == 'vector':
                 chunks, entities = self._vector_only(query, k)
             elif mode == 'graph':
                 chunks, entities = self._graph_only(analysis.entities, k)
-            else:  # hybrid
+            else:  
                 chunks, entities = self._hybrid_search(query, analysis.entities, k)
             
-            # Step 3: Format context
             formatted = self._format_context(query, chunks, entities, analysis)
             
-            # Step 4: Build metadata
+            
             elapsed = time.time() - start_time
             metadata = {
                 'retrieval_time_ms': int(elapsed * 1000),
@@ -119,7 +116,6 @@ class HybridRetriever:
         
         except Exception as e:
             logger.error(f"Retrieval failed: {e}")
-            # Return empty context on error
             return RetrievalContext(
                 query=query,
                 intent='unknown',
@@ -161,12 +157,11 @@ class HybridRetriever:
         """
         logger.info(f"Hybrid retrieval (top_k={top_k}, entities={entity_names})")
         
-        # Parallel execution (if possible)
+        
         try:
-            # Try async parallel
+            
             chunks, entities = asyncio.run(self._parallel_search(query, entity_names, top_k))
         except:
-            # Fallback to sequential
             logger.warning("Async failed, using sequential search")
             chunks = self.vector_retriever.search(query, top_k=int(top_k * 0.7))
             entities = []
@@ -195,7 +190,7 @@ class HybridRetriever:
                 max_neighbors=int(top_k * 0.3)
             )
         
-        # Run in parallel
+        
         chunks, entities = await asyncio.gather(
             asyncio.to_thread(vector_task),
             asyncio.to_thread(graph_task)
@@ -221,16 +216,16 @@ class HybridRetriever:
         """
         lines = []
         
-        # Header
+        
         lines.append("=" * 70)
         lines.append(f"RETRIEVAL CONTEXT FOR QUERY: {query}")
         lines.append(f"Intent: {analysis.intent} | Mode: {analysis.retrieval_mode}")
         lines.append("=" * 70)
         lines.append("")
         
-        # Section 1: Chunks (if any)
+        
         if chunks:
-            lines.append("## 📄 RELEVANT DOCUMENTS")
+            lines.append("##  RELEVANT DOCUMENTS")
             lines.append("")
             
             for i, chunk in enumerate(chunks, 1):
@@ -238,9 +233,9 @@ class HybridRetriever:
                 lines.append(f"{chunk.content}")
                 lines.append("")
         
-        # Section 2: Entities (if any)
+        
         if entities:
-            lines.append("## 🕸️ KNOWLEDGE GRAPH CONTEXT")
+            lines.append("##  KNOWLEDGE GRAPH CONTEXT")
             lines.append("")
             
             for i, entity in enumerate(entities, 1):
@@ -285,10 +280,10 @@ class HybridRetriever:
         
         Note: This is a placeholder for future reranker integration
         """
-        # For now, just use regular retrieve
+        
         context = self.retrieve(query, top_k=top_k * 2)
         
-        # Simple reranking by score
+        
         if rerank_method == 'score':
             context.chunks.sort(key=lambda x: x.score, reverse=True)
             context.chunks = context.chunks[:top_k]
@@ -296,7 +291,7 @@ class HybridRetriever:
             context.entities.sort(key=lambda x: x.score, reverse=True)
             context.entities = context.entities[:top_k // 2]
         
-        # Reformat after reranking
+        
         analysis = self.query_analyzer.analyze(query)
         context.formatted_text = self._format_context(
             query, context.chunks, context.entities, analysis

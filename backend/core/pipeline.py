@@ -34,7 +34,7 @@ class DocumentPipeline:
         enable_extraction: bool = True, 
         enable_graph: bool = True,
         enable_embedding: bool = True,
-        auto_save: bool = True,  # ✅ NEW: Auto-save to databases
+        auto_save: bool = True,  
         progress_callback: Callable = None
     ) -> Dict[str, Any]:
         """
@@ -46,9 +46,9 @@ class DocumentPipeline:
             enable_extraction: Extract entities/relationships
             enable_graph: Build knowledge graph
             enable_embedding: Generate embeddings
-            auto_save: Auto-save to MongoDB + VectorDB (NEW)
+            auto_save: Auto-save to MongoDB + VectorDB 
             progress_callback: Progress callback function
-        
+                    
         Returns:
             Result dict with success status and stats
         """
@@ -179,7 +179,6 @@ class DocumentPipeline:
                     result['success'] = False
                     return result
 
-            # Final: Success
             update("Processing completed!", 100)
             result['success'] = True
 
@@ -191,3 +190,4 @@ class DocumentPipeline:
             result['success'] = False
 
         return result
+    

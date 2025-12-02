@@ -1,6 +1,6 @@
 # backend/retrieval/vector_retriever.py
 """
-🔍 Vector Retriever 
+ Vector Retriever 
 """
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -8,7 +8,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-#  Data Classes 
+
 @dataclass
 class ScoredChunk:
     """Kết quả từ vector search"""
@@ -61,11 +61,9 @@ class VectorRetriever:
             List of ScoredChunk, sorted by score descending
         """
         try:
-            # 1. Embed query
             model = self._get_embed_model()
             query_embedding = model.encode([query], normalize_embeddings=True)[0]
             
-            # 2. Search vector DB
             raw_results = self.vector_db.search(
                 query_embedding=query_embedding.tolist(),
                 top_k=top_k * 2, 
@@ -73,13 +71,13 @@ class VectorRetriever:
                 skip_deleted=True
             )
             
-            # 3. Convert to ScoredChunk
+            
             scored_chunks = []
             for r in raw_results:
-                # Convert distance to similarity (0-1 range)
+                
                 similarity = r.get('similarity', 0.0)
                 
-                # Filter by min_score
+                
                 if similarity < min_score:
                     continue
                 
@@ -99,7 +97,7 @@ class VectorRetriever:
                 )
                 scored_chunks.append(chunk)
             
-            # 4. Return top_k after filtering
+    
             return scored_chunks[:top_k]
         
         except Exception as e:

@@ -1,4 +1,4 @@
-# frontend/pages/upload.py - ✅ FIXED: Auto-save embeddings
+# frontend/pages/upload.py 
 
 import streamlit as st
 import pandas as pd
