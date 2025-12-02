@@ -100,14 +100,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ================= Header =================
+#                    Header 
 st.markdown(f"""
 <div class="header-container">
     <div class="header-title">💬 RAG Chat Assistant</div>
 </div>
 """, unsafe_allow_html=True)
 
-# ================= Sidebar =================
+#                     Sidebar 
 with st.sidebar:
     st.markdown(f"## 👤 {username}")
     st.markdown(f"**Role**: {role}<br>**ID**: `{user_id}`", unsafe_allow_html=True)
@@ -167,7 +167,7 @@ with st.sidebar:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
 
-# ================= Initialize Components =================
+#  Initialize Components 
 @st.cache_resource
 def init_retriever(user_id: str):
     """Initialize retriever (cached)"""
@@ -191,7 +191,7 @@ def init_retriever(user_id: str):
 
 retriever, stats = init_retriever(user_id)
 
-# ================= Check Data Availability =================
+#  Check Data Availability
 if not retriever or not stats:
     st.error("❌ Failed to initialize chat system")
     st.stop()
@@ -219,11 +219,11 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ================= Initialize Chat History =================
+#  Initialize Chat History 
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# ================= Display Chat History =================
+#  Display Chat History 
 for message in st.session_state.messages:
     role = message['role']
     content = message['content']
@@ -257,7 +257,7 @@ for message in st.session_state.messages:
             with st.expander("📋 Retrieved Context", expanded=False):
                 st.text(message['context'][:1000] + "..." if len(message['context']) > 1000 else message['context'])
 
-# ================= Chat Input =================
+#  Chat Input 
 st.markdown("---")
 
 # Quick examples
@@ -286,7 +286,7 @@ if 'pending_query' in st.session_state:
     user_query = st.session_state.pending_query
     del st.session_state.pending_query
 
-# ================= Process Query =================
+#  Process Query
 if user_query:
     # Add user message
     st.session_state.messages.append({
@@ -327,7 +327,6 @@ Now, please answer this question:
 {user_query}
 """
             try:
-                # Try async first
                 response = asyncio.run(call_llm_async(
                     prompt=user_prompt,
                     system_prompt=system_prompt,
@@ -335,7 +334,6 @@ Now, please answer this question:
                     max_tokens=2000
                 ))
             except:
-                # Fallback to sync
                 from backend.utils.llm_utils import call_llm
                 response = call_llm(
                     prompt=user_prompt,
@@ -344,7 +342,6 @@ Now, please answer this question:
                     max_tokens=2000
                 )
             
-            # Add assistant message
             assistant_message = {
                 'role': 'assistant',
                 'content': response,
@@ -353,19 +350,16 @@ Now, please answer this question:
             }
             st.session_state.messages.append(assistant_message)
             
-            # Rerun to show new message
             st.rerun()
         
         except Exception as e:
             st.error(f"❌ Error: {str(e)}")
-            
-            # Add error message
             st.session_state.messages.append({
                 'role': 'assistant',
                 'content': f"Sorry, I encountered an error: {str(e)}"
             })
 
-# ================= Footer =================
+#  Footer 
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #6b7280; font-size: 0.9rem;">
@@ -376,7 +370,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ================= Debug Info (Admin only) =================
+#  Debug Info (Admin only) 
 if role == 'admin' and st.sidebar.checkbox("🔧 Debug Mode", value=False):
     with st.sidebar:
         st.markdown("### 🐛 Debug Info")

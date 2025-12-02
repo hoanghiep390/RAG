@@ -46,7 +46,7 @@ class UserManager:
                 upsert=True
             )
 
-# Singleton
+
 _manager = None
 def get_user_manager():
     global _manager
@@ -54,7 +54,7 @@ def get_user_manager():
         _manager = UserManager()
     return _manager
 
-# Compatibility functions cho login.py gốc
+
 def load_users():
     return get_user_manager().load_users()
 
