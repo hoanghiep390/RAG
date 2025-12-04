@@ -1,6 +1,6 @@
-# frontend/pages/chat.py
+# frontend/pages/chat.py (FIXED - No Duplicate Conversations)
 """
-💬 Chat Interface - RAG-powered Q&A
+💬 Chat Interface - Multi-Conversation
 """
 import streamlit as st
 import sys
@@ -12,7 +12,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 
 from backend.db.vector_db import VectorDatabase
 from backend.db.mongo_storage import MongoStorage
+from backend.db.conversation_storage import ConversationStorage
 from backend.retrieval.hybrid_retriever import HybridRetriever
+from backend.retrieval.conversation_manager import ConversationManager
 from backend.utils.llm_utils import call_llm_async
 import asyncio
 
@@ -76,16 +78,6 @@ st.markdown("""
         font-size: 0.9rem;
     }
     
-    .source-tag {
-        display: inline-block;
-        background: #374151;
-        color: #9ca3af;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
-        margin: 0.2rem;
-    }
-    
     .stat-badge {
         display: inline-block;
         padding: 0.3rem 0.8rem;
@@ -100,17 +92,171 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-#                    Header 
+# ================= Initialize Storage =================
+@st.cache_resource
+def init_storage(user_id: str):
+    """Initialize all storage components"""
+    try:
+        vector_db = VectorDatabase(user_id)
+        mongo_storage = MongoStorage(user_id)
+        conv_storage = ConversationStorage(user_id)
+        retriever = HybridRetriever(vector_db, mongo_storage)
+        
+        vec_stats = vector_db.get_statistics()
+        graph = mongo_storage.get_graph()
+        
+        return {
+            'vector_db': vector_db,
+            'mongo_storage': mongo_storage,
+            'conv_storage': conv_storage,
+            'retriever': retriever,
+            'stats': {
+                'vectors': vec_stats['active_vectors'],
+                'nodes': len(graph.get('nodes', [])),
+                'docs': vec_stats['total_documents']
+            }
+        }
+    except Exception as e:
+        st.error(f"❌ Failed to initialize: {e}")
+        return None
+
+storage = init_storage(user_id)
+
+if not storage:
+    st.error("❌ Failed to initialize chat system")
+    st.stop()
+
+retriever = storage['retriever']
+conv_storage = storage['conv_storage']
+stats = storage['stats']
+
+# ================= Check Data =================
+if stats['vectors'] == 0:
+    st.warning("⚠️ No documents uploaded yet.")
+    if role == 'admin' and st.button("📤 Go to Upload"):
+        st.switch_page("pages/upload.py")
+    st.stop()
+
+# ================= Header =================
 st.markdown(f"""
 <div class="header-container">
-    <div class="header-title">💬 RAG Chat Assistant</div>
+    <div class="header-title">💬 Multi-Conversation Chat</div>
 </div>
 """, unsafe_allow_html=True)
 
-#                     Sidebar 
+if 'current_conversation_id' not in st.session_state or st.session_state.current_conversation_id is None:
+    conversations = conv_storage.list_conversations(limit=1)
+    
+    if conversations:
+        # Use existing conversation
+        st.session_state.current_conversation_id = conversations[0]['conversation_id']
+    else:
+        # Create first conversation
+        new_conv_id = conv_storage.create_conversation()
+        st.session_state.current_conversation_id = new_conv_id
+
+current_conversation_id = st.session_state.current_conversation_id
+
+# ================= Sidebar =================
 with st.sidebar:
     st.markdown(f"## 👤 {username}")
     st.markdown(f"**Role**: {role}<br>**ID**: `{user_id}`", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    # Conversation List
+    st.markdown("### 💬 Conversations")
+    
+    if 'creating_new_conv' not in st.session_state:
+        st.session_state.creating_new_conv = False
+    
+    if st.button("➕ New Chat", use_container_width=True, type="primary", key="new_chat_btn"):
+        if not st.session_state.creating_new_conv: 
+            st.session_state.creating_new_conv = True
+            
+            try:
+                new_conv_id = conv_storage.create_conversation()
+                st.session_state.current_conversation_id = new_conv_id
+                st.session_state.messages = []
+                
+                # Clear conversation manager
+                if 'conv_manager' in st.session_state:
+                    del st.session_state.conv_manager
+                
+                # Reset flag
+                st.session_state.creating_new_conv = False
+                
+                # Rerun to show new conversation
+                st.rerun()
+            
+            except Exception as e:
+                st.error(f"❌ Failed to create conversation: {e}")
+                st.session_state.creating_new_conv = False
+    
+    # List conversations
+    conversations = conv_storage.list_conversations(limit=20)
+    
+    current_conv_id = st.session_state.get('current_conversation_id')
+    
+    for conv in conversations:
+        conv_id = conv['conversation_id']
+        title = conv['title']
+        msg_count = conv.get('message_count', 0)
+        updated = conv['updated_at'].strftime("%m/%d %H:%M")
+        
+        is_active = (conv_id == current_conv_id)
+        
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            if st.button(
+                f"{'🟢' if is_active else '⚪'} {title}",
+                key=f"conv_{conv_id}",
+                use_container_width=True,
+                type="secondary" if not is_active else "primary"
+            ):
+                # Switch conversation
+                st.session_state.current_conversation_id = conv_id
+                
+                # Load messages
+                messages = conv_storage.get_messages(conv_id)
+                st.session_state.messages = [
+                    {
+                        'role': m['role'],
+                        'content': m['content'],
+                        'metadata': m.get('metadata', {})
+                    }
+                    for m in messages
+                ]
+                
+                # Update conversation manager
+                if 'conv_manager' not in st.session_state:
+                    st.session_state.conv_manager = ConversationManager(
+                        max_history=5,
+                        conv_storage=conv_storage,
+                        conversation_id=conv_id
+                    )
+                else:
+                    st.session_state.conv_manager.set_conversation(
+                        conv_id,
+                        conv_storage
+                    )
+                
+                st.rerun()
+        
+        with col2:
+            if st.button("🗑️", key=f"del_{conv_id}"):
+                conv_storage.delete_conversation(conv_id)
+                
+                # If deleting current conversation, create new one
+                if conv_id == current_conv_id:
+                    new_conv_id = conv_storage.create_conversation()
+                    st.session_state.current_conversation_id = new_conv_id
+                    st.session_state.messages = []
+                
+                st.rerun()
+        
+        st.caption(f"{msg_count} msgs · {updated}")
+    
     st.markdown("---")
     
     # Navigation
@@ -124,106 +270,72 @@ with st.sidebar:
     st.markdown("---")
     
     # Settings
-    st.markdown("### ⚙️ Chat Settings")
+    st.markdown("### ⚙️ Settings")
     
     retrieval_mode = st.selectbox(
         "Retrieval Mode",
-        options=['auto', 'vector', 'graph', 'hybrid'],
-        help="auto = Let AI decide"
+        options=['auto', 'vector', 'graph', 'hybrid']
     )
     
-    top_k = st.slider(
-        "Results per search",
-        min_value=3,
-        max_value=15,
-        value=5,
-        step=1
-    )
-    
-    temperature = st.slider(
-        "Temperature",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.7,
-        step=0.1,
-        help="Higher = more creative"
-    )
-    
-    show_context = st.checkbox("Show retrieved context", value=False)
-    show_metadata = st.checkbox("Show metadata", value=True)
+    top_k = st.slider("Results", 3, 15, 5)
+    temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1)
     
     st.markdown("---")
     
-    # Clear chat
-    if st.button("🗑️ Clear Chat"):
-        st.session_state.messages = []
-        st.rerun()
+    use_history = st.checkbox("Enable history", value=True)
+    max_history_turns = st.slider("Max turns", 1, 10, 5)
+    show_rewrite = st.checkbox("Show rewrite", value=False)
     
     st.markdown("---")
     
-    # Logout
     if st.button("🚪 Logout"):
         for k in ['authenticated', 'user_id', 'username', 'role']:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
 
-#  Initialize Components 
-@st.cache_resource
-def init_retriever(user_id: str):
-    """Initialize retriever (cached)"""
-    try:
-        vector_db = VectorDatabase(user_id)
-        storage = MongoStorage(user_id)
-        retriever = HybridRetriever(vector_db, storage)
-        
-        # Check data availability
-        vec_stats = vector_db.get_statistics()
-        graph = storage.get_graph()
-        
-        return retriever, {
-            'vectors': vec_stats['active_vectors'],
-            'nodes': len(graph.get('nodes', [])),
-            'docs': vec_stats['total_documents']
+# ✅ FIX 3: Verify conversation_id is set (removed duplicate auto-create)
+if current_conversation_id is None:
+    st.error("❌ Failed to initialize conversation. Please refresh the page.")
+    st.stop()
+
+# Initialize conversation manager
+if 'conv_manager' not in st.session_state:
+    st.session_state.conv_manager = ConversationManager(
+        max_history=max_history_turns,
+        conv_storage=conv_storage,
+        conversation_id=current_conversation_id
+    )
+else:
+    st.session_state.conv_manager.max_history = max_history_turns
+    st.session_state.conv_manager.conversation_id = current_conversation_id
+    st.session_state.conv_manager.conv_storage = conv_storage
+
+# Load messages from MongoDB if not in session
+if 'messages' not in st.session_state:
+    messages = conv_storage.get_messages(current_conversation_id)
+    st.session_state.messages = [
+        {
+            'role': m['role'],
+            'content': m['content'],
+            'metadata': m.get('metadata', {})
         }
-    except Exception as e:
-        st.error(f"❌ Failed to initialize retriever: {e}")
-        return None, None
+        for m in messages
+    ]
 
-retriever, stats = init_retriever(user_id)
+# ================= Show Stats =================
+conv_id_display = current_conversation_id[:12] if current_conversation_id else "N/A"
 
-#  Check Data Availability
-if not retriever or not stats:
-    st.error("❌ Failed to initialize chat system")
-    st.stop()
-
-if stats['vectors'] == 0:
-    st.warning("⚠️ No documents uploaded yet. Please upload documents first.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if role == 'admin':
-            if st.button("📤 Go to Upload"):
-                st.switch_page("pages/upload.py")
-    with col2:
-        st.info("💡 Upload documents to enable chat")
-    
-    st.stop()
-
-# Show stats
 st.markdown(f"""
 <div class="context-preview">
-    <strong>📊 Knowledge Base Status:</strong><br>
-    📄 Documents: {stats['docs']} | 
+    <strong>📊 Status:</strong>
+    📄 Docs: {stats['docs']} | 
     🧮 Vectors: {stats['vectors']} | 
-    🕸️ Graph Nodes: {stats['nodes']}
+    🕸️ Nodes: {stats['nodes']} | 
+    💬 Conversation: {conv_id_display}...
 </div>
 """, unsafe_allow_html=True)
 
-#  Initialize Chat History 
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-
-#  Display Chat History 
+# ================= Display Messages =================
 for message in st.session_state.messages:
     role = message['role']
     content = message['content']
@@ -241,60 +353,28 @@ for message in st.session_state.messages:
         </div>
         """, unsafe_allow_html=True)
         
-        # Show metadata if enabled
-        if show_metadata and 'metadata' in message:
+        if 'metadata' in message:
             meta = message['metadata']
             st.markdown(f"""
             <div style="margin-left: 2rem; margin-top: 0.5rem;">
-                <span class="stat-badge badge-chunks">📄 {meta.get('num_chunks', 0)} chunks</span>
-                <span class="stat-badge badge-entities">🕸️ {meta.get('num_entities', 0)} entities</span>
+                <span class="stat-badge badge-chunks">📄 {meta.get('num_chunks', 0)}</span>
+                <span class="stat-badge badge-entities">🕸️ {meta.get('num_entities', 0)}</span>
                 <span class="stat-badge badge-time">⏱️ {meta.get('retrieval_time_ms', 0)}ms</span>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Show context if enabled
-        if show_context and 'context' in message:
-            with st.expander("📋 Retrieved Context", expanded=False):
-                st.text(message['context'][:1000] + "..." if len(message['context']) > 1000 else message['context'])
 
-#  Chat Input 
+# ================= Chat Input =================
 st.markdown("---")
 
-# Quick examples
-st.markdown("### 💡 Example Questions")
-examples = [
-    "What is the main topic of the documents?",
-    "Summarize the key points",
-    "Explain the concept of [topic]",
-    "Compare [entity A] and [entity B]"
-]
+user_query = st.chat_input("Ask me anything...")
 
-example_cols = st.columns(len(examples))
-for col, example in zip(example_cols, examples):
-    with col:
-        if st.button(example, key=f"example_{example}", use_container_width=True):
-            st.session_state.pending_query = example
-            st.rerun()
-
-st.markdown("---")
-
-
-user_query = st.chat_input("Ask me anything about your documents...")
-
-
-if 'pending_query' in st.session_state:
-    user_query = st.session_state.pending_query
-    del st.session_state.pending_query
-
-#  Process Query
 if user_query:
-    # Add user message
+    # Add to UI
     st.session_state.messages.append({
         'role': 'user',
         'content': user_query
     })
     
-    # Show user message immediately
     st.markdown(f"""
     <div class="chat-message user-message">
         <strong>👤 You:</strong><br>{user_query}
@@ -303,83 +383,119 @@ if user_query:
     
     with st.spinner("🤔 Thinking..."):
         try:
-            force_mode = None if retrieval_mode == 'auto' else retrieval_mode
+            # Query rewriting
+            original_query = user_query
+            if use_history:
+                user_query = st.session_state.conv_manager.rewrite_query(
+                    user_query,
+                    llm_func=call_llm_async
+                )
+                
+                if show_rewrite and user_query != original_query:
+                    st.info(f"🔄 Rewritten: {user_query}")
             
+            # Retrieval
+            force_mode = None if retrieval_mode == 'auto' else retrieval_mode
             context = retriever.retrieve(
                 query=user_query,
                 force_mode=force_mode,
                 top_k=top_k
             )
             
-            system_prompt = """You are a helpful AI assistant that answers questions based on provided context.
+            # Build prompt with history
+            messages_for_llm = []
+            
+            system_prompt = """You are a helpful AI assistant.
 
 Instructions:
-1. Answer accurately using ONLY the provided context
-2. Cite sources using [1], [2], etc. when referencing specific information
-3. If the context doesn't contain enough information, acknowledge this
-4. Be concise but comprehensive
-5. Use clear, professional language"""
+1. Answer using the provided context
+2. Cite sources with [1], [2], etc.
+3. Consider conversation history
+4. Be concise but comprehensive"""
 
+            if use_history:
+                history_context = st.session_state.conv_manager.get_context_for_llm()
+                messages_for_llm.extend(history_context)
+            
             user_prompt = f"""
 {context.formatted_text}
 
-Now, please answer this question:
-{user_query}
+Question: {user_query}
 """
+            messages_for_llm.append({"role": "user", "content": user_prompt})
+            
+            # Call LLM
             try:
-                response = asyncio.run(call_llm_async(
-                    prompt=user_prompt,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    max_tokens=2000
-                ))
+                if use_history and len(messages_for_llm) > 1:
+                    full_prompt = "\n\n".join([
+                        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                        for m in messages_for_llm[:-1]
+                    ]) + f"\n\nUser: {user_prompt}"
+                    
+                    response = asyncio.run(call_llm_async(
+                        prompt=full_prompt,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=2000
+                    ))
+                else:
+                    response = asyncio.run(call_llm_async(
+                        prompt=user_prompt,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=2000
+                    ))
             except:
                 from backend.utils.llm_utils import call_llm
-                response = call_llm(
-                    prompt=user_prompt,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    max_tokens=2000
-                )
+                if use_history and len(messages_for_llm) > 1:
+                    full_prompt = "\n\n".join([
+                        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                        for m in messages_for_llm[:-1]
+                    ]) + f"\n\nUser: {user_prompt}"
+                    
+                    response = call_llm(
+                        prompt=full_prompt,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=2000
+                    )
+                else:
+                    response = call_llm(
+                        prompt=user_prompt,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=2000
+                    )
             
+            # Save to MongoDB via conversation manager
+            if use_history:
+                st.session_state.conv_manager.add_message('user', original_query, save_to_db=True)
+                st.session_state.conv_manager.add_message('assistant', response, save_to_db=True)
+            
+            # Save to UI
             assistant_message = {
                 'role': 'assistant',
                 'content': response,
-                'metadata': context.metadata,
-                'context': context.formatted_text
+                'metadata': context.metadata
             }
             st.session_state.messages.append(assistant_message)
+            
+            # Auto-generate title for first message
+            if len(st.session_state.messages) == 2:
+                conv_storage.auto_generate_title(
+                    current_conversation_id,
+                    llm_func=call_llm_async
+                )
             
             st.rerun()
         
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
-            st.session_state.messages.append({
-                'role': 'assistant',
-                'content': f"Sorry, I encountered an error: {str(e)}"
-            })
+            st.error(f"❌ Error: {e}")
 
-#  Footer 
+# ================= Footer =================
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #6b7280; font-size: 0.9rem;">
-    <p>💬 RAG Chat powered by <strong>mini-lightrag</strong> – Đại học Thủy lợi</p>
-    <p style="font-size: 0.8rem;">
-        🔍 Hybrid Retrieval | 🧮 Vector Search | 🕸️ Knowledge Graph | 🤖 LLM Generation
-    </p>
+    <p>💬 Multi-Conversation Chat – mini-lightrag v2.1</p>
 </div>
 """, unsafe_allow_html=True)
-
-#  Debug Info (Admin only) 
-if role == 'admin' and st.sidebar.checkbox("🔧 Debug Mode", value=False):
-    with st.sidebar:
-        st.markdown("### 🐛 Debug Info")
-        st.json({
-            'user_id': user_id,
-            'role': role,
-            'messages_count': len(st.session_state.messages),
-            'stats': stats,
-            'retrieval_mode': retrieval_mode,
-            'top_k': top_k,
-            'temperature': temperature
-        })

@@ -1,4 +1,3 @@
-
 # backend/core/chunking.py 
 
 from dataclasses import dataclass
@@ -159,12 +158,12 @@ class Chunker:
 
         return chunks
 
-# File extraction
+# ================= File Extraction =================
 def extract_text_from_file(filepath: str) -> str:
     """Extract text from various file formats"""
     ext = Path(filepath).suffix.lower()
 
-    #  PDF
+    # PDF
     if ext == '.pdf':
         try:
             import pdfplumber
@@ -182,12 +181,107 @@ def extract_text_from_file(filepath: str) -> str:
     # DOCX 
     elif ext in ['.docx', '.doc']:
         try:
-            import docx2txt
-            text = docx2txt.process(filepath)
-            return text if text else ""
+            from docx import Document
+            
+            doc = Document(filepath)
+            output = []
+            
+            # Process paragraphs with formatting
+            for para in doc.paragraphs:
+                if not para.text.strip():
+                    output.append("")
+                    continue
+                
+                # Build formatted text (Markdown style)
+                text_parts = []
+                for run in para.runs:
+                    text = run.text
+                    if not text:
+                        continue
+                    
+                    # Apply basic formatting
+                    if run.bold and run.italic:
+                        text = f"***{text}***"
+                    elif run.bold:
+                        text = f"**{text}**"
+                    elif run.italic:
+                        text = f"*{text}*"
+                    
+                    if run.underline:
+                        text = f"<u>{text}</u>"
+                    
+                    if run.font.strike:
+                        text = f"~~{text}~~"
+                    
+                    # Color support (if available)
+                    if run.font.color and run.font.color.rgb:
+                        try:
+                            rgb = run.font.color.rgb
+                            if rgb != (0, 0, 0):  # Not black
+                                hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+                                text = f'<span style="color:{hex_color}">{text}</span>'
+                        except:
+                            pass  # Ignore color errors
+                    
+                    text_parts.append(text)
+                
+                full_text = "".join(text_parts)
+                
+                # Apply heading styles
+                style = para.style.name.lower()
+                if 'heading 1' in style or 'title' in style:
+                    full_text = f"# {full_text}"
+                elif 'heading 2' in style or 'subtitle' in style:
+                    full_text = f"## {full_text}"
+                elif 'heading 3' in style:
+                    full_text = f"### {full_text}"
+                elif 'heading 4' in style:
+                    full_text = f"#### {full_text}"
+                elif 'quote' in style:
+                    full_text = f"> {full_text}"
+                
+                output.append(full_text)
+            
+            # Process tables (Markdown format)
+            for table in doc.tables:
+                if not table.rows:
+                    continue
+                
+                try:
+                    # Header row
+                    header_cells = [cell.text.strip() for cell in table.rows[0].cells]
+                    output.append("\n| " + " | ".join(header_cells) + " |")
+                    output.append("| " + " | ".join(["---"] * len(header_cells)) + " |")
+                    
+                    # Data rows
+                    for row in table.rows[1:]:
+                        cells = [cell.text.strip() for cell in row.cells]
+                        output.append("| " + " | ".join(cells) + " |")
+                    
+                    output.append("")
+                except Exception as e:
+                    print(f"⚠️ Table extraction warning: {e}")
+                    continue
+            
+            result = "\n".join(output)
+            return result if result.strip() else ""
+            
+        except ImportError:
+            # Fallback nếu chưa cài python-docx
+            print("⚠️ python-docx not installed, using basic extraction")
+            try:
+                import docx2txt
+                return docx2txt.process(filepath)
+            except:
+                return ""
         except Exception as e:
             print(f"❌ DOCX extraction error: {e}")
-            return ""
+            # Fallback to docx2txt
+            try:
+                import docx2txt
+                return docx2txt.process(filepath)
+            except:
+                return ""
 
     # Markdown 
     elif ext in ['.md', '.markdown']:
@@ -212,7 +306,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ HTML extraction error: {e}")
             return ""
 
-    #JSON
+    # JSON
     elif ext == '.json':
         try:
             import json
@@ -223,7 +317,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ JSON extraction error: {e}")
             return ""
 
-    #  XML
+    # XML
     elif ext == '.xml':
         try:
             from bs4 import BeautifulSoup
@@ -253,7 +347,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ Text file extraction error: {e}")
             return ""
 
-    #  Excel
+    # Excel
     elif ext in ['.xlsx', '.xls']:
         try:
             import pandas as pd
@@ -274,7 +368,7 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ Excel extraction error: {e}")
             return ""
 
-    #  CSV 
+    # CSV 
     elif ext == '.csv':
         try:
             import pandas as pd
@@ -308,27 +402,27 @@ def extract_text_from_file(filepath: str) -> str:
             print(f"❌ PPTX extraction error: {e}")
             return ""
 
-    #  Unsupported 
+    # Unsupported 
     else:
         print(f"⚠️ Unsupported file type: {ext}")
         return ""
 
-# Main 
+# ================= Main Entry Point =================
 def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> List[Dict]:
     """Main entry point for document processing"""
     config = config or ChunkConfig()
     
-    print(f" Processing: {filepath}")
+    print(f"📄 Processing: {filepath}")
     text = extract_text_from_file(filepath)
     
     if not text.strip():
         print(f"⚠️ Warning: No text extracted from {filepath}")
         return []
     
-    print(f"Extracted {len(text)} characters")
+    print(f"✅ Extracted {len(text)} characters")
     
     chunker = Chunker(config)
     chunks = chunker.chunk_text(text, filepath)
     
-    print(f"Created {len(chunks)} chunks")
+    print(f"✅ Created {len(chunks)} chunks")
     return chunks
