@@ -1,8 +1,14 @@
-# backend/core/extraction.py 
+# backend/core/extraction.py - HYBRID COMPACT VERSION
+"""
+🔍 Hybrid Entity & Relationship Extraction
+- Static: Pre-defined types (fast)
+- Dynamic: Free-form verbs (flexible)
+- Auto: Smart selection
+"""
 
 import asyncio
 import re
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 import logging
 
@@ -11,83 +17,125 @@ logger = logging.getLogger(__name__)
 TUPLE_DELIMITER = "<|>"
 RECORD_DELIMITER = "##"
 
-def create_prompt(text: str) -> str:
-    """Tạo prompt cho LLM với hướng dẫn rõ ràng về format"""
-    return f"""Extract entities and relationships from this text.
+# ================= Configuration =================
 
-IMPORTANT: Follow this EXACT format:
+STATIC_TYPES = {
+    'WORKS_FOR': 'Employment', 'MANAGES': 'Management', 'REPORTS_TO': 'Hierarchy',
+    'COLLABORATES_WITH': 'Partnership', 'COMPETES_WITH': 'Competition',
+    'PRODUCES': 'Manufacturing', 'PROVIDES': 'Service', 'USES': 'Utilization',
+    'DEVELOPS': 'Innovation', 'OWNS': 'Ownership', 'SELLS': 'Commercial',
+    'LOCATED_IN': 'Location', 'OPERATES_IN': 'Operation', 'BASED_IN': 'Headquarters',
+    'PARTICIPATES_IN': 'Participation', 'ORGANIZES': 'Organization', 'ATTENDS': 'Attendance',
+    'IMPLEMENTS': 'Implementation', 'RESEARCHES': 'Research', 'INVENTED_BY': 'Invention',
+    'RELATED_TO': 'General', 'PART_OF': 'Membership',
+    'FOUNDED': 'Establishment', 'ACQUIRED': 'Acquisition', 'MERGED_WITH': 'Merger',
+    'INVESTED_IN': 'Investment', 'ASSOCIATED_WITH': 'Association',
+    'INFLUENCES': 'Influence', 'DEPENDS_ON': 'Dependency'
+}
 
-For entities:
-("entity"{TUPLE_DELIMITER}<entity_name>{TUPLE_DELIMITER}<entity_type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
+CATEGORIES = {
+    'HIERARCHICAL': ['part of', 'belongs to', 'member of', 'within'],
+    'FUNCTIONAL': ['creates', 'produces', 'develops', 'operates', 'uses'],
+    'TEMPORAL': ['founded', 'acquired', 'merged', 'started'],
+    'LOCATIONAL': ['in', 'at', 'based', 'located'],
+    'ASSOCIATIVE': ['works', 'employed', 'member', 'CEO', 'manages'],
+    'INFLUENCE': ['affects', 'impacts', 'competes', 'influences']
+}
 
-For relationships:
-("relationship"{TUPLE_DELIMITER}<source_entity>{TUPLE_DELIMITER}<target_entity>{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<strength_0_to_1>){RECORD_DELIMITER}
+DOMAIN_KEYWORDS = {
+    'tech': ['software', 'AI', 'algorithm', 'cloud', 'API', 'code'],
+    'medical': ['patient', 'treatment', 'drug', 'clinical', 'disease'],
+    'legal': ['court', 'law', 'case', 'judge', 'ruling'],
+    'business': ['revenue', 'market', 'sales', 'investment']
+}
 
-RULES:
-1. Entity types MUST be one of: PERSON, ORGANIZATION, LOCATION, EVENT, PRODUCT, CONCEPT, TECHNOLOGY
-2. Strength MUST be a number between 0 and 1 (e.g., 0.8, 0.5, 1.0)
-3. DO NOT use words like "strong", "weak", "HIGH" for strength - only numbers!
-4. Use {TUPLE_DELIMITER} to separate fields
-5. End each record with {RECORD_DELIMITER}
+# ================= Core Functions =================
 
-Example:
-("entity"{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}TECHNOLOGY{TUPLE_DELIMITER}Advanced language model){RECORD_DELIMITER}
-("relationship"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}developed by{TUPLE_DELIMITER}AI, development{TUPLE_DELIMITER}0.9){RECORD_DELIMITER}
+def detect_domain(chunks: List[Dict]) -> str:
+    """Detect domain from content"""
+    text = " ".join([c['content'][:500] for c in chunks[:5]]).lower()
+    scores = {d: sum(1 for k in kws if k in text) for d, kws in DOMAIN_KEYWORDS.items()}
+    return max(scores, key=scores.get) if max(scores.values()) >= 3 else 'general'
 
-Text to extract from:
+
+def select_mode(chunks: List[Dict], domain: Optional[str] = None, force_mode: Optional[str] = None) -> str:
+    """Select extraction mode"""
+    if force_mode and force_mode != 'auto':
+        return force_mode
+    
+    domain = domain or detect_domain(chunks)
+    mode_map = {'medical': 'dynamic', 'legal': 'dynamic'}
+    selected = mode_map.get(domain, 'static')
+    
+    logger.info(f"🎯 Mode: {selected} (domain: {domain})")
+    return selected
+
+
+def categorize(text: str) -> str:
+    """Categorize verb/type into category"""
+    text_lower = text.lower()
+    for cat, patterns in CATEGORIES.items():
+        if any(p in text_lower for p in patterns):
+            return cat
+    return 'ASSOCIATIVE'
+
+
+def safe_float(value: str, default: float = 0.7) -> float:
+    """Convert to float safely"""
+    try:
+        return max(0.0, min(1.0, float(str(value).strip().strip('"\'').lower())))
+    except:
+        word_map = {'strong': 0.85, 'high': 0.8, 'medium': 0.6, 'low': 0.4, 'weak': 0.35}
+        for word, score in word_map.items():
+            if word in str(value).lower():
+                return score
+        return default
+
+
+# ================= Prompts =================
+
+def create_prompt(text: str, mode: str, context: Optional[str] = None) -> str:
+    """Create extraction prompt"""
+    ctx = f"\n**Context**: {context}\n" if context else ""
+    
+    if mode == 'static':
+        types_list = '\n'.join([f"- {t}" for t in list(STATIC_TYPES.keys())[:12]])
+        rel_format = f"<RELATIONSHIP_TYPE from list above>"
+        example_type = "DEVELOPS"
+    else:  # dynamic
+        types_list = "Use natural verb phrases like:\n- develops, is CEO of, operates, competes with"
+        rel_format = f"<verb_phrase in natural language>"
+        example_type = "develops and maintains"
+    
+    return f"""Extract entities and relationships.{ctx}
+
+# ENTITIES
+Types: PERSON, ORGANIZATION, LOCATION, EVENT, PRODUCT, CONCEPT, TECHNOLOGY
+
+# RELATIONSHIPS
+{types_list}
+
+# FORMAT
+Entity: ("entity"{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
+Relation: ("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}{rel_format}{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<0.0-1.0>){RECORD_DELIMITER}
+
+# EXAMPLE
+("entity"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}ORGANIZATION{TUPLE_DELIMITER}AI company){RECORD_DELIMITER}
+("relationship"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}{example_type}{TUPLE_DELIMITER}OpenAI developed GPT-4{TUPLE_DELIMITER}AI, LLM{TUPLE_DELIMITER}0.95){RECORD_DELIMITER}
+
+# TEXT
 {text}
 
-Output:"""
+# OUTPUT:"""
 
-def safe_float_convert(value: str, default: float = 1.0) -> float:
-    """ Safely convert string to float with fallback
-    
-    Handles cases where LLM returns words instead of numbers:
-    - "strong" / "HIGH" -> 0.9
-    - "medium" / "MEDIUM" -> 0.7
-    - "weak" / "LOW" -> 0.5
-    - Invalid -> default (1.0)
-    """
-    value = str(value).strip().strip('"\'').lower()
-    
-    
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    
-    
-    strength_map = {
-        'very strong': 0.95,
-        'strong': 0.9,
-        'high': 0.9,
-        'medium high': 0.8,
-        'medium': 0.7,
-        'moderate': 0.7,
-        'medium low': 0.6,
-        'low': 0.5,
-        'weak': 0.5,
-        'very weak': 0.3
-    }
-    
-    
-    for keyword, score in strength_map.items():
-        if keyword in value:
-            logger.debug(f"Mapped strength '{value}' to {score}")
-            return score
-    
-    
-    logger.warning(f"Could not parse strength '{value}', using default {default}")
-    return default
 
-def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
-    """ Parse LLM output with robust float conversion"""
-    entities = defaultdict(list)
-    relationships = defaultdict(list)
+# ================= Parsing =================
+
+def parse_result(result: str, chunk_id: str, mode: str) -> Tuple[Dict, Dict]:
+    """Parse LLM output"""
+    entities, relationships = defaultdict(list), defaultdict(list)
     
-    records = re.split(f'{RECORD_DELIMITER}|<\\|COMPLETE\\|>', result)
-    
-    for record in records:
+    for record in re.split(f'{RECORD_DELIMITER}|<\\|COMPLETE\\|>', result):
         match = re.search(r'\((.*?)\)', record)
         if not match:
             continue
@@ -100,55 +148,70 @@ def parse_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             if name:
                 entities[name].append({
                     'entity_name': name,
-                    'entity_type': parts[2].strip().strip('"\''),
+                    'entity_type': parts[2].strip().strip('"\'').upper(),
                     'description': parts[3].strip().strip('"\''),
                     'source_id': chunk_id,
                     'chunk_id': chunk_id
                 })
         
         # Relationship
-        elif len(parts) >= 5 and 'relationship' in parts[0].lower():
+        elif len(parts) >= 6 and 'relationship' in parts[0].lower():
             src = parts[1].strip().strip('"\'')
             tgt = parts[2].strip().strip('"\'')
-            if src and tgt and src != tgt:
-                
-                strength_str = parts[5].strip().strip('"\'') if len(parts) > 5 else '1.0'
-                strength = safe_float_convert(strength_str, default=1.0)
+            rel_type = parts[3].strip().strip('"\'')
+            
+            if src and tgt and src != tgt and rel_type:
+                # Normalize
+                if mode == 'static':
+                    rel_type_upper = rel_type.upper()
+                    rel_type_final = rel_type_upper if rel_type_upper in STATIC_TYPES else 'RELATED_TO'
+                    verb = rel_type.lower()
+                else:  # dynamic
+                    verb = rel_type.lower()
+                    rel_type_final = verb.upper().replace(' ', '_')
                 
                 relationships[(src, tgt)].append({
                     'source_id': src,
                     'target_id': tgt,
-                    'description': parts[3].strip().strip('"\''),
-                    'keywords': parts[4].strip().strip('"\''),
-                    'weight': strength,  
-                    'chunk_id': chunk_id
+                    'relationship_type': rel_type_final,
+                    'verb_phrase': verb,
+                    'category': categorize(verb),
+                    'description': parts[4].strip().strip('"\''),
+                    'keywords': parts[5].strip().strip('"\''),
+                    'weight': safe_float(parts[6].strip().strip('"\'') if len(parts) > 6 else '0.7'),
+                    'chunk_id': chunk_id,
+                    'extraction_mode': mode
                 })
     
     return dict(entities), dict(relationships)
 
-async def extract_single(chunk: Dict, llm_func) -> Tuple[Dict, Dict]:
-    """Extract từ 1 chunk"""
+
+# ================= Async Extraction =================
+
+async def extract_single(chunk: Dict, llm_func, mode: str, context: Optional[str] = None) -> Tuple[Dict, Dict]:
+    """Extract from single chunk"""
     try:
-        prompt = create_prompt(chunk['content'])
+        prompt = create_prompt(chunk['content'], mode, context)
         result = await llm_func(prompt)
-        return parse_result(result, chunk['chunk_id'])
+        return parse_result(result, chunk['chunk_id'], mode)
     except Exception as e:
-        logger.error(f"Extract error for chunk {chunk.get('chunk_id')}: {e}")
+        logger.error(f"Extract error for {chunk.get('chunk_id')}: {e}")
         return {}, {}
 
-async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 16) -> Tuple[Dict, Dict]:
-    """Extract từ nhiều chunks song song"""
+
+async def extract_async(chunks: List[Dict], llm_func, mode: str, max_concurrent: int = 16, 
+                       context: Optional[str] = None) -> Tuple[Dict, Dict]:
+    """Extract from multiple chunks"""
     sem = asyncio.Semaphore(max_concurrent)
     
     async def process(chunk):
         async with sem:
-            return await extract_single(chunk, llm_func)
+            return await extract_single(chunk, llm_func, mode, context)
     
     results = await asyncio.gather(*[process(c) for c in chunks])
     
-    all_entities = defaultdict(list)
-    all_relationships = defaultdict(list)
-    
+    # Merge
+    all_entities, all_relationships = defaultdict(list), defaultdict(list)
     for entities, relationships in results:
         for k, v in entities.items():
             all_entities[k].extend(v)
@@ -157,41 +220,95 @@ async def extract_entities(chunks: List[Dict], llm_func, max_concurrent: int = 1
     
     return dict(all_entities), dict(all_relationships)
 
-def extract_entities_relations(chunks: List[Dict], global_config: Dict = None) -> Tuple[Dict, Dict]:
-    """Sync wrapper with proper event loop handling"""
+
+# ================= Main Entry =================
+
+def extract_entities_relations(
+    chunks: List[Dict],
+    global_config: Dict = None,
+    mode: str = 'auto',
+    domain: Optional[str] = None,
+    context: Optional[str] = None
+) -> Tuple[Dict, Dict]:
+    """
+    Main extraction function
+    
+    Args:
+        chunks: List of chunks
+        global_config: Config with 'llm_model_func'
+        mode: 'static', 'dynamic', or 'auto'
+        domain: Domain hint ('tech', 'medical', 'legal', 'business')
+        context: Optional context string
+    
+    Returns:
+        (entities_dict, relationships_dict)
+    """
     if not chunks:
-        logger.warning("⚠️ No chunks provided for extraction")
+        logger.warning("⚠️ No chunks")
         return {}, {}
     
+    # Select mode
+    selected_mode = select_mode(chunks, domain, mode)
+    
+    # Get LLM
     llm_func = global_config.get('llm_model_func') if global_config else None
     if not llm_func:
         from backend.utils.llm_utils import call_llm_async
         llm_func = call_llm_async
     
     try:
-        
+        # Event loop
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
-                raise RuntimeError("Event loop is closed")
+                raise RuntimeError("Closed")
         except RuntimeError:
-            # No event loop in current thread, create new one
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        logger.info(f"🔍 Extracting entities from {len(chunks)} chunks...")
+        logger.info(f"🔍 Extracting (mode={selected_mode}, chunks={len(chunks)})")
         
-        # Run async extraction
-        result = loop.run_until_complete(extract_entities(chunks, llm_func, 16))
+        # Extract
+        entities, relationships = loop.run_until_complete(
+            extract_async(chunks, llm_func, selected_mode, 16, context)
+        )
         
-        entities, relationships = result
+        # Stats
         logger.info(
-            f"✅ Extracted {sum(len(v) for v in entities.values())} entities, "
+            f"✅ {sum(len(v) for v in entities.values())} entities, "
             f"{sum(len(v) for v in relationships.values())} relationships"
         )
         
-        return result
+        return entities, relationships
     
     except Exception as e:
-        logger.error(f"❌ Extract entities error: {e}")
+        logger.error(f"❌ Error: {e}")
         return {}, {}
+
+
+# ================= Utility =================
+
+def get_statistics(relationships: Dict) -> Dict:
+    """Get relationship statistics"""
+    stats = {
+        'total': sum(len(v) for v in relationships.values()),
+        'by_type': defaultdict(int),
+        'by_category': defaultdict(int),
+        'by_mode': defaultdict(int)
+    }
+    
+    for rels in relationships.values():
+        for rel in rels:
+            stats['by_type'][rel.get('relationship_type', 'UNKNOWN')] += 1
+            stats['by_category'][rel.get('category', 'UNKNOWN')] += 1
+            stats['by_mode'][rel.get('extraction_mode', 'unknown')] += 1
+    
+    return stats
+# ================= Export =================
+__all__ = [
+    'extract_entities_relations',
+    'select_mode',
+    'get_statistics',
+    'STATIC_TYPES',
+    'CATEGORIES'
+]

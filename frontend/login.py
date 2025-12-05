@@ -1,4 +1,4 @@
-# login.py 
+# frontend/login.py (UPDATED - Direct to chat after login)
 import streamlit as st
 import hashlib
 import json
@@ -10,7 +10,6 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.utils.file_utils import ensure_dir
-
 
 try:
     from backend.db.user_manager import load_users, save_users
@@ -55,27 +54,21 @@ def create_default_admin():
             "created_at": datetime.now().isoformat()
         }
         save_users(users)
-        if USE_MONGODB:
-            st.success(" Tài khoản admin đã được tạo trong MongoDB: `admin` / `admin123`")
-        else:
-            st.success("Tài khoản admin đã được tạo: `admin` / `admin123`")
 
 create_default_admin()
 
 st.set_page_config(
     page_title="LightRAG | Login",
-    page_icon="lock",
+    page_icon="🔒",
     layout="centered"
 )
 
 st.markdown("""
 <style>
-    /* Ẩn hoàn toàn sidebar và vùng chứa của nó */
     [data-testid="stSidebar"],
     [data-testid="collapsedControl"] {
         display: none !important;
     }
-    /* Loại bỏ khoảng trống đen bên trái */
     section.main > div.block-container {
         padding-left: 1rem !important;
         padding-right: 1rem !important;
@@ -126,20 +119,6 @@ st.markdown("""
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
     }
-    .toggle-text {
-        text-align: center;
-        margin-top: 1.5rem;
-        color: #9ca3af;
-    }
-    .toggle-link {
-        color: #667eea;
-        font-weight: 600;
-        cursor: pointer;
-        text-decoration: none;
-    }
-    .toggle-link:hover {
-        text-decoration: underline;
-    }
     .error-msg {
         background-color: #fee2e2;
         color: #dc2626;
@@ -179,19 +158,21 @@ if 'username' not in st.session_state:
 if 'role' not in st.session_state:
     st.session_state.role = None
 if 'login_mode' not in st.session_state:
-    st.session_state.login_mode = "login" 
+    st.session_state.login_mode = "login"
 
+# ✅ UPDATED: Redirect based on role after login
 if st.session_state.authenticated:
     if st.session_state.role == 'admin':
         st.switch_page("pages/upload.py")
     else:
-        st.info("Tài khoản user chỉ có quyền chat.")
+        # ✅ Users go directly to chat (not upload)
+        st.switch_page("pages/chat.py")
 
 with st.container():
     st.markdown("<div class='login-container'>", unsafe_allow_html=True)
 
     if st.session_state.login_mode == "login":
-        st.markdown("<h1 class='login-title'> Đăng Nhập</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 class='login-title'>🔒 Đăng Nhập</h1>", unsafe_allow_html=True)
         st.markdown("<p class='login-subtitle'>Chào mừng trở lại! Vui lòng nhập thông tin.</p>", unsafe_allow_html=True)
 
         with st.form("login_form"):
@@ -210,7 +191,7 @@ with st.container():
 
             if login_btn:
                 if not username or not password:
-                    st.markdown("<div class='error-msg'> Vui lòng nhập đầy đủ thông tin.</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='error-msg'>❌ Vui lòng nhập đầy đủ thông tin.</div>", unsafe_allow_html=True)
                 else:
                     users = load_users()
                     user_key = username.lower()
@@ -220,17 +201,19 @@ with st.container():
                         st.session_state.username = users[user_key]["username"]
                         st.session_state.role = users[user_key]["role"]
                         
-                        ensure_dir(Path(f"backend/data/{st.session_state.user_id}/uploads"))
-                        ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
-                        ensure_dir(Path(f"backend/data/{st.session_state.user_id}/graphs"))
+                        # ✅ Only create dirs for admin
+                        if st.session_state.role == 'admin':
+                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/uploads"))
+                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
+                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/graphs"))
 
-                        st.success(f" Đăng nhập thành công! Chào {st.session_state.role.title()}.")
+                        st.success(f"✅ Đăng nhập thành công! Chào {st.session_state.role.title()}.")
                         st.rerun()
                     else:
-                        st.markdown("<div class='error-msg'> Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
+                        st.markdown("<div class='error-msg'>❌ Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
 
-    else:  
-        st.markdown("<h1 class='login-title'>Đăng Ký</h1>", unsafe_allow_html=True)
+    else:  # Signup mode
+        st.markdown("<h1 class='login-title'>📝 Đăng Ký</h1>", unsafe_allow_html=True)
         st.markdown("<p class='login-subtitle'>Tạo tài khoản mới để bắt đầu.</p>", unsafe_allow_html=True)
 
         with st.form("signup_form"):
@@ -251,15 +234,15 @@ with st.container():
             if signup_btn:
                 error = None
                 if not validate_username(new_username):
-                    error = " Tên người dùng phải từ 3-20 ký tự, chỉ chứa chữ cái và số."
+                    error = "❌ Tên người dùng phải từ 3-20 ký tự, chỉ chứa chữ cái và số."
                 elif not validate_password(new_password):
-                    error = " Mật khẩu phải có ít nhất 6 ký tự."
+                    error = "❌ Mật khẩu phải có ít nhất 6 ký tự."
                 elif new_password != confirm_password:
-                    error = " Mật khẩu xác nhận không khớp."
+                    error = "❌ Mật khẩu xác nhận không khớp."
                 else:
                     users = load_users()
                     if new_username.lower() in users:
-                        error = " Tên người dùng đã tồn tại."
+                        error = "❌ Tên người dùng đã tồn tại."
 
                 if error:
                     st.markdown(f"<div class='error-msg'>{error}</div>", unsafe_allow_html=True)
@@ -270,43 +253,36 @@ with st.container():
                         "username": new_username,
                         "password": hash_password(new_password),
                         "user_id": user_id,
-                        "role": "user",
+                        "role": "user",  # ✅ Always create as 'user'
                         "created_at": datetime.now().isoformat()
                     }
                     save_users(users)
 
-                    ensure_dir(Path(f"backend/data/{user_id}/uploads"))
-                    ensure_dir(Path(f"backend/data/{user_id}/chunks"))
-                    ensure_dir(Path(f"backend/data/{user_id}/graphs"))
-
-                    if USE_MONGODB:
-                        st.markdown("<div class='success-msg'> Đăng ký thành công vào MongoDB! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
-                    else:
-                        st.markdown("<div class='success-msg'> Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
+                    # ✅ Users don't need data directories
+                    st.markdown("<div class='success-msg'>✅ Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
                     st.session_state.login_mode = "login"
                     st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-with st.expander(" Thông tin tài khoản mẫu", expanded=False):
-    if USE_MONGODB:
-        st.markdown("""
-        <div class='info-msg'>
-            <strong>MongoDB Active</strong><br>
-            <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
-            <strong>User:</strong> Tạo mới → Chỉ Chat
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.markdown("""
-        <div class='info-msg'>
-            <strong>Admin:</strong> `admin` / `admin123` → Upload + Graph + Chat<br>
-            <strong>User:</strong> Tạo mới → Chỉ Chat
-        </div>
-        """, unsafe_allow_html=True)
+with st.expander("ℹ️ Thông tin tài khoản", expanded=False):
+    st.markdown("""
+    <div class='info-msg'>
+        <strong>Admin:</strong> `admin` / `admin123`<br>
+        • Can upload documents<br>
+        • Can view knowledge graph<br>
+        • Can chat with uploaded documents<br>
+        <br>
+        <strong>User:</strong> Register to create account<br>
+        • Can chat with admin's uploaded documents<br>
+        • Cannot upload documents<br>
+        • Cannot view graph<br>
+        • Personal conversation history is saved separately
+    </div>
+    """, unsafe_allow_html=True)
 
 st.markdown("""
 <div style='text-align: center; margin-top: 3rem; color: #6b7280; font-size: 0.8rem;'>
-    <p>mini-lightrag v2.0 - Đại học Thủy lợi</p>
+    <p>mini-lightrag v2.2 – Shared Knowledge Base – Đại học Thủy lợi</p>
 </div>
 """, unsafe_allow_html=True)

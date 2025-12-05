@@ -1,12 +1,11 @@
-# frontend/pages/chat.py (FIXED - No Duplicate Conversations)
+# frontend/pages/chat.py (SHARED DATA VERSION)
 """
-💬 Chat Interface - Multi-Conversation
+💬 Chat Interface - Users share admin's data
 """
 import streamlit as st
 import sys
 import os
 from datetime import datetime
-from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
@@ -25,6 +24,9 @@ if not st.session_state.get('authenticated', False):
 user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'User')
 role = st.session_state.get('role', 'user')
+
+# ✅ NEW: Users use admin's data for retrieval
+DATA_USER_ID = 'admin_00000000'  # All users read from admin's data
 
 # ================= Page Config =================
 st.set_page_config(
@@ -51,6 +53,17 @@ st.markdown("""
         font-weight: 700; 
         margin: 0; 
     }
+    
+    .role-badge {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-left: 1rem;
+    }
+    .badge-admin { background: #dc2626; color: white; }
+    .badge-user { background: #10b981; color: white; }
     
     .chat-message {
         padding: 1rem;
@@ -89,17 +102,36 @@ st.markdown("""
     .badge-chunks { background: #3b82f6; color: white; }
     .badge-entities { background: #8b5cf6; color: white; }
     .badge-time { background: #10b981; color: white; }
+    
+    .info-box {
+        background: #1e3a8a;
+        color: white;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        border-left: 4px solid #3b82f6;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ================= Initialize Storage =================
 @st.cache_resource
-def init_storage(user_id: str):
-    """Initialize all storage components"""
+def init_storage(data_user_id: str, conv_user_id: str):
+    """
+    Initialize storage - Users read from admin's data
+    
+    Args:
+        data_user_id: User ID for data (admin_00000000 for all users)
+        conv_user_id: User ID for conversation history (unique per user)
+    """
     try:
-        vector_db = VectorDatabase(user_id)
-        mongo_storage = MongoStorage(user_id)
-        conv_storage = ConversationStorage(user_id)
+        # ✅ Data from admin
+        vector_db = VectorDatabase(data_user_id)
+        mongo_storage = MongoStorage(data_user_id)
+        
+        # ✅ Conversations are personal
+        conv_storage = ConversationStorage(conv_user_id)
+        
         retriever = HybridRetriever(vector_db, mongo_storage)
         
         vec_stats = vector_db.get_statistics()
@@ -120,7 +152,8 @@ def init_storage(user_id: str):
         st.error(f"❌ Failed to initialize: {e}")
         return None
 
-storage = init_storage(user_id)
+# ✅ Load admin's data for retrieval, but user's own conversations
+storage = init_storage(DATA_USER_ID, user_id)
 
 if not storage:
     st.error("❌ Failed to initialize chat system")
@@ -132,26 +165,43 @@ stats = storage['stats']
 
 # ================= Check Data =================
 if stats['vectors'] == 0:
-    st.warning("⚠️ No documents uploaded yet.")
-    if role == 'admin' and st.button("📤 Go to Upload"):
-        st.switch_page("pages/upload.py")
+    st.warning("⚠️ No documents available yet.")
+    if role == 'admin':
+        if st.button("📤 Go to Upload"):
+            st.switch_page("pages/upload.py")
+    else:
+        st.info("💡 Please contact admin to upload documents.")
     st.stop()
 
 # ================= Header =================
+role_badge_class = "badge-admin" if role == "admin" else "badge-user"
+role_display = "Admin" if role == "admin" else "User"
+
 st.markdown(f"""
 <div class="header-container">
-    <div class="header-title">💬 Multi-Conversation Chat</div>
+    <div class="header-title">
+        💬 Multi-Conversation Chat
+        <span class="role-badge {role_badge_class}">{role_display.upper()}</span>
+    </div>
 </div>
 """, unsafe_allow_html=True)
+
+# ✅ Show info for users
+if role == 'user':
+    st.markdown(f"""
+    <div class="info-box">
+        <strong>📚 Shared Knowledge Base</strong><br>
+        You are chatting with documents uploaded by admin.<br>
+        Your conversation history is private and saved separately.
+    </div>
+    """, unsafe_allow_html=True)
 
 if 'current_conversation_id' not in st.session_state or st.session_state.current_conversation_id is None:
     conversations = conv_storage.list_conversations(limit=1)
     
     if conversations:
-        # Use existing conversation
         st.session_state.current_conversation_id = conversations[0]['conversation_id']
     else:
-        # Create first conversation
         new_conv_id = conv_storage.create_conversation()
         st.session_state.current_conversation_id = new_conv_id
 
@@ -161,16 +211,25 @@ current_conversation_id = st.session_state.current_conversation_id
 with st.sidebar:
     st.markdown(f"## 👤 {username}")
     st.markdown(f"**Role**: {role}<br>**ID**: `{user_id}`", unsafe_allow_html=True)
+    
+    # ✅ Show data source
+    if role == 'user':
+        st.markdown(f"""
+        <div style="background: #1e3a8a; padding: 0.5rem; border-radius: 5px; margin-top: 0.5rem;">
+            <small>📚 Data source: Admin</small>
+        </div>
+        """, unsafe_allow_html=True)
+    
     st.markdown("---")
     
     # Conversation List
-    st.markdown("### 💬 Conversations")
+    st.markdown("### 💬 Your Conversations")
     
     if 'creating_new_conv' not in st.session_state:
         st.session_state.creating_new_conv = False
     
     if st.button("➕ New Chat", use_container_width=True, type="primary", key="new_chat_btn"):
-        if not st.session_state.creating_new_conv: 
+        if not st.session_state.creating_new_conv:
             st.session_state.creating_new_conv = True
             
             try:
@@ -178,14 +237,10 @@ with st.sidebar:
                 st.session_state.current_conversation_id = new_conv_id
                 st.session_state.messages = []
                 
-                # Clear conversation manager
                 if 'conv_manager' in st.session_state:
                     del st.session_state.conv_manager
                 
-                # Reset flag
                 st.session_state.creating_new_conv = False
-                
-                # Rerun to show new conversation
                 st.rerun()
             
             except Exception as e:
@@ -194,7 +249,6 @@ with st.sidebar:
     
     # List conversations
     conversations = conv_storage.list_conversations(limit=20)
-    
     current_conv_id = st.session_state.get('current_conversation_id')
     
     for conv in conversations:
@@ -214,10 +268,8 @@ with st.sidebar:
                 use_container_width=True,
                 type="secondary" if not is_active else "primary"
             ):
-                # Switch conversation
                 st.session_state.current_conversation_id = conv_id
                 
-                # Load messages
                 messages = conv_storage.get_messages(conv_id)
                 st.session_state.messages = [
                     {
@@ -228,7 +280,6 @@ with st.sidebar:
                     for m in messages
                 ]
                 
-                # Update conversation manager
                 if 'conv_manager' not in st.session_state:
                     st.session_state.conv_manager = ConversationManager(
                         max_history=5,
@@ -236,10 +287,7 @@ with st.sidebar:
                         conversation_id=conv_id
                     )
                 else:
-                    st.session_state.conv_manager.set_conversation(
-                        conv_id,
-                        conv_storage
-                    )
+                    st.session_state.conv_manager.set_conversation(conv_id, conv_storage)
                 
                 st.rerun()
         
@@ -247,7 +295,6 @@ with st.sidebar:
             if st.button("🗑️", key=f"del_{conv_id}"):
                 conv_storage.delete_conversation(conv_id)
                 
-                # If deleting current conversation, create new one
                 if conv_id == current_conv_id:
                     new_conv_id = conv_storage.create_conversation()
                     st.session_state.current_conversation_id = new_conv_id
@@ -266,6 +313,8 @@ with st.sidebar:
             st.switch_page("pages/upload.py")
         if st.button("🕸️ Graph"):
             st.switch_page("pages/graph.py")
+    else:
+        st.info("👁️ View-only access")
     
     st.markdown("---")
     
@@ -293,7 +342,7 @@ with st.sidebar:
             st.session_state.pop(k, None)
         st.switch_page("login.py")
 
-# ✅ FIX 3: Verify conversation_id is set (removed duplicate auto-create)
+# Verify conversation_id
 if current_conversation_id is None:
     st.error("❌ Failed to initialize conversation. Please refresh the page.")
     st.stop()
@@ -310,7 +359,7 @@ else:
     st.session_state.conv_manager.conversation_id = current_conversation_id
     st.session_state.conv_manager.conv_storage = conv_storage
 
-# Load messages from MongoDB if not in session
+# Load messages
 if 'messages' not in st.session_state:
     messages = conv_storage.get_messages(current_conversation_id)
     st.session_state.messages = [
@@ -327,20 +376,21 @@ conv_id_display = current_conversation_id[:12] if current_conversation_id else "
 
 st.markdown(f"""
 <div class="context-preview">
-    <strong>📊 Status:</strong>
+    <strong>📊 Knowledge Base:</strong>
     📄 Docs: {stats['docs']} | 
     🧮 Vectors: {stats['vectors']} | 
     🕸️ Nodes: {stats['nodes']} | 
     💬 Conversation: {conv_id_display}...
+    {'<br>📚 <strong>Source: Admin data (shared)</strong>' if role == 'user' else ''}
 </div>
 """, unsafe_allow_html=True)
 
 # ================= Display Messages =================
 for message in st.session_state.messages:
-    role = message['role']
+    role_msg = message['role']
     content = message['content']
     
-    if role == 'user':
+    if role_msg == 'user':
         st.markdown(f"""
         <div class="chat-message user-message">
             <strong>👤 You:</strong><br>{content}
@@ -369,7 +419,6 @@ st.markdown("---")
 user_query = st.chat_input("Ask me anything...")
 
 if user_query:
-    # Add to UI
     st.session_state.messages.append({
         'role': 'user',
         'content': user_query
@@ -394,7 +443,7 @@ if user_query:
                 if show_rewrite and user_query != original_query:
                     st.info(f"🔄 Rewritten: {user_query}")
             
-            # Retrieval
+            # Retrieval (from admin's data)
             force_mode = None if retrieval_mode == 'auto' else retrieval_mode
             context = retriever.retrieve(
                 query=user_query,
@@ -402,7 +451,7 @@ if user_query:
                 top_k=top_k
             )
             
-            # Build prompt with history
+            # Build prompt
             messages_for_llm = []
             
             system_prompt = """You are a helpful AI assistant.
@@ -467,7 +516,7 @@ Question: {user_query}
                         max_tokens=2000
                     )
             
-            # Save to MongoDB via conversation manager
+            # Save to MongoDB
             if use_history:
                 st.session_state.conv_manager.add_message('user', original_query, save_to_db=True)
                 st.session_state.conv_manager.add_message('assistant', response, save_to_db=True)
@@ -480,7 +529,7 @@ Question: {user_query}
             }
             st.session_state.messages.append(assistant_message)
             
-            # Auto-generate title for first message
+            # Auto-generate title
             if len(st.session_state.messages) == 2:
                 conv_storage.auto_generate_title(
                     current_conversation_id,
@@ -494,8 +543,12 @@ Question: {user_query}
 
 # ================= Footer =================
 st.markdown("---")
-st.markdown("""
+footer_text = "💬 Multi-Conversation Chat – mini-lightrag v2.2"
+if role == 'user':
+    footer_text += " (Shared Knowledge Base)"
+
+st.markdown(f"""
 <div style="text-align: center; color: #6b7280; font-size: 0.9rem;">
-    <p>💬 Multi-Conversation Chat – mini-lightrag v2.1</p>
+    <p>{footer_text}</p>
 </div>
 """, unsafe_allow_html=True)
