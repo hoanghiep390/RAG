@@ -1,7 +1,6 @@
 # backend/retrieval/hybrid_retriever.py
 """
- Hybrid Retriever - Orchestrator
-Kết hợp vector search + graph traversal để tạo context
+🔍 Hybrid Retriever - Enhanced for relationship-aware Q&A
 """
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass, field
@@ -16,41 +15,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetrievalContext:
-    """Final context for LLM"""
+    """Enhanced context with relationship awareness"""
     query: str
     intent: str
     retrieval_mode: str
     
-    # Results
     chunks: List[ScoredChunk] = field(default_factory=list)
     entities: List[GraphContext] = field(default_factory=list)
     
-    # Formatted output
     formatted_text: str = ""
-    
-    # Metadata
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def __repr__(self):
         return f"RetrievalContext(mode={self.retrieval_mode}, chunks={len(self.chunks)}, entities={len(self.entities)})"
 
-#  Main Retriever
 class HybridRetriever:
-    """
-    Main orchestrator - Kết hợp tất cả retrievers
-    
-    Usage:
-        retriever = HybridRetriever(vector_db, mongo_storage)
-        context = retriever.retrieve("What is GPT-4?")
-        print(context.formatted_text)  # Ready for LLM
-    """
+    """Enhanced orchestrator with relationship-aware context"""
     
     def __init__(self, vector_db, mongo_storage):
-        """
-        Args:
-            vector_db: VectorDatabase instance
-            mongo_storage: MongoStorage instance
-        """
         self.query_analyzer = QueryAnalyzer()
         self.vector_retriever = VectorRetriever(vector_db)
         self.graph_retriever = GraphRetriever(mongo_storage)
@@ -59,49 +41,56 @@ class HybridRetriever:
         self,
         query: str,
         force_mode: Optional[str] = None,
-        top_k: Optional[int] = None
+        top_k: Optional[int] = None,
+        filter_category: Optional[List[str]] = None,
+        filter_rel_type: Optional[List[str]] = None
     ) -> RetrievalContext:
         """
-        Main retrieval function
+        Enhanced retrieval with relationship filtering
         
         Args:
             query: User query
-            force_mode: Override auto mode ('vector', 'graph', 'hybrid')
-            top_k: Override auto top_k
-        
-        Returns:
-            RetrievalContext with formatted text for LLM
+            force_mode: Override mode
+            top_k: Number of results
+            filter_category: Graph categories to include
+            filter_rel_type: Relationship types to include
         """
         try:
             import time
-            start_time = time.time()
+            start = time.time()
             
             analysis = self.query_analyzer.analyze(query)
-            logger.info(f"Query analyzed: intent={analysis.intent}, mode={analysis.retrieval_mode}")
-            
+            logger.info(f"📊 Intent: {analysis.intent}, Mode: {analysis.retrieval_mode}")
             
             mode = force_mode or analysis.retrieval_mode
             k = top_k or analysis.top_k
             
-            
+            # Retrieve
             if mode == 'vector':
                 chunks, entities = self._vector_only(query, k)
             elif mode == 'graph':
-                chunks, entities = self._graph_only(analysis.entities, k)
-            else:  
-                chunks, entities = self._hybrid_search(query, analysis.entities, k)
+                chunks, entities = self._graph_only(
+                    analysis.entities, k, 
+                    filter_category, filter_rel_type
+                )
+            else:  # hybrid
+                chunks, entities = self._hybrid_search(
+                    query, analysis.entities, k,
+                    filter_category, filter_rel_type
+                )
             
+            # ✅ ENHANCED: Relationship-aware formatting
             formatted = self._format_context(query, chunks, entities, analysis)
             
-            
-            elapsed = time.time() - start_time
+            elapsed = time.time() - start
             metadata = {
                 'retrieval_time_ms': int(elapsed * 1000),
                 'retrieval_mode': mode,
                 'num_chunks': len(chunks),
                 'num_entities': len(entities),
                 'intent': analysis.intent,
-                'keywords': analysis.keywords[:5]
+                'keywords': analysis.keywords[:5],
+                'has_relationships': any(len(e.relationships) > 0 for e in entities)
             }
             
             return RetrievalContext(
@@ -115,54 +104,59 @@ class HybridRetriever:
             )
         
         except Exception as e:
-            logger.error(f"Retrieval failed: {e}")
+            logger.error(f"❌ Retrieval failed: {e}")
             return RetrievalContext(
                 query=query,
                 intent='unknown',
                 retrieval_mode='error',
-                formatted_text=f"Error during retrieval: {str(e)}"
+                formatted_text=f"Error: {str(e)}"
             )
     
     def _vector_only(self, query: str, top_k: int) -> tuple:
-        """Vector search only"""
-        logger.info(f"Vector-only retrieval (top_k={top_k})")
-        
+        logger.info(f"🔍 Vector search (k={top_k})")
         chunks = self.vector_retriever.search(query, top_k=top_k)
-        entities = []
-        
-        return chunks, entities
+        return chunks, []
     
-    def _graph_only(self, entity_names: List[str], top_k: int) -> tuple:
-        """Graph search only"""
-        logger.info(f"Graph-only retrieval (entities={entity_names})")
+    def _graph_only(
+        self, 
+        entity_names: List[str], 
+        top_k: int,
+        filter_category: Optional[List[str]] = None,
+        filter_rel_type: Optional[List[str]] = None
+    ) -> tuple:
+        logger.info(f"🕸️ Graph search (entities={entity_names})")
         
         if not entity_names:
-            logger.warning("No entities for graph search, returning empty")
             return [], []
         
         entities = self.graph_retriever.search(
             entity_names=entity_names,
             k_hops=2,
-            max_neighbors=top_k
+            max_neighbors=top_k,
+            filter_category=filter_category,
+            filter_rel_type=filter_rel_type
         )
-        chunks = []
-        
-        return chunks, entities
+        return [], entities
     
-    def _hybrid_search(self, query: str, entity_names: List[str], top_k: int) -> tuple:
-        """
-        Hybrid search - Parallel vector + graph
-        
-        Returns more chunks from vector, fewer entities from graph for balance
-        """
-        logger.info(f"Hybrid retrieval (top_k={top_k}, entities={entity_names})")
-        
+    def _hybrid_search(
+        self, 
+        query: str, 
+        entity_names: List[str], 
+        top_k: int,
+        filter_category: Optional[List[str]] = None,
+        filter_rel_type: Optional[List[str]] = None
+    ) -> tuple:
+        logger.info(f"🔀 Hybrid search (k={top_k})")
         
         try:
-            
-            chunks, entities = asyncio.run(self._parallel_search(query, entity_names, top_k))
+            chunks, entities = asyncio.run(
+                self._parallel_search(
+                    query, entity_names, top_k,
+                    filter_category, filter_rel_type
+                )
+            )
         except:
-            logger.warning("Async failed, using sequential search")
+            logger.warning("⚠️ Async failed, using sequential")
             chunks = self.vector_retriever.search(query, top_k=int(top_k * 0.7))
             entities = []
             
@@ -170,13 +164,22 @@ class HybridRetriever:
                 entities = self.graph_retriever.search(
                     entity_names=entity_names,
                     k_hops=1,
-                    max_neighbors=int(top_k * 0.3)
+                    max_neighbors=int(top_k * 0.3),
+                    filter_category=filter_category,
+                    filter_rel_type=filter_rel_type
                 )
         
         return chunks, entities
     
-    async def _parallel_search(self, query: str, entity_names: List[str], top_k: int) -> tuple:
-        """Execute vector and graph search in parallel"""
+    async def _parallel_search(
+        self, 
+        query: str, 
+        entity_names: List[str], 
+        top_k: int,
+        filter_category: Optional[List[str]] = None,
+        filter_rel_type: Optional[List[str]] = None
+    ) -> tuple:
+        """Parallel execution"""
         
         async def vector_task():
             return self.vector_retriever.search(query, top_k=int(top_k * 0.7))
@@ -187,9 +190,10 @@ class HybridRetriever:
             return self.graph_retriever.search(
                 entity_names=entity_names,
                 k_hops=1,
-                max_neighbors=int(top_k * 0.3)
+                max_neighbors=int(top_k * 0.3),
+                filter_category=filter_category,
+                filter_rel_type=filter_rel_type
             )
-        
         
         chunks, entities = await asyncio.gather(
             asyncio.to_thread(vector_task),
@@ -206,61 +210,82 @@ class HybridRetriever:
         analysis: QueryAnalysis
     ) -> str:
         """
-        Format final context for LLM prompt
-        
-        Structure:
-        1. Query info
-        2. Vector search results (chunks)
-        3. Graph context (entities + relationships)
-        4. Instructions for LLM
+        ✅ ENHANCED: Relationship-aware context formatting
         """
         lines = []
         
-        
-        lines.append("=" * 70)
-        lines.append(f"RETRIEVAL CONTEXT FOR QUERY: {query}")
-        lines.append(f"Intent: {analysis.intent} | Mode: {analysis.retrieval_mode}")
-        lines.append("=" * 70)
+        # Header
+        lines.append("=" * 80)
+        lines.append(f"📋 RETRIEVAL CONTEXT FOR: {query}")
+        lines.append(f"🎯 Intent: {analysis.intent} | Mode: {analysis.retrieval_mode}")
+        lines.append("=" * 80)
         lines.append("")
         
-        
+        # Vector chunks
         if chunks:
-            lines.append("##  RELEVANT DOCUMENTS")
+            lines.append("## 📄 RELEVANT DOCUMENTS")
             lines.append("")
             
             for i, chunk in enumerate(chunks, 1):
-                lines.append(f"[{i}] Score: {chunk.score:.3f} | Source: {chunk.filename}")
-                lines.append(f"{chunk.content}")
+                lines.append(f"[{i}] **Score: {chunk.score:.3f}** | Source: {chunk.filename}")
+                lines.append(f"{chunk.content[:500]}...")
                 lines.append("")
         
-        
+        # ✅ ENHANCED: Graph entities with relationship details
         if entities:
-            lines.append("##  KNOWLEDGE GRAPH CONTEXT")
+            lines.append("## 🕸️ KNOWLEDGE GRAPH - ENTITIES & RELATIONSHIPS")
             lines.append("")
             
             for i, entity in enumerate(entities, 1):
                 lines.append(f"[{i}] **{entity.entity_name}** ({entity.entity_type})")
                 
                 if entity.description:
-                    lines.append(f"    Description: {entity.description}")
+                    lines.append(f"    📝 Description: {entity.description[:200]}")
                 
-                if entity.neighbors:
-                    lines.append(f"    Related to: {', '.join(entity.neighbors[:5])}")
-                
+                # ✅ DETAILED RELATIONSHIPS
                 if entity.relationships:
-                    lines.append(f"    Key relationships:")
-                    for rel in entity.relationships[:3]:
-                        lines.append(f"      → {rel['target']}: {rel['description']}")
+                    lines.append(f"    🔗 Relationships ({len(entity.relationships)}):")
+                    
+                    for rel in entity.relationships[:5]:
+                        rel_type = rel['relationship_type']
+                        verb = rel['verb_phrase']
+                        category = rel['category']
+                        target = rel['target']
+                        desc = rel.get('description', '')
+                        strength = rel.get('strength', 1.0)
+                        
+                        # Format: "→ OpenAI DEVELOPS (FUNCTIONAL) [S:0.95] GPT-4"
+                        lines.append(
+                            f"       → **{rel_type}** ({category}) [S:{strength:.2f}] **{target}**"
+                        )
+                        lines.append(f"         \"{verb}\" - {desc[:100]}")
+                    
+                    if len(entity.relationships) > 5:
+                        lines.append(f"       ... and {len(entity.relationships) - 5} more")
                 
                 lines.append("")
         
-        # Footer: Instructions
-        lines.append("=" * 70)
-        lines.append("INSTRUCTIONS:")
-        lines.append("1. Use the above context to answer the query accurately")
-        lines.append("2. Cite sources using [1], [2], etc.")
-        lines.append("3. If context is insufficient, acknowledge limitations")
-        lines.append("=" * 70)
+        # ✅ ENHANCED: Instructions for relationship-aware Q&A
+        lines.append("=" * 80)
+        lines.append("## 📖 INSTRUCTIONS FOR ASSISTANT")
+        lines.append("")
+        lines.append("1. **Relationship Analysis**: Pay attention to:")
+        lines.append("   - Relationship TYPES (e.g., DEVELOPS, MANAGES, OWNS)")
+        lines.append("   - Verb phrases (natural language descriptions)")
+        lines.append("   - Categories (FUNCTIONAL, HIERARCHICAL, TEMPORAL, etc.)")
+        lines.append("   - Strength scores (higher = more important)")
+        lines.append("")
+        lines.append("2. **Answer Strategy**:")
+        lines.append("   - Use BOTH documents and graph relationships")
+        lines.append("   - Cite sources: [1], [2] for docs; mention entities for graph")
+        lines.append("   - Explain relationships clearly with their types/categories")
+        lines.append("   - If asked about connections, describe the relationship path")
+        lines.append("")
+        lines.append("3. **Examples**:")
+        lines.append("   - 'What does OpenAI develop?' → Use DEVELOPS (FUNCTIONAL) relationships")
+        lines.append("   - 'Who manages X?' → Use MANAGES (HIERARCHICAL) relationships")
+        lines.append("   - 'How are X and Y connected?' → Describe relationship path with types")
+        lines.append("=" * 80)
         
         return "\n".join(lines)
     
@@ -270,19 +295,8 @@ class HybridRetriever:
         top_k: int = 5,
         rerank_method: str = 'rrf'
     ) -> RetrievalContext:
-        """
-        Advanced retrieval with reranking
-        
-        Args:
-            query: User query
-            top_k: Final number of results
-            rerank_method: 'rrf' (Reciprocal Rank Fusion) or 'score'
-        
-        Note: This is a placeholder for future reranker integration
-        """
-        
+        """Advanced retrieval with reranking"""
         context = self.retrieve(query, top_k=top_k * 2)
-        
         
         if rerank_method == 'score':
             context.chunks.sort(key=lambda x: x.score, reverse=True)
@@ -291,7 +305,6 @@ class HybridRetriever:
             context.entities.sort(key=lambda x: x.score, reverse=True)
             context.entities = context.entities[:top_k // 2]
         
-        
         analysis = self.query_analyzer.analyze(query)
         context.formatted_text = self._format_context(
             query, context.chunks, context.entities, analysis
@@ -299,27 +312,13 @@ class HybridRetriever:
         
         return context
 
-# ================= Convenience Function =================
+# Convenience function
 def retrieve(
     query: str,
     vector_db,
     mongo_storage,
     **kwargs
 ) -> RetrievalContext:
-    """
-    Quick retrieval function
-    
-    Usage:
-        from backend.db.vector_db import VectorDatabase
-        from backend.db.mongo_storage import MongoStorage
-        from backend.retrieval.hybrid_retriever import retrieve
-        
-        vector_db = VectorDatabase(user_id='admin_00000000')
-        storage = MongoStorage(user_id='admin_00000000')
-        
-        context = retrieve("What is AI?", vector_db, storage)
-        print(context.formatted_text)
-    """
+    """Quick retrieval"""
     retriever = HybridRetriever(vector_db, mongo_storage)
     return retriever.retrieve(query, **kwargs)
-

@@ -1,5 +1,4 @@
-
-# backend/db/mongo_storage.py
+# backend/db/mongo_storage.py 
 
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -10,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """Enhanced MongoDB storage with better error handling"""
+    """Enhanced MongoDB storage with COMPLETE cascade delete"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -24,9 +23,9 @@ class MongoStorage:
             self.graph_edges = self.db['graph_edges']
             
             self._create_indexes()
-            logger.info(f" MongoStorage initialized for user: {user_id}")
+            logger.info(f"✅ MongoStorage initialized for user: {user_id}")
         except Exception as e:
-            logger.error(f" Failed to initialize MongoStorage: {e}")
+            logger.error(f"❌ Failed to initialize MongoStorage: {e}")
             raise
     
     def _create_indexes(self):
@@ -36,12 +35,16 @@ class MongoStorage:
             self.chunks.create_index([('user_id', 1), ('doc_id', 1)])
             self.chunks.create_index([('chunk_id', 1)], unique=True)
             self.entities.create_index([('user_id', 1), ('entity_name', 1)])
+            self.entities.create_index([('user_id', 1), ('doc_id', 1)])  
             self.relationships.create_index([('user_id', 1), ('source_id', 1)])
+            self.relationships.create_index([('user_id', 1), ('doc_id', 1)])  
             self.graph_nodes.create_index([('user_id', 1), ('node_id', 1)], unique=True)
+            self.graph_nodes.create_index([('user_id', 1), ('source_documents', 1)])  
             self.graph_edges.create_index([('user_id', 1), ('source', 1), ('target', 1)])
-            logger.debug("MongoDB indexes created")
+            self.graph_edges.create_index([('user_id', 1), ('source_documents', 1)]) 
+            logger.debug("✅ MongoDB indexes created")
         except Exception as e:
-            logger.warning(f" Index creation warning: {e}")
+            logger.warning(f"⚠️ Index creation warning: {e}")
     
     def save_document(self, doc_id: str, filename: str, filepath: str, metadata: Dict = None) -> str:
         """Save document metadata"""
@@ -56,10 +59,10 @@ class MongoStorage:
                 'metadata': metadata or {}
             }
             result = self.documents.insert_one(doc)
-            logger.info(f"Saved document: {filename}")
+            logger.info(f"✅ Saved document: {filename}")
             return str(result.inserted_id)
         except Exception as e:
-            logger.error(f" Failed to save document {filename}: {e}")
+            logger.error(f"❌ Failed to save document {filename}: {e}")
             raise
     
     def update_document_status(self, doc_id: str, status: str, stats: Dict = None):
@@ -73,10 +76,10 @@ class MongoStorage:
                 {'$set': update_data}
             )
             if result.modified_count > 0:
-                logger.info(f" Updated document status: {doc_id} -> {status}")
+                logger.info(f"✅ Updated document status: {doc_id} -> {status}")
             return result.modified_count
         except Exception as e:
-            logger.error(f"Failed to update document status: {e}")
+            logger.error(f"❌ Failed to update document status: {e}")
             raise
     
     def get_document(self, doc_id: str):
@@ -84,7 +87,7 @@ class MongoStorage:
         try:
             return self.documents.find_one({'user_id': self.user_id, 'doc_id': doc_id})
         except Exception as e:
-            logger.error(f" Failed to get document {doc_id}: {e}")
+            logger.error(f"❌ Failed to get document {doc_id}: {e}")
             return None
     
     def list_documents(self):
@@ -92,7 +95,7 @@ class MongoStorage:
         try:
             return list(self.documents.find({'user_id': self.user_id}).sort('uploaded_at', -1))
         except Exception as e:
-            logger.error(f" Failed to list documents: {e}")
+            logger.error(f"❌ Failed to list documents: {e}")
             return []
     
     def save_chunks_bulk(self, doc_id: str, chunks: List[Dict]):
@@ -117,10 +120,10 @@ class MongoStorage:
                 for c in chunks
             ]
             result = self.chunks.insert_many(chunk_docs, ordered=False)
-            logger.info(f" Saved {len(result.inserted_ids)} chunks")
+            logger.info(f"✅ Saved {len(result.inserted_ids)} chunks")
             return len(result.inserted_ids)
         except Exception as e:
-            logger.error(f" Failed to save chunks: {e}")
+            logger.error(f"❌ Failed to save chunks: {e}")
             return 0
     
     def save_entities_bulk(self, doc_id: str, entities_dict: Dict):
@@ -145,11 +148,11 @@ class MongoStorage:
             
             if entity_docs:
                 result = self.entities.insert_many(entity_docs, ordered=False)
-                logger.info(f" Saved {len(result.inserted_ids)} entities")
+                logger.info(f"✅ Saved {len(result.inserted_ids)} entities")
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f"Failed to save entities: {e}")
+            logger.error(f"❌ Failed to save entities: {e}")
             return 0
     
     def save_relationships_bulk(self, doc_id: str, relationships_dict: Dict):
@@ -166,6 +169,9 @@ class MongoStorage:
                         'doc_id': doc_id,
                         'source_id': source,
                         'target_id': target,
+                        'relationship_type': rel.get('relationship_type', 'RELATED_TO'),
+                        'verb_phrase': rel.get('verb_phrase', ''),
+                        'category': rel.get('category', 'ASSOCIATIVE'),
                         'description': rel.get('description', ''),
                         'keywords': rel.get('keywords', ''),
                         'weight': rel.get('weight', 1.0),
@@ -175,15 +181,21 @@ class MongoStorage:
             
             if rel_docs:
                 result = self.relationships.insert_many(rel_docs, ordered=False)
-                logger.info(f" Saved {len(result.inserted_ids)} relationships")
+                logger.info(f"✅ Saved {len(result.inserted_ids)} relationships")
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f"Failed to save relationships: {e}")
+            logger.error(f"❌ Failed to save relationships: {e}")
             return 0
     
-    def save_graph_bulk(self, graph_data: Dict):
-        """Bulk save graph (upsert nodes and edges)"""
+    def save_graph_bulk(self, graph_data: Dict, doc_id: str = None):
+        """
+        ✅ FIXED: Track source_documents for cascade delete
+        
+        Args:
+            graph_data: Graph dict with nodes/links
+            doc_id: Document ID to track (for deletion)
+        """
         nodes_saved = 0
         edges_saved = 0
         
@@ -192,88 +204,99 @@ class MongoStorage:
             if graph_data.get('nodes'):
                 for node in graph_data['nodes']:
                     try:
+                        source_docs = list(node.get('source_documents', []))
+                        if doc_id and doc_id not in source_docs:
+                            source_docs.append(doc_id)
+                        
                         self.graph_nodes.update_one(
                             {'user_id': self.user_id, 'node_id': node['id']},
                             {'$set': {
                                 'type': node.get('type', 'UNKNOWN'),
                                 'description': node.get('description', ''),
                                 'sources': list(node.get('sources', [])),
-                                'source_documents': list(node.get('source_documents', [])),
                                 'updated_at': datetime.now()
-                            }},
+                            },
+                            '$addToSet': {'source_documents': {'$each': source_docs}}},
                             upsert=True
                         )
                         nodes_saved += 1
                     except Exception as e:
-                        logger.warning(f" Failed to save node {node.get('id')}: {e}")
+                        logger.warning(f"⚠️ Failed to save node {node.get('id')}: {e}")
             
             # Save edges
             if graph_data.get('links'):
                 for link in graph_data['links']:
                     try:
+                        source_docs = list(link.get('source_documents', []))
+                        if doc_id and doc_id not in source_docs:
+                            source_docs.append(doc_id)
+                        
                         self.graph_edges.update_one(
                             {'user_id': self.user_id, 'source': link['source'], 'target': link['target']},
                             {'$set': {
+                                'relationship_type': link.get('relationship_type', 'RELATED_TO'),
+                                'verb_phrase': link.get('verb_phrase', ''),
+                                'category': link.get('category', 'ASSOCIATIVE'),
                                 'description': link.get('description', ''),
                                 'strength': link.get('strength', 1.0),
                                 'chunks': list(link.get('chunks', [])),
-                                'source_documents': list(link.get('source_documents', [])),
                                 'updated_at': datetime.now()
-                            }},
+                            },
+                            '$addToSet': {'source_documents': {'$each': source_docs}}},
                             upsert=True
                         )
                         edges_saved += 1
                     except Exception as e:
-                        logger.warning(f" Failed to save edge {link.get('source')}->{link.get('target')}: {e}")
+                        logger.warning(f"⚠️ Failed to save edge {link.get('source')}->{link.get('target')}: {e}")
             
-            logger.info(f" Saved graph: {nodes_saved} nodes, {edges_saved} edges")
+            logger.info(f"✅ Saved graph: {nodes_saved} nodes, {edges_saved} edges")
             return {'nodes': nodes_saved, 'edges': edges_saved}
         
         except Exception as e:
-            logger.error(f" Failed to save graph: {e}")
+            logger.error(f"❌ Failed to save graph: {e}")
             return {'nodes': nodes_saved, 'edges': edges_saved}
     
     def save_document_complete(self, doc_id: str, filename: str, filepath: str,
                                chunks: List[Dict], entities: Dict = None,
                                relationships: Dict = None, graph: Dict = None, stats: Dict = None):
-        """Complete save operation for a document"""
+        """Complete save with doc_id tracking"""
         try:
-            # Save document metadata
             self.save_document(doc_id, filename, filepath)
             
-            # Save chunks
             if chunks:
                 self.save_chunks_bulk(doc_id, chunks)
             
-            # Save entities
             if entities:
                 self.save_entities_bulk(doc_id, entities)
             
-            # Save relationships
             if relationships:
                 self.save_relationships_bulk(doc_id, relationships)
             
-            # Save graph
             if graph:
-                self.save_graph_bulk(graph)
+                self.save_graph_bulk(graph, doc_id=doc_id)  # ✅ Pass doc_id
             
-            # Update status
             self.update_document_status(doc_id, 'completed', stats)
             
-            logger.info(f" Complete save for document: {filename}")
+            logger.info(f"✅ Complete save for document: {filename}")
             return True
         except Exception as e:
-            logger.error(f" Failed to save document completely: {e}")
+            logger.error(f"❌ Failed to save document completely: {e}")
             self.update_document_status(doc_id, 'failed', {'error': str(e)})
             return False
     
     def delete_document_cascade(self, doc_id: str) -> Dict:
-        """Cascade delete with proper error handling"""
+        """
+        ✅ FIXED: Complete cascade delete including graph nodes/edges
+        """
         stats = {
-            'document': 0, 
-            'chunks': 0, 
-            'entities': 0, 
-            'relationships': 0, 
+            'document': 0,
+            'chunks': 0,
+            'entities': 0,
+            'relationships': 0,
+            'graph_nodes_removed': 0,      # ✅ NEW
+            'graph_nodes_updated': 0,      # ✅ NEW
+            'graph_edges_removed': 0,      # ✅ NEW
+            'graph_edges_updated': 0,      # ✅ NEW
             'files_deleted': [],
             'errors': []
         }
@@ -282,11 +305,11 @@ class MongoStorage:
             # Get document info
             doc = self.get_document(doc_id)
             if not doc:
-                logger.warning(f" Document {doc_id} not found in MongoDB")
+                logger.warning(f"⚠️ Document {doc_id} not found")
                 stats['errors'].append(f"Document {doc_id} not found")
                 return stats
             
-            # Delete from collections
+            # 1. Delete collections data
             stats['document'] = self.documents.delete_one(
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
@@ -303,34 +326,89 @@ class MongoStorage:
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
             
-            #  Delete physical file with proper error handling
+            # ✅ 2. DELETE GRAPH NODES
+            # Strategy: Remove doc_id from source_documents, delete if empty
+            nodes_with_doc = list(self.graph_nodes.find({
+                'user_id': self.user_id,
+                'source_documents': doc_id
+            }))
+            
+            for node in nodes_with_doc:
+                source_docs = node.get('source_documents', [])
+                source_docs = [d for d in source_docs if d != doc_id]
+                
+                if not source_docs:
+                    # No other documents reference this node → DELETE
+                    self.graph_nodes.delete_one({
+                        'user_id': self.user_id,
+                        'node_id': node['node_id']
+                    })
+                    stats['graph_nodes_removed'] += 1
+                else:
+                    # Other documents still reference → UPDATE
+                    self.graph_nodes.update_one(
+                        {'user_id': self.user_id, 'node_id': node['node_id']},
+                        {'$set': {'source_documents': source_docs}}
+                    )
+                    stats['graph_nodes_updated'] += 1
+            
+            # ✅ 3. DELETE GRAPH EDGES
+            edges_with_doc = list(self.graph_edges.find({
+                'user_id': self.user_id,
+                'source_documents': doc_id
+            }))
+            
+            for edge in edges_with_doc:
+                source_docs = edge.get('source_documents', [])
+                source_docs = [d for d in source_docs if d != doc_id]
+                
+                if not source_docs:
+                    # No other documents reference this edge → DELETE
+                    self.graph_edges.delete_one({
+                        'user_id': self.user_id,
+                        'source': edge['source'],
+                        'target': edge['target']
+                    })
+                    stats['graph_edges_removed'] += 1
+                else:
+                    # Other documents still reference → UPDATE
+                    self.graph_edges.update_one(
+                        {
+                            'user_id': self.user_id,
+                            'source': edge['source'],
+                            'target': edge['target']
+                        },
+                        {'$set': {'source_documents': source_docs}}
+                    )
+                    stats['graph_edges_updated'] += 1
+            
+            # 4. Delete physical file
             if doc.get('filepath'):
                 filepath = Path(doc['filepath'])
                 if filepath.exists():
                     try:
                         filepath.unlink()
                         stats['files_deleted'].append(str(filepath))
-                        logger.info(f" Deleted file: {filepath}")
+                        logger.info(f"✅ Deleted file: {filepath}")
                     except Exception as e:
                         error_msg = f"Failed to delete file {filepath}: {e}"
-                        logger.warning(f" {error_msg}")
+                        logger.warning(f"⚠️ {error_msg}")
                         stats['errors'].append(error_msg)
                 else:
-                    # File already deleted or moved
-                    logger.warning(f" File not found (already deleted?): {filepath}")
+                    logger.warning(f"⚠️ File not found: {filepath}")
                     stats['errors'].append(f"File not found: {filepath.name}")
             
-            logger.info(f" Cascade delete completed for {doc_id}: {stats}")
+            logger.info(f"✅ Cascade delete completed for {doc_id}: {stats}")
             return stats
         
         except Exception as e:
             error_msg = f"Failed to cascade delete {doc_id}: {e}"
-            logger.error(f" {error_msg}")
+            logger.error(f"❌ {error_msg}")
             stats['errors'].append(error_msg)
             return stats
     
     def delete_user_cascade(self, user_id: str = None) -> Dict:
-        """ Delete all data for a user"""
+        """Delete all data for a user"""
         target_user = user_id or self.user_id
         
         stats = {
@@ -344,7 +422,6 @@ class MongoStorage:
         }
         
         try:
-            # Delete all collections
             stats['documents'] = self.documents.delete_many({'user_id': target_user}).deleted_count
             stats['chunks'] = self.chunks.delete_many({'user_id': target_user}).deleted_count
             stats['entities'] = self.entities.delete_many({'user_id': target_user}).deleted_count
@@ -352,19 +429,18 @@ class MongoStorage:
             stats['graph_nodes'] = self.graph_nodes.delete_many({'user_id': target_user}).deleted_count
             stats['graph_edges'] = self.graph_edges.delete_many({'user_id': target_user}).deleted_count
             
-            # Delete user directory
             import shutil
             user_dir = Path(f"backend/data/{target_user}")
             if user_dir.exists():
                 shutil.rmtree(user_dir)
                 stats['files_deleted'].append(str(user_dir))
-                logger.info(f" Deleted user directory: {user_dir}")
+                logger.info(f"✅ Deleted user directory: {user_dir}")
             
-            logger.info(f" User cascade delete completed: {stats}")
+            logger.info(f"✅ User cascade delete completed: {stats}")
             return stats
         
         except Exception as e:
-            logger.error(f" Failed to cascade delete user {target_user}: {e}")
+            logger.error(f"❌ Failed to cascade delete user {target_user}: {e}")
             return stats
     
     def get_graph(self) -> Dict:
@@ -388,6 +464,9 @@ class MongoStorage:
                     {
                         'source': e['source'],
                         'target': e['target'],
+                        'relationship_type': e.get('relationship_type', 'RELATED_TO'),
+                        'verb_phrase': e.get('verb_phrase', ''),
+                        'category': e.get('category', 'ASSOCIATIVE'),
                         'description': e.get('description', ''),
                         'strength': e.get('strength', 1.0),
                         'chunks': e.get('chunks', []),
@@ -397,11 +476,11 @@ class MongoStorage:
                 ]
             }
             
-            logger.info(f" Retrieved graph: {len(graph['nodes'])} nodes, {len(graph['links'])} edges")
+            logger.info(f"✅ Retrieved graph: {len(graph['nodes'])} nodes, {len(graph['links'])} edges")
             return graph
         
         except Exception as e:
-            logger.error(f" Failed to get graph: {e}")
+            logger.error(f"❌ Failed to get graph: {e}")
             return {'nodes': [], 'links': []}
     
     def get_user_statistics(self) -> Dict:
@@ -417,7 +496,7 @@ class MongoStorage:
             }
             return stats
         except Exception as e:
-            logger.error(f" Failed to get statistics: {e}")
+            logger.error(f"❌ Failed to get statistics: {e}")
             return {
                 'total_documents': 0,
                 'total_chunks': 0,
@@ -433,5 +512,5 @@ class MongoStorage:
             self.db.command('ping')
             return True
         except Exception as e:
-            logger.error(f" MongoDB health check failed: {e}")
+            logger.error(f"❌ MongoDB health check failed: {e}")
             return False

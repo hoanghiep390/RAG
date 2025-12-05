@@ -1,10 +1,12 @@
-# backend/core/graph_builder.py
+# backend/core/graph_builder.py 
 import networkx as nx
-from typing import Dict, List, Tuple
-import time
+from typing import Dict, List
+import logging
+
+logger = logging.getLogger(__name__)
 
 class KnowledgeGraph:
-    """Simple NetworkX wrapper"""
+    """NetworkX wrapper with relationship_type support"""
     
     def __init__(self):
         self.G = nx.DiGraph()
@@ -22,22 +24,55 @@ class KnowledgeGraph:
             self.G.add_node(entity_name, type=entity_type, description=description,
                           sources={source_id}, source_documents={source_document}, **kwargs)
     
-    def add_relationship(self, source_entity: str, target_entity: str, description: str,
-                        strength: float = 1.0, chunk_id: str = None, source_document: str = None, **kwargs):
-        """Add/merge edge"""
+    def add_relationship(self, source_entity: str, target_entity: str, 
+                        relationship_type: str = None, verb_phrase: str = None,
+                        category: str = None, description: str = '',
+                        strength: float = 1.0, chunk_id: str = None, 
+                        source_document: str = None, **kwargs):
+        """
+        Add/merge edge with hybrid relationship support
+        
+        Args:
+            relationship_type: Static type (e.g., 'DEVELOPS') or dynamic verb_phrase
+            verb_phrase: Natural language verb (e.g., 'develops', 'is CEO of')
+            category: Relationship category (e.g., 'FUNCTIONAL', 'HIERARCHICAL')
+        """
         if self.G.has_edge(source_entity, target_entity):
             edge = self.G.edges[source_entity, target_entity]
+            
+            # Merge descriptions
             if description and description not in edge.get('description', ''):
                 edge['description'] = f"{edge.get('description', '')}; {description}".strip('; ')
+            
+            # Accumulate strength
             edge['strength'] = edge.get('strength', 0) + strength
+            
+            # Merge metadata
             if chunk_id:
                 edge['chunks'] = edge.get('chunks', set()) | {chunk_id}
             if source_document:
                 edge['source_documents'] = edge.get('source_documents', set()) | {source_document}
+            
+            # Update type info (prioritize new data)
+            if relationship_type:
+                edge['relationship_type'] = relationship_type
+            if verb_phrase:
+                edge['verb_phrase'] = verb_phrase
+            if category:
+                edge['category'] = category
         else:
-            self.G.add_edge(source_entity, target_entity, description=description, strength=strength,
-                          chunks={chunk_id} if chunk_id else set(),
-                          source_documents={source_document} if source_document else set(), **kwargs)
+            # New edge
+            self.G.add_edge(
+                source_entity, target_entity,
+                relationship_type=relationship_type or 'RELATED_TO',
+                verb_phrase=verb_phrase or relationship_type.lower().replace('_', ' ') if relationship_type else 'related to',
+                category=category or 'ASSOCIATIVE',
+                description=description,
+                strength=strength,
+                chunks={chunk_id} if chunk_id else set(),
+                source_documents={source_document} if source_document else set(),
+                **kwargs
+            )
     
     def get_node(self, name: str):
         return dict(self.G.nodes[name]) if self.G.has_node(name) else None
@@ -52,10 +87,9 @@ class KnowledgeGraph:
         return self.G.has_edge(src, tgt)
     
     def to_dict(self):
-        """Convert to JSON-serializable dict"""
+        """Convert to JSON with sets→lists"""
         data = nx.node_link_data(self.G, edges="links")
         
-        # Convert sets to lists
         for node in data.get('nodes', []):
             for field in ['sources', 'source_documents']:
                 if field in node and isinstance(node[field], set):
@@ -69,22 +103,34 @@ class KnowledgeGraph:
         return data
     
     def get_statistics(self):
+        """Enhanced stats with relationship types"""
         types = {}
         for _, d in self.G.nodes(data=True):
             t = d.get('type', 'UNKNOWN')
             types[t] = types.get(t, 0) + 1
         
+        rel_types = {}
+        rel_categories = {}
+        for _, _, d in self.G.edges(data=True):
+            rt = d.get('relationship_type', 'UNKNOWN')
+            cat = d.get('category', 'UNKNOWN')
+            rel_types[rt] = rel_types.get(rt, 0) + 1
+            rel_categories[cat] = rel_categories.get(cat, 0) + 1
+        
         return {
             'num_entities': self.G.number_of_nodes(),
             'num_relationships': self.G.number_of_edges(),
             'entity_types': types,
+            'relationship_types': rel_types,
+            'relationship_categories': rel_categories,
             'avg_degree': sum(dict(self.G.degree()).values()) / max(self.G.number_of_nodes(), 1),
             'density': nx.density(self.G)
         }
 
+
 def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict, 
                          global_config: Dict = None, **kwargs) -> KnowledgeGraph:
-    """Build graph từ entities và relationships"""
+    """Build graph with hybrid relationship support"""
     kg = KnowledgeGraph()
     
     # Add entities
@@ -98,16 +144,27 @@ def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict,
                 source_document=node.get('source_id', '')
             )
     
-    # Add relationships
+    # Add relationships with hybrid support
     for (src, tgt), edges in relationships_dict.items():
         for edge in edges:
             kg.add_relationship(
                 source_entity=src,
                 target_entity=tgt,
+                relationship_type=edge.get('relationship_type', 'RELATED_TO'),
+                verb_phrase=edge.get('verb_phrase', ''),
+                category=edge.get('category', 'ASSOCIATIVE'),
                 description=edge.get('description', ''),
                 strength=edge.get('weight', 1.0),
                 chunk_id=edge.get('chunk_id'),
                 source_document=edge.get('chunk_id')
             )
+    
+    stats = kg.get_statistics()
+    logger.info(
+        f"✅ Graph built: {stats['num_entities']} entities, "
+        f"{stats['num_relationships']} relationships "
+        f"({len(stats['relationship_types'])} types, "
+        f"{len(stats['relationship_categories'])} categories)"
+    )
     
     return kg
