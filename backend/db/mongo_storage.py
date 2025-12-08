@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """✅ FIXED: Proper cascade delete for graph nodes/edges"""
+    """✅ FIXED: Proper graph deletion with doc_id tracking"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -29,8 +29,9 @@ class MongoStorage:
             raise
     
     def _create_indexes(self):
-        """Create indexes for better performance"""
+        """Create indexes including doc_id for graph collections"""
         try:
+            # Existing indexes
             self.documents.create_index([('user_id', 1), ('doc_id', 1)], unique=True)
             self.chunks.create_index([('user_id', 1), ('doc_id', 1)])
             self.chunks.create_index([('chunk_id', 1)], unique=True)
@@ -38,17 +39,19 @@ class MongoStorage:
             self.entities.create_index([('user_id', 1), ('doc_id', 1)])
             self.relationships.create_index([('user_id', 1), ('source_id', 1)])
             self.relationships.create_index([('user_id', 1), ('doc_id', 1)])
+            
+            # ✅ CRITICAL FIX: Add doc_id indexes for graph collections
             self.graph_nodes.create_index([('user_id', 1), ('node_id', 1)], unique=True)
-            # ✅ NEW INDEX: For cascade delete
-            self.graph_nodes.create_index([('user_id', 1), ('source_documents', 1)])
+            self.graph_nodes.create_index([('user_id', 1), ('doc_id', 1)])  
+            
             self.graph_edges.create_index([('user_id', 1), ('source', 1), ('target', 1)])
-            # ✅ NEW INDEX: For cascade delete
-            self.graph_edges.create_index([('user_id', 1), ('source_documents', 1)])
-            logger.debug("✅ MongoDB indexes created")
+            self.graph_edges.create_index([('user_id', 1), ('doc_id', 1)])  
+            
+            logger.debug("✅ MongoDB indexes created (with doc_id for graph)")
         except Exception as e:
             logger.warning(f"⚠️ Index creation warning: {e}")
     
-    # ========== SAVE METHODS (Existing code unchanged) ==========
+    # ========== SAVE METHODS (Keep existing) ==========
     
     def save_document(self, doc_id: str, filename: str, filepath: str, metadata: Dict = None) -> str:
         """Save document metadata"""
@@ -192,78 +195,76 @@ class MongoStorage:
             logger.error(f"❌ Failed to save relationships: {e}")
             return 0
     
-    # ========== ✅ FIX 1: SAVE GRAPH WITH SOURCE_DOCUMENTS ==========
+    # ========== ✅ FIX 1: SAVE GRAPH WITH DOC_ID TRACKING ==========
     
     def save_graph_bulk(self, graph_data: Dict, doc_id: str = None):
         """
-        ✅ FIXED: Track source_documents for cascade delete
+        ✅ FIXED: Track doc_id for proper deletion
         
         Args:
             graph_data: Graph dict with nodes/links
-            doc_id: Document ID to track (for deletion)
+            doc_id: Document ID (REQUIRED for deletion tracking)
         """
+        if not doc_id:
+            logger.error("❌ doc_id is required for save_graph_bulk!")
+            return {'nodes': 0, 'edges': 0}
+        
         nodes_saved = 0
         edges_saved = 0
         
         try:
-            # Save nodes
+            # Save nodes with doc_id
             if graph_data.get('nodes'):
                 for node in graph_data['nodes']:
                     try:
-                        # ✅ CRITICAL FIX: Build source_documents list
-                        source_docs = list(node.get('source_documents', []))
-                        
-                        # ✅ CRITICAL FIX: Add current doc_id if provided
-                        if doc_id and doc_id not in source_docs:
-                            source_docs.append(doc_id)
-                        
                         self.graph_nodes.update_one(
                             {'user_id': self.user_id, 'node_id': node['id']},
-                            {'$set': {
-                                'type': node.get('type', 'UNKNOWN'),
-                                'description': node.get('description', ''),
-                                'sources': list(node.get('sources', [])),
-                                'updated_at': datetime.now()
+                            {
+                                '$set': {
+                                    'type': node.get('type', 'UNKNOWN'),
+                                    'description': node.get('description', ''),
+                                    'sources': list(node.get('sources', [])),
+                                    'updated_at': datetime.now()
+                                },
+                                # ✅ CRITICAL FIX: Track doc_id
+                                '$addToSet': {'doc_id': doc_id}
                             },
-                            # ✅ CRITICAL FIX: Use $addToSet to track all source documents
-                            '$addToSet': {'source_documents': {'$each': source_docs}}},
                             upsert=True
                         )
                         nodes_saved += 1
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to save node {node.get('id')}: {e}")
             
-            # Save edges
+            # Save edges with doc_id
             if graph_data.get('links'):
                 for link in graph_data['links']:
                     try:
-                        # ✅ CRITICAL FIX: Build source_documents list
-                        source_docs = list(link.get('source_documents', []))
-                        
-                        # ✅ CRITICAL FIX: Add current doc_id if provided
-                        if doc_id and doc_id not in source_docs:
-                            source_docs.append(doc_id)
-                        
                         self.graph_edges.update_one(
-                            {'user_id': self.user_id, 'source': link['source'], 'target': link['target']},
-                            {'$set': {
-                                'relationship_type': link.get('relationship_type', 'RELATED_TO'),
-                                'verb_phrase': link.get('verb_phrase', ''),
-                                'category': link.get('category', 'ASSOCIATIVE'),
-                                'description': link.get('description', ''),
-                                'strength': link.get('strength', 1.0),
-                                'chunks': list(link.get('chunks', [])),
-                                'updated_at': datetime.now()
+                            {
+                                'user_id': self.user_id,
+                                'source': link['source'],
+                                'target': link['target']
                             },
-                            # ✅ CRITICAL FIX: Use $addToSet to track all source documents
-                            '$addToSet': {'source_documents': {'$each': source_docs}}},
+                            {
+                                '$set': {
+                                    'relationship_type': link.get('relationship_type', 'RELATED_TO'),
+                                    'verb_phrase': link.get('verb_phrase', ''),
+                                    'category': link.get('category', 'ASSOCIATIVE'),
+                                    'description': link.get('description', ''),
+                                    'strength': link.get('strength', 1.0),
+                                    'chunks': list(link.get('chunks', [])),
+                                    'updated_at': datetime.now()
+                                },
+                                # ✅ CRITICAL FIX: Track doc_id
+                                '$addToSet': {'doc_id': doc_id}
+                            },
                             upsert=True
                         )
                         edges_saved += 1
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to save edge {link.get('source')}->{link.get('target')}: {e}")
             
-            logger.info(f"✅ Saved graph: {nodes_saved} nodes, {edges_saved} edges")
+            logger.info(f"✅ Saved graph: {nodes_saved} nodes, {edges_saved} edges (doc_id={doc_id})")
             return {'nodes': nodes_saved, 'edges': edges_saved}
         
         except Exception as e:
@@ -287,7 +288,7 @@ class MongoStorage:
                 self.save_relationships_bulk(doc_id, relationships)
             
             if graph:
-                # ✅ CRITICAL FIX: Pass doc_id to save_graph_bulk
+                # ✅ CRITICAL: Pass doc_id to save_graph_bulk
                 self.save_graph_bulk(graph, doc_id=doc_id)
             
             self.update_document_status(doc_id, 'completed', stats)
@@ -299,27 +300,26 @@ class MongoStorage:
             self.update_document_status(doc_id, 'failed', {'error': str(e)})
             return False
     
-    # ========== ✅ FIX 2: CASCADE DELETE WITH SOURCE_DOCUMENTS ==========
+    # ========== ✅ FIX 2: DELETE WITH DOC_ID QUERY ==========
     
     def delete_document_cascade(self, doc_id: str) -> Dict:
         """
-        ✅ FIXED: Complete cascade delete including graph nodes/edges
+        ✅ FIXED: Delete graph using doc_id query
         
         Strategy:
-        1. Delete collections data (chunks, entities, relationships)
-        2. For graph nodes/edges: Remove doc_id from source_documents
-        3. If source_documents becomes empty → DELETE node/edge
-        4. If source_documents has other docs → KEEP but UPDATE
+        1. Delete all data with doc_id (chunks, entities, relationships)
+        2. For graph nodes/edges: Check if ONLY this doc created them
+        3. If yes → DELETE, if no → Keep but remove doc_id from array
         """
         stats = {
             'document': 0,
             'chunks': 0,
             'entities': 0,
             'relationships': 0,
-            'graph_nodes_removed': 0,      # Fully deleted nodes
-            'graph_nodes_updated': 0,      # Kept but updated nodes
-            'graph_edges_removed': 0,      # Fully deleted edges
-            'graph_edges_updated': 0,      # Kept but updated edges
+            'graph_nodes_deleted': 0,
+            'graph_nodes_updated': 0,
+            'graph_edges_deleted': 0,
+            'graph_edges_updated': 0,
             'files_deleted': [],
             'errors': []
         }
@@ -332,7 +332,7 @@ class MongoStorage:
                 stats['errors'].append(f"Document {doc_id} not found")
                 return stats
             
-            # 1. Delete collections data
+            # 1. Delete collections data (simple - have doc_id field)
             stats['document'] = self.documents.delete_one(
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
@@ -349,75 +349,81 @@ class MongoStorage:
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
             
-            # ========== ✅ FIX 2A: DELETE GRAPH NODES ==========
+            # ========== ✅ FIX: DELETE GRAPH NODES WITH DOC_ID ==========
             
-            # Find all nodes that reference this document
+            # Find nodes that have this doc_id
             nodes_with_doc = list(self.graph_nodes.find({
                 'user_id': self.user_id,
-                'source_documents': doc_id  # ✅ CORRECT QUERY
+                'doc_id': doc_id  # ✅ CORRECT QUERY
             }))
             
-            logger.info(f"🔍 Found {len(nodes_with_doc)} nodes referencing doc_id={doc_id}")
+            logger.info(f"🔍 Found {len(nodes_with_doc)} nodes with doc_id={doc_id}")
             
             for node in nodes_with_doc:
-                # Get current source_documents list
-                source_docs = node.get('source_documents', [])
+                doc_ids = node.get('doc_id', [])
+                
+                # Handle both array and single value
+                if not isinstance(doc_ids, list):
+                    doc_ids = [doc_ids] if doc_ids else []
                 
                 # Remove current doc_id
-                source_docs = [d for d in source_docs if d != doc_id]
+                remaining_docs = [d for d in doc_ids if d != doc_id]
                 
-                if not source_docs:
-                    # ✅ No other documents reference this node → DELETE
+                if not remaining_docs:
+                    # ✅ No other docs → DELETE
                     self.graph_nodes.delete_one({
                         'user_id': self.user_id,
                         'node_id': node['node_id']
                     })
-                    stats['graph_nodes_removed'] += 1
+                    stats['graph_nodes_deleted'] += 1
                     logger.debug(f"🗑️ Deleted node: {node['node_id']}")
                 else:
-                    # ✅ Other documents still reference → UPDATE
+                    # ✅ Other docs exist → UPDATE
                     self.graph_nodes.update_one(
                         {'user_id': self.user_id, 'node_id': node['node_id']},
-                        {'$set': {'source_documents': source_docs}}
+                        {'$set': {'doc_id': remaining_docs}}
                     )
                     stats['graph_nodes_updated'] += 1
                     logger.debug(f"📝 Updated node: {node['node_id']} (removed {doc_id})")
             
-            # ========== ✅ FIX 2B: DELETE GRAPH EDGES ==========
+            # ========== ✅ FIX: DELETE GRAPH EDGES WITH DOC_ID ==========
             
-            # Find all edges that reference this document
+            # Find edges that have this doc_id
             edges_with_doc = list(self.graph_edges.find({
                 'user_id': self.user_id,
-                'source_documents': doc_id  # ✅ CORRECT QUERY
+                'doc_id': doc_id  # ✅ CORRECT QUERY
             }))
             
-            logger.info(f"🔍 Found {len(edges_with_doc)} edges referencing doc_id={doc_id}")
+            logger.info(f"🔍 Found {len(edges_with_doc)} edges with doc_id={doc_id}")
             
             for edge in edges_with_doc:
-                # Get current source_documents list
-                source_docs = edge.get('source_documents', [])
+                doc_ids = edge.get('doc_id', [])
+                
+                # Handle both array and single value
+                if not isinstance(doc_ids, list):
+                    doc_ids = [doc_ids] if doc_ids else []
                 
                 # Remove current doc_id
-                source_docs = [d for d in source_docs if d != doc_id]
+                remaining_docs = [d for d in doc_ids if d != doc_id]
                 
-                if not source_docs:
-                    # ✅ No other documents reference this edge → DELETE
+                if not remaining_docs:
+                    # ✅ No other docs → DELETE
                     self.graph_edges.delete_one({
                         'user_id': self.user_id,
                         'source': edge['source'],
                         'target': edge['target']
                     })
-                    stats['graph_edges_removed'] += 1
+                    stats['graph_edges_deleted'] += 1
                     logger.debug(f"🗑️ Deleted edge: {edge['source']} → {edge['target']}")
                 else:
-                    # ✅ Other documents still reference → UPDATE
+                    # ✅ Other docs exist → UPDATE
                     self.graph_edges.update_one(
                         {
                             'user_id': self.user_id,
                             'source': edge['source'],
                             'target': edge['target']
                         },
-                        {'$set': {'source_documents': source_docs}}
+                        {'$set': {'doc_id': remaining_docs}}
                     )
                     stats['graph_edges_updated'] += 1
                     logger.debug(f"📝 Updated edge: {edge['source']} → {edge['target']} (removed {doc_id})")
@@ -439,8 +445,8 @@ class MongoStorage:
                     stats['errors'].append(f"File not found: {filepath.name}")
             
             logger.info(f"✅ Cascade delete completed for {doc_id}:")
-            logger.info(f"   📊 Nodes: {stats['graph_nodes_removed']} deleted, {stats['graph_nodes_updated']} updated")
-            logger.info(f"   🔗 Edges: {stats['graph_edges_removed']} deleted, {stats['graph_edges_updated']} updated")
+            logger.info(f"   📊 Nodes: {stats['graph_nodes_deleted']} deleted, {stats['graph_nodes_updated']} updated")
+            logger.info(f"   🔗 Edges: {stats['graph_edges_deleted']} deleted, {stats['graph_edges_updated']} updated")
             
             return stats
         
@@ -501,7 +507,7 @@ class MongoStorage:
                         'type': n.get('type', 'UNKNOWN'),
                         'description': n.get('description', ''),
                         'sources': n.get('sources', []),
-                        'source_documents': n.get('source_documents', [])
+                        'doc_id': n.get('doc_id', [])  # ✅ Include for debugging
                     }
                     for n in nodes
                 ],
@@ -515,7 +521,7 @@ class MongoStorage:
                         'description': e.get('description', ''),
                         'strength': e.get('strength', 1.0),
                         'chunks': e.get('chunks', []),
-                        'source_documents': e.get('source_documents', [])
+                        'doc_id': e.get('doc_id', [])  # ✅ Include for debugging
                     }
                     for e in edges
                 ]
