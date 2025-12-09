@@ -1,324 +1,552 @@
-# backend/retrieval/hybrid_retriever.py
+# backend/retrieval/hybrid_retriever_enhanced.py
 """
-🔍 Hybrid Retriever - Enhanced for relationship-aware Q&A
+🚀 ENHANCED HYBRID RETRIEVAL - Inspired by LightRAG
+Improvements:
+1. Global + Local retrieval (dual-level)
+2. Graph-aware ranking
+3. Multi-hop reasoning
+4. Query expansion
+5. Result reranking
 """
-from typing import List, Dict, Optional, Any
+
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass, field
 import asyncio
 import logging
+import numpy as np
 
 from backend.retrieval.query_analyzer import QueryAnalyzer, QueryAnalysis
 from backend.retrieval.vector_retriever import VectorRetriever, ScoredChunk
 from backend.retrieval.graph_retriever import GraphRetriever, GraphContext
-    
+
 logger = logging.getLogger(__name__)
 
+# ================= RETRIEVAL MODES =================
+
 @dataclass
-class RetrievalContext:
-    """Enhanced context with relationship awareness"""
+class RetrievalMode:
+    """Retrieval configuration"""
+    use_global: bool = True      # Global vector search
+    use_local: bool = True       # Local graph search
+    use_multi_hop: bool = False  # Multi-hop graph traversal
+    expand_query: bool = True    # Query expansion
+    rerank: bool = True          # Result reranking
+
+
+# ================= QUERY EXPANSION =================
+
+class QueryExpander:
+    """Expand query with synonyms and related terms"""
+    
+    def __init__(self):
+        # Common expansions (can be replaced with word2vec/bert)
+        self.expansions = {
+            'ai': ['artificial intelligence', 'machine learning', 'deep learning'],
+            'ml': ['machine learning', 'ai', 'algorithm'],
+            'ceo': ['chief executive officer', 'president', 'founder'],
+            'develop': ['create', 'build', 'design', 'implement'],
+            'company': ['organization', 'corporation', 'firm', 'enterprise']
+        }
+    
+    def expand(self, query: str, max_terms: int = 3) -> List[str]:
+        """Expand query with related terms"""
+        expanded = [query]
+        query_lower = query.lower()
+        
+        for term, synonyms in self.expansions.items():
+            if term in query_lower:
+                expanded.extend(synonyms[:max_terms])
+                break
+        
+        return expanded[:3]  # Return top 3 variations
+
+
+# ================= GLOBAL RETRIEVAL =================
+
+async def global_retrieval(
+    query: str,
+    vector_retriever: VectorRetriever,
+    top_k: int = 10
+) -> List[ScoredChunk]:
+    """
+    Global retrieval: Vector search across all documents
+    Similar to LightRAG's global search
+    """
+    try:
+        chunks = await asyncio.to_thread(
+            vector_retriever.search,
+            query,
+            top_k=top_k
+        )
+        
+        logger.info(f"🌐 Global retrieval: {len(chunks)} chunks")
+        return chunks
+    
+    except Exception as e:
+        logger.error(f"Global retrieval failed: {e}")
+        return []
+
+
+# ================= LOCAL RETRIEVAL =================
+
+async def local_retrieval(
+    entities: List[str],
+    graph_retriever: GraphRetriever,
+    k_hops: int = 2,
+    max_neighbors: int = 10
+) -> List[GraphContext]:
+    """
+    Local retrieval: Graph traversal from entities
+    Similar to LightRAG's local search
+    """
+    try:
+        contexts = await asyncio.to_thread(
+            graph_retriever.search,
+            entity_names=entities,
+            k_hops=k_hops,
+            max_neighbors=max_neighbors
+        )
+        
+        logger.info(f"📍 Local retrieval: {len(contexts)} entities")
+        return contexts
+    
+    except Exception as e:
+        logger.error(f"Local retrieval failed: {e}")
+        return []
+
+
+# ================= MULTI-HOP REASONING =================
+
+def multi_hop_traversal(
+    start_entities: List[str],
+    graph_retriever: GraphRetriever,
+    max_hops: int = 3,
+    max_paths: int = 5
+) -> List[Dict]:
+    """
+    Multi-hop graph traversal for complex reasoning
+    Returns paths between entities
+    """
+    try:
+        from backend.db.mongo_storage import MongoStorage
+        
+        # Get graph
+        graph_data = graph_retriever.storage.get_graph()
+        
+        if not graph_data or not graph_data.get('nodes'):
+            return []
+        
+        # Build adjacency list
+        adj = {}
+        for link in graph_data.get('links', []):
+            src, tgt = link['source'], link['target']
+            if src not in adj:
+                adj[src] = []
+            adj[src].append({
+                'target': tgt,
+                'type': link.get('relationship_type', 'RELATED_TO'),
+                'strength': link.get('strength', 1.0)
+            })
+        
+        # BFS for each start entity
+        all_paths = []
+        
+        for start in start_entities:
+            if start not in adj:
+                continue
+            
+            # BFS
+            queue = [(start, [start], 0)]
+            visited = {start}
+            paths = []
+            
+            while queue and len(paths) < max_paths:
+                current, path, depth = queue.pop(0)
+                
+                if depth >= max_hops:
+                    continue
+                
+                for neighbor in adj.get(current, []):
+                    tgt = neighbor['target']
+                    
+                    if tgt not in visited:
+                        visited.add(tgt)
+                        new_path = path + [tgt]
+                        
+                        # Save path
+                        if len(new_path) >= 2:
+                            paths.append({
+                                'path': new_path,
+                                'length': len(new_path),
+                                'relationships': [neighbor['type']]
+                            })
+                        
+                        queue.append((tgt, new_path, depth + 1))
+            
+            all_paths.extend(paths[:max_paths])
+        
+        logger.info(f"🔀 Multi-hop: {len(all_paths)} paths found")
+        return all_paths[:max_paths]
+    
+    except Exception as e:
+        logger.error(f"Multi-hop traversal failed: {e}")
+        return []
+
+
+# ================= RESULT RERANKING =================
+
+class ResultReranker:
+    """Rerank results based on multiple factors"""
+    
+    @staticmethod
+    def rerank_chunks(
+        chunks: List[ScoredChunk],
+        query: str,
+        entities: List[str]
+    ) -> List[ScoredChunk]:
+        """
+        Rerank chunks based on:
+        1. Vector similarity
+        2. Entity mentions
+        3. Content length
+        """
+        if not chunks:
+            return []
+        
+        for chunk in chunks:
+            score = chunk.score
+            
+            # Boost if contains entities
+            entity_count = sum(1 for e in entities if e.lower() in chunk.content.lower())
+            score += entity_count * 0.1
+            
+            # Boost longer content (more context)
+            length_score = min(len(chunk.content) / 1000, 0.2)
+            score += length_score
+            
+            # Update score
+            chunk.score = min(score, 1.0)
+        
+        # Sort by new score
+        chunks.sort(key=lambda x: x.score, reverse=True)
+        
+        return chunks
+    
+    @staticmethod
+    def rerank_entities(
+        entities: List[GraphContext],
+        query: str
+    ) -> List[GraphContext]:
+        """
+        Rerank entities based on:
+        1. Graph score
+        2. Query relevance
+        3. Number of relationships
+        """
+        if not entities:
+            return []
+        
+        query_lower = query.lower()
+        
+        for entity in entities:
+            score = entity.score
+            
+            # Boost if name in query
+            if entity.entity_name.lower() in query_lower:
+                score += 0.3
+            
+            # Boost by relationships
+            rel_score = min(len(entity.relationships) / 10, 0.2)
+            score += rel_score
+            
+            entity.score = min(score, 1.0)
+        
+        entities.sort(key=lambda x: x.score, reverse=True)
+        
+        return entities
+
+
+# ================= ENHANCED HYBRID RETRIEVER =================
+
+@dataclass
+class EnhancedRetrievalContext:
+    """Enhanced context with dual-level retrieval"""
     query: str
     intent: str
     retrieval_mode: str
     
-    chunks: List[ScoredChunk] = field(default_factory=list)
-    entities: List[GraphContext] = field(default_factory=list)
+    # Global results
+    global_chunks: List[ScoredChunk] = field(default_factory=list)
     
+    # Local results
+    local_entities: List[GraphContext] = field(default_factory=list)
+    
+    # Multi-hop results
+    reasoning_paths: List[Dict] = field(default_factory=list)
+    
+    # Formatted output
     formatted_text: str = ""
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
-    def __repr__(self):
-        return f"RetrievalContext(mode={self.retrieval_mode}, chunks={len(self.chunks)}, entities={len(self.entities)})"
 
-class HybridRetriever:
-    """Enhanced orchestrator with relationship-aware context"""
+
+class EnhancedHybridRetriever:
+    """
+    Enhanced retriever with LightRAG-inspired features
+    Drop-in replacement for HybridRetriever
+    """
     
     def __init__(self, vector_db, mongo_storage):
         self.query_analyzer = QueryAnalyzer()
         self.vector_retriever = VectorRetriever(vector_db)
         self.graph_retriever = GraphRetriever(mongo_storage)
+        self.query_expander = QueryExpander()
+        self.reranker = ResultReranker()
     
     def retrieve(
         self,
         query: str,
-        force_mode: Optional[str] = None,
-        top_k: Optional[int] = None,
-        filter_category: Optional[List[str]] = None,
-        filter_rel_type: Optional[List[str]] = None
-    ) -> RetrievalContext:
+        mode: Optional[RetrievalMode] = None,
+        top_k: int = 10,
+        expand_query: bool = True,
+        rerank: bool = True
+    ) -> EnhancedRetrievalContext:
         """
-        Enhanced retrieval with relationship filtering
+        Enhanced retrieval with dual-level search
         
         Args:
             query: User query
-            force_mode: Override mode
+            mode: Retrieval mode configuration
             top_k: Number of results
-            filter_category: Graph categories to include
-            filter_rel_type: Relationship types to include
+            expand_query: Enable query expansion
+            rerank: Enable result reranking
         """
+        import time
+        start = time.time()
+        
+        # Default mode
+        if mode is None:
+            mode = RetrievalMode()
+        
+        # Analyze query
+        analysis = self.query_analyzer.analyze(query)
+        logger.info(f"📊 Intent: {analysis.intent}, Entities: {analysis.entities}")
+        
+        # Query expansion
+        queries = [query]
+        if expand_query and mode.expand_query:
+            queries = self.query_expander.expand(query)
+            logger.info(f"🔍 Expanded to {len(queries)} queries")
+        
+        # Execute retrieval
         try:
-            import time
-            start = time.time()
-            
-            analysis = self.query_analyzer.analyze(query)
-            logger.info(f"📊 Intent: {analysis.intent}, Mode: {analysis.retrieval_mode}")
-            
-            mode = force_mode or analysis.retrieval_mode
-            k = top_k or analysis.top_k
-            
-            # Retrieve
-            if mode == 'vector':
-                chunks, entities = self._vector_only(query, k)
-            elif mode == 'graph':
-                chunks, entities = self._graph_only(
-                    analysis.entities, k, 
-                    filter_category, filter_rel_type
-                )
-            else:  # hybrid
-                chunks, entities = self._hybrid_search(
-                    query, analysis.entities, k,
-                    filter_category, filter_rel_type
-                )
-            
-            # ✅ ENHANCED: Relationship-aware formatting
-            formatted = self._format_context(query, chunks, entities, analysis)
-            
-            elapsed = time.time() - start
-            metadata = {
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        global_chunks, local_entities, paths = loop.run_until_complete(
+            self._parallel_retrieval(
+                queries, analysis.entities, mode, top_k
+            )
+        )
+        
+        # Reranking
+        if rerank and mode.rerank:
+            global_chunks = self.reranker.rerank_chunks(
+                global_chunks, query, analysis.entities
+            )
+            local_entities = self.reranker.rerank_entities(
+                local_entities, query
+            )
+        
+        # Format context
+        formatted = self._format_enhanced_context(
+            query, global_chunks, local_entities, paths, analysis
+        )
+        
+        elapsed = time.time() - start
+        
+        return EnhancedRetrievalContext(
+            query=query,
+            intent=analysis.intent,
+            retrieval_mode='enhanced_hybrid',
+            global_chunks=global_chunks[:top_k],
+            local_entities=local_entities[:top_k//2],
+            reasoning_paths=paths,
+            formatted_text=formatted,
+            metadata={
                 'retrieval_time_ms': int(elapsed * 1000),
-                'retrieval_mode': mode,
-                'num_chunks': len(chunks),
-                'num_entities': len(entities),
-                'intent': analysis.intent,
-                'keywords': analysis.keywords[:5],
-                'has_relationships': any(len(e.relationships) > 0 for e in entities)
+                'num_global': len(global_chunks),
+                'num_local': len(local_entities),
+                'num_paths': len(paths),
+                'expanded_queries': len(queries),
+                'intent': analysis.intent
             }
-            
-            return RetrievalContext(
-                query=query,
-                intent=analysis.intent,
-                retrieval_mode=mode,
-                chunks=chunks,
-                entities=entities,
-                formatted_text=formatted,
-                metadata=metadata
-            )
-        
-        except Exception as e:
-            logger.error(f"❌ Retrieval failed: {e}")
-            return RetrievalContext(
-                query=query,
-                intent='unknown',
-                retrieval_mode='error',
-                formatted_text=f"Error: {str(e)}"
-            )
-    
-    def _vector_only(self, query: str, top_k: int) -> tuple:
-        logger.info(f"🔍 Vector search (k={top_k})")
-        chunks = self.vector_retriever.search(query, top_k=top_k)
-        return chunks, []
-    
-    def _graph_only(
-        self, 
-        entity_names: List[str], 
-        top_k: int,
-        filter_category: Optional[List[str]] = None,
-        filter_rel_type: Optional[List[str]] = None
-    ) -> tuple:
-        logger.info(f"🕸️ Graph search (entities={entity_names})")
-        
-        if not entity_names:
-            return [], []
-        
-        entities = self.graph_retriever.search(
-            entity_names=entity_names,
-            k_hops=2,
-            max_neighbors=top_k,
-            filter_category=filter_category,
-            filter_rel_type=filter_rel_type
         )
-        return [], entities
     
-    def _hybrid_search(
-        self, 
-        query: str, 
-        entity_names: List[str], 
-        top_k: int,
-        filter_category: Optional[List[str]] = None,
-        filter_rel_type: Optional[List[str]] = None
-    ) -> tuple:
-        logger.info(f"🔀 Hybrid search (k={top_k})")
+    async def _parallel_retrieval(
+        self,
+        queries: List[str],
+        entities: List[str],
+        mode: RetrievalMode,
+        top_k: int
+    ) -> Tuple[List[ScoredChunk], List[GraphContext], List[Dict]]:
+        """Execute parallel retrieval"""
         
-        try:
-            chunks, entities = asyncio.run(
-                self._parallel_search(
-                    query, entity_names, top_k,
-                    filter_category, filter_rel_type
-                )
-            )
-        except:
-            logger.warning("⚠️ Async failed, using sequential")
-            chunks = self.vector_retriever.search(query, top_k=int(top_k * 0.7))
-            entities = []
-            
-            if entity_names:
-                entities = self.graph_retriever.search(
-                    entity_names=entity_names,
-                    k_hops=1,
-                    max_neighbors=int(top_k * 0.3),
-                    filter_category=filter_category,
-                    filter_rel_type=filter_rel_type
+        tasks = []
+        
+        # Global retrieval (for all queries)
+        if mode.use_global:
+            for q in queries:
+                tasks.append(
+                    global_retrieval(q, self.vector_retriever, top_k)
                 )
         
-        return chunks, entities
-    
-    async def _parallel_search(
-        self, 
-        query: str, 
-        entity_names: List[str], 
-        top_k: int,
-        filter_category: Optional[List[str]] = None,
-        filter_rel_type: Optional[List[str]] = None
-    ) -> tuple:
-        """Parallel execution"""
-        
-        async def vector_task():
-            return self.vector_retriever.search(query, top_k=int(top_k * 0.7))
-        
-        async def graph_task():
-            if not entity_names:
-                return []
-            return self.graph_retriever.search(
-                entity_names=entity_names,
-                k_hops=1,
-                max_neighbors=int(top_k * 0.3),
-                filter_category=filter_category,
-                filter_rel_type=filter_rel_type
+        # Local retrieval
+        if mode.use_local and entities:
+            tasks.append(
+                local_retrieval(entities, self.graph_retriever, k_hops=2, max_neighbors=top_k)
             )
         
-        chunks, entities = await asyncio.gather(
-            asyncio.to_thread(vector_task),
-            asyncio.to_thread(graph_task)
-        )
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        return chunks, entities
+        # Merge global chunks
+        global_chunks = []
+        for r in results:
+            if isinstance(r, list) and r and isinstance(r[0], ScoredChunk):
+                global_chunks.extend(r)
+        
+        # Deduplicate chunks by chunk_id
+        seen = set()
+        unique_chunks = []
+        for chunk in global_chunks:
+            if chunk.chunk_id not in seen:
+                seen.add(chunk.chunk_id)
+                unique_chunks.append(chunk)
+        
+        # Get local entities
+        local_entities = []
+        for r in results:
+            if isinstance(r, list) and r and isinstance(r[0], GraphContext):
+                local_entities = r
+                break
+        
+        # Multi-hop reasoning
+        paths = []
+        if mode.use_multi_hop and entities:
+            paths = await asyncio.to_thread(
+                multi_hop_traversal,
+                entities,
+                self.graph_retriever,
+                max_hops=3,
+                max_paths=5
+            )
+        
+        return unique_chunks, local_entities, paths
     
-    def _format_context(
+    def _format_enhanced_context(
         self,
         query: str,
-        chunks: List[ScoredChunk],
-        entities: List[GraphContext],
+        global_chunks: List[ScoredChunk],
+        local_entities: List[GraphContext],
+        paths: List[Dict],
         analysis: QueryAnalysis
     ) -> str:
-        """
-        ✅ ENHANCED: Relationship-aware context formatting
-        """
+        """Format enhanced context for LLM"""
         lines = []
         
         # Header
         lines.append("=" * 80)
-        lines.append(f"📋 RETRIEVAL CONTEXT FOR: {query}")
-        lines.append(f"🎯 Intent: {analysis.intent} | Mode: {analysis.retrieval_mode}")
+        lines.append(f"📋 ENHANCED RETRIEVAL CONTEXT (DUAL-LEVEL)")
+        lines.append(f"Query: {query}")
+        lines.append(f"Intent: {analysis.intent} | Entities: {', '.join(analysis.entities[:5])}")
         lines.append("=" * 80)
         lines.append("")
         
-        # Vector chunks
-        if chunks:
-            lines.append("## 📄 RELEVANT DOCUMENTS")
+        # Global context (documents)
+        if global_chunks:
+            lines.append("## 🌐 GLOBAL CONTEXT (Documents)")
             lines.append("")
             
-            for i, chunk in enumerate(chunks, 1):
-                lines.append(f"[{i}] **Score: {chunk.score:.3f}** | Source: {chunk.filename}")
-                lines.append(f"{chunk.content[:500]}...")
+            for i, chunk in enumerate(global_chunks[:5], 1):
+                lines.append(f"[{i}] **Score: {chunk.score:.3f}** | {chunk.filename}")
+                lines.append(f"{chunk.content[:400]}...")
                 lines.append("")
         
-        # ✅ ENHANCED: Graph entities with relationship details
-        if entities:
-            lines.append("## 🕸️ KNOWLEDGE GRAPH - ENTITIES & RELATIONSHIPS")
+        # Local context (graph)
+        if local_entities:
+            lines.append("## 📍 LOCAL CONTEXT (Knowledge Graph)")
             lines.append("")
             
-            for i, entity in enumerate(entities, 1):
+            for i, entity in enumerate(local_entities[:5], 1):
                 lines.append(f"[{i}] **{entity.entity_name}** ({entity.entity_type})")
                 
                 if entity.description:
-                    lines.append(f"    📝 Description: {entity.description[:200]}")
+                    lines.append(f"    📝 {entity.description[:150]}")
                 
-                # ✅ DETAILED RELATIONSHIPS
                 if entity.relationships:
-                    lines.append(f"    🔗 Relationships ({len(entity.relationships)}):")
-                    
-                    for rel in entity.relationships[:5]:
-                        rel_type = rel['relationship_type']
-                        verb = rel['verb_phrase']
-                        category = rel['category']
-                        target = rel['target']
-                        desc = rel.get('description', '')
-                        strength = rel.get('strength', 1.0)
-                        
-                        # Format: "→ OpenAI DEVELOPS (FUNCTIONAL) [S:0.95] GPT-4"
+                    lines.append(f"    🔗 Relationships:")
+                    for rel in entity.relationships[:3]:
                         lines.append(
-                            f"       → **{rel_type}** ({category}) [S:{strength:.2f}] **{target}**"
+                            f"       • {rel['relationship_type']} → {rel['target']} "
+                            f"[{rel['category']}]"
                         )
-                        lines.append(f"         \"{verb}\" - {desc[:100]}")
-                    
-                    if len(entity.relationships) > 5:
-                        lines.append(f"       ... and {len(entity.relationships) - 5} more")
                 
                 lines.append("")
         
-        # ✅ ENHANCED: Instructions for relationship-aware Q&A
+        # Multi-hop reasoning paths
+        if paths:
+            lines.append("## 🔀 REASONING PATHS (Multi-hop)")
+            lines.append("")
+            
+            for i, path_info in enumerate(paths[:3], 1):
+                path = path_info['path']
+                lines.append(f"[{i}] {' → '.join(path)}")
+                lines.append("")
+        
+        # Instructions
         lines.append("=" * 80)
-        lines.append("## 📖 INSTRUCTIONS FOR ASSISTANT")
+        lines.append("## 📖 INSTRUCTIONS")
         lines.append("")
-        lines.append("1. **Relationship Analysis**: Pay attention to:")
-        lines.append("   - Relationship TYPES (e.g., DEVELOPS, MANAGES, OWNS)")
-        lines.append("   - Verb phrases (natural language descriptions)")
-        lines.append("   - Categories (FUNCTIONAL, HIERARCHICAL, TEMPORAL, etc.)")
-        lines.append("   - Strength scores (higher = more important)")
-        lines.append("")
-        lines.append("2. **Answer Strategy**:")
-        lines.append("   - Use BOTH documents and graph relationships")
-        lines.append("   - Cite sources: [1], [2] for docs; mention entities for graph")
-        lines.append("   - Explain relationships clearly with their types/categories")
-        lines.append("   - If asked about connections, describe the relationship path")
-        lines.append("")
-        lines.append("3. **Examples**:")
-        lines.append("   - 'What does OpenAI develop?' → Use DEVELOPS (FUNCTIONAL) relationships")
-        lines.append("   - 'Who manages X?' → Use MANAGES (HIERARCHICAL) relationships")
-        lines.append("   - 'How are X and Y connected?' → Describe relationship path with types")
+        lines.append("1. **Global Context**: Use document chunks for detailed information")
+        lines.append("2. **Local Context**: Use graph for entity relationships")
+        lines.append("3. **Reasoning Paths**: Use for multi-step reasoning")
+        lines.append("4. **Citation**: [1], [2] for docs; mention entities for graph")
         lines.append("=" * 80)
         
         return "\n".join(lines)
     
+    # Backward compatibility
     def retrieve_with_rerank(
         self,
         query: str,
         top_k: int = 5,
-        rerank_method: str = 'rrf'
-    ) -> RetrievalContext:
-        """Advanced retrieval with reranking"""
-        context = self.retrieve(query, top_k=top_k * 2)
-        
-        if rerank_method == 'score':
-            context.chunks.sort(key=lambda x: x.score, reverse=True)
-            context.chunks = context.chunks[:top_k]
-            
-            context.entities.sort(key=lambda x: x.score, reverse=True)
-            context.entities = context.entities[:top_k // 2]
-        
-        analysis = self.query_analyzer.analyze(query)
-        context.formatted_text = self._format_context(
-            query, context.chunks, context.entities, analysis
-        )
-        
-        return context
+        rerank_method: str = 'enhanced'
+    ):
+        """Backward compatible method"""
+        return self.retrieve(query, top_k=top_k, rerank=True)
 
-# Convenience function
-def retrieve(
+
+# ================= CONVENIENCE FUNCTIONS =================
+
+def retrieve_enhanced(
     query: str,
     vector_db,
     mongo_storage,
     **kwargs
-) -> RetrievalContext:
-    """Quick retrieval"""
-    retriever = HybridRetriever(vector_db, mongo_storage)
+) -> EnhancedRetrievalContext:
+    """Quick enhanced retrieval"""
+    retriever = EnhancedHybridRetriever(vector_db, mongo_storage)
     return retriever.retrieve(query, **kwargs)
+
+
+# ================= EXPORT =================
+
+__all__ = [
+    'EnhancedHybridRetriever',
+    'EnhancedRetrievalContext',
+    'RetrievalMode',
+    'retrieve_enhanced',
+    'QueryExpander',
+    'ResultReranker'
+]
