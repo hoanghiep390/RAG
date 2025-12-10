@@ -1,12 +1,6 @@
-# backend/retrieval/hybrid_retriever_enhanced.py
+# backend/retrieval/hybrid_retriever.py
 """
 🚀 ENHANCED HYBRID RETRIEVAL - Inspired by LightRAG
-Improvements:
-1. Global + Local retrieval (dual-level)
-2. Graph-aware ranking
-3. Multi-hop reasoning
-4. Query expansion
-5. Result reranking
 """
 
 from typing import List, Dict, Optional, Any, Tuple
@@ -21,19 +15,18 @@ from backend.retrieval.graph_retriever import GraphRetriever, GraphContext
 
 logger = logging.getLogger(__name__)
 
-# ================= RETRIEVAL MODES =================
-
+#  RETRIEVAL MODES 
+            
 @dataclass
 class RetrievalMode:
     """Retrieval configuration"""
-    use_global: bool = True      # Global vector search
-    use_local: bool = True       # Local graph search
-    use_multi_hop: bool = False  # Multi-hop graph traversal
-    expand_query: bool = True    # Query expansion
-    rerank: bool = True          # Result reranking
+    use_global: bool = True      
+    use_local: bool = True       
+    use_multi_hop: bool = False  
+    expand_query: bool = True    
+    rerank: bool = True          
 
-
-# ================= QUERY EXPANSION =================
+#  QUERY EXPANSION 
 
 class QueryExpander:
     """Expand query with synonyms and related terms"""
@@ -58,10 +51,10 @@ class QueryExpander:
                 expanded.extend(synonyms[:max_terms])
                 break
         
-        return expanded[:3]  # Return top 3 variations
+        return expanded[:3]  
 
 
-# ================= GLOBAL RETRIEVAL =================
+#  GLOBAL RETRIEVAL
 
 async def global_retrieval(
     query: str,
@@ -87,7 +80,7 @@ async def global_retrieval(
         return []
 
 
-# ================= LOCAL RETRIEVAL =================
+#  LOCAL RETRIEVAL 
 
 async def local_retrieval(
     entities: List[str],
@@ -115,7 +108,7 @@ async def local_retrieval(
         return []
 
 
-# ================= MULTI-HOP REASONING =================
+# MULTI-HOP REASONING 
 
 def multi_hop_traversal(
     start_entities: List[str],
@@ -193,7 +186,7 @@ def multi_hop_traversal(
         return []
 
 
-# ================= RESULT RERANKING =================
+# RESULT RERANKING 
 
 class ResultReranker:
     """Rerank results based on multiple factors"""
@@ -266,7 +259,7 @@ class ResultReranker:
         return entities
 
 
-# ================= ENHANCED HYBRID RETRIEVER =================
+#  ENHANCED HYBRID RETRIEVER
 
 @dataclass
 class EnhancedRetrievalContext:
@@ -527,7 +520,7 @@ class EnhancedHybridRetriever:
         return self.retrieve(query, top_k=top_k, rerank=True)
 
 
-# ================= CONVENIENCE FUNCTIONS =================
+#  CONVENIENCE FUNCTIONS 
 
 def retrieve_enhanced(
     query: str,
@@ -540,7 +533,7 @@ def retrieve_enhanced(
     return retriever.retrieve(query, **kwargs)
 
 
-# ================= EXPORT =================
+#  EXPORT 
 
 __all__ = [
     'EnhancedHybridRetriever',

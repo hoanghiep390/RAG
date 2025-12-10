@@ -9,7 +9,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """✅ FIXED: Proper graph deletion with doc_id tracking"""
+    """ Proper graph deletion with doc_id tracking"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -23,9 +23,9 @@ class MongoStorage:
             self.graph_edges = self.db['graph_edges']
             
             self._create_indexes()
-            logger.info(f"✅ MongoStorage initialized for user: {user_id}")
+            logger.info(f" MongoStorage initialized for user: {user_id}")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize MongoStorage: {e}")
+            logger.error(f" Failed to initialize MongoStorage: {e}")
             raise
     
     def _create_indexes(self):
@@ -40,16 +40,16 @@ class MongoStorage:
             self.relationships.create_index([('user_id', 1), ('source_id', 1)])
             self.relationships.create_index([('user_id', 1), ('doc_id', 1)])
             
-            # ✅ CRITICAL FIX: Add doc_id indexes for graph collections
+            #  Add doc_id indexes for graph collections
             self.graph_nodes.create_index([('user_id', 1), ('node_id', 1)], unique=True)
             self.graph_nodes.create_index([('user_id', 1), ('doc_id', 1)])  
             
             self.graph_edges.create_index([('user_id', 1), ('source', 1), ('target', 1)])
             self.graph_edges.create_index([('user_id', 1), ('doc_id', 1)])  
             
-            logger.debug("✅ MongoDB indexes created (with doc_id for graph)")
+            logger.debug(" MongoDB indexes created (with doc_id for graph)")
         except Exception as e:
-            logger.warning(f"⚠️ Index creation warning: {e}")
+            logger.warning(f" Index creation warning: {e}")
     
     # ========== SAVE METHODS (Keep existing) ==========
     
@@ -66,10 +66,10 @@ class MongoStorage:
                 'metadata': metadata or {}
             }
             result = self.documents.insert_one(doc)
-            logger.info(f"✅ Saved document: {filename}")
+            logger.info(f" Saved document: {filename}")
             return str(result.inserted_id)
         except Exception as e:
-            logger.error(f"❌ Failed to save document {filename}: {e}")
+            logger.error(f" Failed to save document {filename}: {e}")
             raise
     
     def update_document_status(self, doc_id: str, status: str, stats: Dict = None):
@@ -83,10 +83,10 @@ class MongoStorage:
                 {'$set': update_data}
             )
             if result.modified_count > 0:
-                logger.info(f"✅ Updated document status: {doc_id} -> {status}")
+                logger.info(f"Updated document status: {doc_id} -> {status}")
             return result.modified_count
         except Exception as e:
-            logger.error(f"❌ Failed to update document status: {e}")
+            logger.error(f" Failed to update document status: {e}")
             raise
     
     def get_document(self, doc_id: str):
@@ -94,7 +94,7 @@ class MongoStorage:
         try:
             return self.documents.find_one({'user_id': self.user_id, 'doc_id': doc_id})
         except Exception as e:
-            logger.error(f"❌ Failed to get document {doc_id}: {e}")
+            logger.error(f" Failed to get document {doc_id}: {e}")
             return None
     
     def list_documents(self):
@@ -102,7 +102,7 @@ class MongoStorage:
         try:
             return list(self.documents.find({'user_id': self.user_id}).sort('uploaded_at', -1))
         except Exception as e:
-            logger.error(f"❌ Failed to list documents: {e}")
+            logger.error(f" Failed to list documents: {e}")
             return []
     
     def save_chunks_bulk(self, doc_id: str, chunks: List[Dict]):
@@ -127,10 +127,10 @@ class MongoStorage:
                 for c in chunks
             ]
             result = self.chunks.insert_many(chunk_docs, ordered=False)
-            logger.info(f"✅ Saved {len(result.inserted_ids)} chunks")
+            logger.info(f" Saved {len(result.inserted_ids)} chunks")
             return len(result.inserted_ids)
         except Exception as e:
-            logger.error(f"❌ Failed to save chunks: {e}")
+            logger.error(f" Failed to save chunks: {e}")
             return 0
     
     def save_entities_bulk(self, doc_id: str, entities_dict: Dict):
@@ -155,11 +155,11 @@ class MongoStorage:
             
             if entity_docs:
                 result = self.entities.insert_many(entity_docs, ordered=False)
-                logger.info(f"✅ Saved {len(result.inserted_ids)} entities")
+                logger.info(f" Saved {len(result.inserted_ids)} entities")
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f"❌ Failed to save entities: {e}")
+            logger.error(f" Failed to save entities: {e}")
             return 0
     
     def save_relationships_bulk(self, doc_id: str, relationships_dict: Dict):
@@ -195,11 +195,11 @@ class MongoStorage:
             logger.error(f"❌ Failed to save relationships: {e}")
             return 0
     
-    # ========== ✅ FIX 1: SAVE GRAPH WITH DOC_ID TRACKING ==========
+    # ==========  SAVE GRAPH WITH DOC_ID TRACKING ==========
     
     def save_graph_bulk(self, graph_data: Dict, doc_id: str = None):
         """
-        ✅ FIXED: Track doc_id for proper deletion
+         Track doc_id for proper deletion
         
         Args:
             graph_data: Graph dict with nodes/links
@@ -226,7 +226,7 @@ class MongoStorage:
                                     'sources': list(node.get('sources', [])),
                                     'updated_at': datetime.now()
                                 },
-                                # ✅ CRITICAL FIX: Track doc_id
+                                #  Track doc_id
                                 '$addToSet': {'doc_id': doc_id}
                             },
                             upsert=True
@@ -255,7 +255,7 @@ class MongoStorage:
                                     'chunks': list(link.get('chunks', [])),
                                     'updated_at': datetime.now()
                                 },
-                                # ✅ CRITICAL FIX: Track doc_id
+                                #  Track doc_id
                                 '$addToSet': {'doc_id': doc_id}
                             },
                             upsert=True
@@ -288,7 +288,7 @@ class MongoStorage:
                 self.save_relationships_bulk(doc_id, relationships)
             
             if graph:
-                # ✅ CRITICAL: Pass doc_id to save_graph_bulk
+                #  Pass doc_id to save_graph_bulk
                 self.save_graph_bulk(graph, doc_id=doc_id)
             
             self.update_document_status(doc_id, 'completed', stats)
@@ -300,11 +300,11 @@ class MongoStorage:
             self.update_document_status(doc_id, 'failed', {'error': str(e)})
             return False
     
-    # ========== ✅ FIX 2: DELETE WITH DOC_ID QUERY ==========
+    # DELETE WITH DOC_ID QUERY 
     
     def delete_document_cascade(self, doc_id: str) -> Dict:
         """
-        ✅ FIXED: Delete graph using doc_id query
+             Delete graph using doc_id query
         
         Strategy:
         1. Delete all data with doc_id (chunks, entities, relationships)
@@ -349,12 +349,12 @@ class MongoStorage:
                 {'user_id': self.user_id, 'doc_id': doc_id}
             ).deleted_count
             
-            # ========== ✅ FIX: DELETE GRAPH NODES WITH DOC_ID ==========
+            # ========== : DELETE GRAPH NODES WITH DOC_ID ==========
             
             # Find nodes that have this doc_id
             nodes_with_doc = list(self.graph_nodes.find({
                 'user_id': self.user_id,
-                'doc_id': doc_id  # ✅ CORRECT QUERY
+                'doc_id': doc_id  
             }))
             
             logger.info(f"🔍 Found {len(nodes_with_doc)} nodes with doc_id={doc_id}")
@@ -370,15 +370,15 @@ class MongoStorage:
                 remaining_docs = [d for d in doc_ids if d != doc_id]
                 
                 if not remaining_docs:
-                    # ✅ No other docs → DELETE
+                    #  No other docs → DELETE
                     self.graph_nodes.delete_one({
                         'user_id': self.user_id,
                         'node_id': node['node_id']
                     })
                     stats['graph_nodes_deleted'] += 1
-                    logger.debug(f"🗑️ Deleted node: {node['node_id']}")
+                    logger.debug(f" Deleted node: {node['node_id']}")
                 else:
-                    # ✅ Other docs exist → UPDATE
+                    #  Other docs exist → UPDATE
                     self.graph_nodes.update_one(
                         {'user_id': self.user_id, 'node_id': node['node_id']},
                         {'$set': {'doc_id': remaining_docs}}
@@ -386,12 +386,12 @@ class MongoStorage:
                     stats['graph_nodes_updated'] += 1
                     logger.debug(f"📝 Updated node: {node['node_id']} (removed {doc_id})")
             
-            # ========== ✅ FIX: DELETE GRAPH EDGES WITH DOC_ID ==========
+            #  DELETE GRAPH EDGES WITH DOC_ID 
             
             # Find edges that have this doc_id
             edges_with_doc = list(self.graph_edges.find({
                 'user_id': self.user_id,
-                'doc_id': doc_id  # ✅ CORRECT QUERY
+                'doc_id': doc_id  
             }))
             
             logger.info(f"🔍 Found {len(edges_with_doc)} edges with doc_id={doc_id}")
@@ -507,7 +507,7 @@ class MongoStorage:
                         'type': n.get('type', 'UNKNOWN'),
                         'description': n.get('description', ''),
                         'sources': n.get('sources', []),
-                        'doc_id': n.get('doc_id', [])  # ✅ Include for debugging
+                        'doc_id': n.get('doc_id', [])  
                     }
                     for n in nodes
                 ],
@@ -521,7 +521,7 @@ class MongoStorage:
                         'description': e.get('description', ''),
                         'strength': e.get('strength', 1.0),
                         'chunks': e.get('chunks', []),
-                        'doc_id': e.get('doc_id', [])  # ✅ Include for debugging
+                        'doc_id': e.get('doc_id', []) 
                     }
                     for e in edges
                 ]

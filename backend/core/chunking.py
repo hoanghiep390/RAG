@@ -1,4 +1,4 @@
-# backend/core/chunking.py 
+# backend/core/chunking.py - DOCLING ONLY (FIXED API)
 
 from dataclasses import dataclass
 from typing import List, Dict, Any
@@ -7,18 +7,17 @@ import uuid, re, tiktoken, os, logging
 
 logger = logging.getLogger(__name__)
 
-# ================= Check Docling Availability =================
+#  Check Docling Availability 
 try:
     from docling.document_converter import DocumentConverter
     from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PdfPipelineOptions
     DOCLING_AVAILABLE = True
-    logger.info(" Docling available for advanced PDF processing")
+    logger.info(" Docling available for PDF/DOCX processing")
 except ImportError:
     DOCLING_AVAILABLE = False
-    logger.warning(" Docling not available, using legacy extractors")
+    logger.error(" Docling not available! PDF/DOCX processing will fail.")
 
-# ================= Config =================
+#  Config 
 @dataclass
 class ChunkConfig:
     max_tokens: int = 300
@@ -29,9 +28,11 @@ class ChunkConfig:
 
 DocChunkConfig = ChunkConfig
 
-# ================= Docling Extractor =================
 class DoclingExtractor:
-    """Docling-based extractor for advanced PDF/DOCX processing"""
+    """
+    🚀 DOCLING-ONLY EXTRACTOR
+    Required for PDF and DOCX processing
+    """
     
     _instance = None  
     
@@ -46,94 +47,172 @@ class DoclingExtractor:
             return
         
         if not DOCLING_AVAILABLE:
-            raise ImportError("Docling not installed")
+            raise ImportError(
+                "❌ Docling is required but not installed!\n"
+                "Install with: pip install docling\n"
+                "Or: pip install -r requirements.txt"
+            )
         
-        # Get device from env
-        device = os.getenv('DOCLING_DEVICE', 'cpu')
+        try:
+            self.converter = DocumentConverter()
+            logger.info(" Docling initialized (using latest API)")
         
-        # Configure pipeline
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = os.getenv('DOCLING_OCR', 'false').lower() == 'true'
-        pipeline_options.do_table_structure = True
+        except TypeError as e:
+            try:
+                from docling.datamodel.pipeline_options import PdfPipelineOptions
+                
+                device = os.getenv('DOCLING_DEVICE', 'cpu')
+                do_ocr = os.getenv('DOCLING_OCR', 'false').lower() == 'true'
+                
+                pipeline_options = PdfPipelineOptions()
+                pipeline_options.do_ocr = do_ocr
+                pipeline_options.do_table_structure = True
+                
+                self.converter = DocumentConverter(
+                    allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
+                    pipeline_options=pipeline_options
+                )
+                logger.info(f" Docling initialized (using old API, device={device}, ocr={do_ocr})")
+            
+            except Exception as e2:
+                logger.error(f" Docling initialization failed: {e2}")
+                raise RuntimeError(
+                    f"Failed to initialize Docling with both API versions:\n"
+                    f"New API error: {e}\n"
+                    f"Old API error: {e2}\n"
+                    f"Please check your Docling version: pip show docling"
+                )
         
-        self.converter = DocumentConverter(
-            allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
-            pipeline_options=pipeline_options
-        )
-        
-        logger.info(f"✅ Docling initialized (device={device}, ocr={pipeline_options.do_ocr})")
         self._initialized = True
     
     def extract(self, filepath: str) -> str:
-        """Extract text with structure preservation"""
+        """
+        Extract text with structure preservation
+        
+        Args:
+            filepath: Path to PDF or DOCX file
+            
+        Returns:
+            Structured markdown text
+            
+        Raises:
+            Exception if extraction fails
+        """
         try:
+            logger.info(f" Docling extracting: {Path(filepath).name}")
+            
+            # Convert document
             result = self.converter.convert(filepath)
             
             # Try built-in markdown export first
             try:
                 markdown = result.document.export_to_markdown()
                 if markdown and len(markdown.strip()) > 0:
+                    logger.info(f" Docling markdown export: {len(markdown)} chars")
                     return markdown
-            except:
-                pass
+            except Exception as e:
+                logger.warning(f" Markdown export failed: {e}, trying custom export")
+            
+            # Try text export
+            try:
+                text = result.document.export_to_text()
+                if text and len(text.strip()) > 0:
+                    logger.info(f" Docling text export: {len(text)} chars")
+                    return text
+            except Exception as e:
+                logger.warning(f" Text export failed: {e}, trying custom export")
             
             # Fallback: custom export
-            return self._custom_export(result)
+            text = self._custom_export(result)
+            logger.info(f" Docling custom export: {len(text)} chars")
+            return text
         
         except Exception as e:
-            logger.error(f"❌ Docling extraction failed: {e}")
-            raise
+            logger.error(f" Docling extraction failed for {Path(filepath).name}: {e}")
+            raise RuntimeError(
+                f"Docling extraction failed: {e}\n"
+                f"Make sure the file is not corrupted and Docling is properly installed."
+            )
     
     def _custom_export(self, result) -> str:
-        """Custom structured export"""
+        """Custom structured export with enhanced formatting"""
         lines = []
         
         try:
-            for element in result.document.iterate_items():
-                label = getattr(element, 'label', 'unknown')
-                text = getattr(element, 'text', '').strip()
-                
-                if not text:
-                    continue
-                
-                if label == "title":
-                    lines.append(f"# {text}")
-                elif label == "section_header":
-                    lines.append(f"## {text}")
-                elif label == "subtitle":
-                    lines.append(f"### {text}")
-                elif label == "table":
-                    if hasattr(element, 'export_to_dataframe'):
-                        try:
-                            df = element.export_to_dataframe()
-                            lines.append(df.to_markdown(index=False))
-                        except:
+            # Try to iterate through document items
+            if hasattr(result.document, 'iterate_items'):
+                for element in result.document.iterate_items():
+                    label = getattr(element, 'label', 'unknown')
+                    text = getattr(element, 'text', '').strip()
+                    
+                    if not text:
+                        continue
+                    
+                    # Format based on element type
+                    if label == "title":
+                        lines.append(f"# {text}")
+                    elif label == "section_header":
+                        lines.append(f"## {text}")
+                    elif label == "subtitle":
+                        lines.append(f"### {text}")
+                    elif label == "table":
+                        # Try to export table as markdown
+                        if hasattr(element, 'export_to_dataframe'):
+                            try:
+                                df = element.export_to_dataframe()
+                                lines.append(df.to_markdown(index=False))
+                            except:
+                                lines.append(text)
+                        else:
                             lines.append(text)
+                    elif label == "list_item":
+                        lines.append(f"- {text}")
+                    elif label == "paragraph":
+                        lines.append(text)
+                    elif label == "caption":
+                        lines.append(f"*{text}*")
+                    elif label == "footnote":
+                        lines.append(f"^{text}")
                     else:
                         lines.append(text)
-                elif label == "list_item":
-                    lines.append(f"- {text}")
-                else:
-                    lines.append(text)
-                
-                lines.append("")  
+                    
+                    lines.append("")  # Add spacing
             
-            return "\n".join(lines)
+            # If we got content, return it
+            if lines:
+                return "\n".join(lines)
+            
+            # Final fallback: try to get raw text
+            if hasattr(result.document, 'text'):
+                return result.document.text
+            
+            # Last resort: convert result to string
+            return str(result.document)
         
-        except:
-            # Final fallback
-            return result.document.export_to_text()
+        except Exception as e:
+            logger.warning(f" Custom export failed: {e}")
+            
+            # Try to get any text from result
+            try:
+                if hasattr(result.document, 'text'):
+                    return result.document.text
+                return str(result.document)
+            except:
+                raise RuntimeError(f"Cannot extract text from document: {e}")
 
-# ================= Helpers =================
+
+# Helpers 
 _SENTENCE_BREAK = re.compile(
     r"(?s)(.*?)([\.!?…]|(?:\n{2,})|(?:\r?\n- )|(?:\r?\n• ))\s+$"
 )
 
 def _with_breadcrumb(section: str, content: str, part_idx: int, part_total: int) -> str:
-    suffix = f" — tiếp {part_idx}/{part_total}" if part_total > 1 else ""
+    """Add section breadcrumb to chunk"""
+    suffix = f" — part {part_idx}/{part_total}" if part_total > 1 else ""
     return f"**[SECTION] {section}{suffix}**\n\n{content}"
 
 def _soft_split(text: str, enc, max_size: int, overlap: int, lookback_ratio: float = 0.2) -> List[str]:
+    """Smart text splitting with sentence boundaries"""
     ids = enc.encode(text)
     n = len(ids)
     if n <= max_size:
@@ -163,7 +242,7 @@ def _soft_split(text: str, enc, max_size: int, overlap: int, lookback_ratio: flo
     return out
 
 def _split_table_text(header: str, rows: List[str], prefix: str, enc, max_tokens: int, overlap: int) -> List[str]:
-    """Chunk table text giữ header cố định"""
+    """Chunk table text with sticky header"""
     sticky = header + "\n"
     chunks, cur_rows = [], []
 
@@ -192,6 +271,7 @@ def _split_table_text(header: str, rows: List[str], prefix: str, enc, max_tokens
     return chunks
 
 def _split_table_markdown(text: str, enc, max_tokens: int, overlap: int) -> List[str]:
+    """Split markdown tables intelligently"""
     lines = text.splitlines()
     block_start, block_end = None, None
     for i in range(len(lines)-1):
@@ -211,17 +291,33 @@ def _split_table_markdown(text: str, enc, max_tokens: int, overlap: int) -> List
 
     return _split_table_text(header + "\n" + separator, rows, prefix, enc, max_tokens, overlap)
 
-# ================= Chunker =================
+# Chunker 
 class Chunker:
-    def __init__(self, config: ChunkConfig):
+    """
+    Token-aware text chunker
+    """
+    def __init__(self, config: ChunkConfig = None):
+        if config is None:
+            try:
+                from backend.config import Config
+                config = ChunkConfig(
+                    max_tokens=Config.DEFAULT_CHUNK_SIZE,
+                    overlap_tokens=Config.DEFAULT_CHUNK_OVERLAP
+                )
+            except:
+                config = ChunkConfig()
+        
         self.config = config
         self.enc = tiktoken.encoding_for_model("gpt-4o-mini")
 
     def count_tokens(self, text: str) -> int:
+        """Count tokens in text"""
         return len(self.enc.encode(text))
 
     def chunk_text(self, text: str, filepath: str, section: str = "ROOT") -> List[Dict]:
-        """Chunk text theo token, xử lý table & soft split"""
+        """
+        Chunk text with token-aware splitting and table handling
+        """
         lines = text.split('\n')
         chunks, buf, buf_tokens, order = [], [], 0, 0
 
@@ -265,204 +361,83 @@ class Chunker:
 
         return chunks
 
-# ================= File Extraction (HYBRID) =================
+
+#  File Extraction (DOCLING for PDF/DOCX) 
+
 def extract_text_from_file(filepath: str) -> str:
-    """
-    🔄 HYBRID EXTRACTION:
-    - PDF: Try Docling first, fallback to pdfplumber
-    - DOCX/TXT/Excel/etc: Use legacy extractors (already optimized)
+    """ EXTRACTION with DOCLING-ONLY for PDF/DOCX
+    Strategy:
+    - PDF & DOCX: MANDATORY Docling (no fallback)
+    - Other formats: Legacy extractors
+    
+    Args:
+        filepath: Path to document
+        
+    Returns:
+        Extracted text
+        
+    Raises:
+        RuntimeError if Docling fails for PDF/DOCX
     """
     ext = Path(filepath).suffix.lower()
     
-    # ✅ PDF: Try Docling first (if enabled and available)
-    if ext == '.pdf':
+    if ext in ['.pdf', '.docx', '.doc']:
+        if not DOCLING_AVAILABLE:
+            raise RuntimeError(
+                f" Docling is required for {ext} files but not installed!\n"
+                f"Install with: pip install docling"
+            )
+        
         use_docling = os.getenv('USE_DOCLING', 'true').lower() == 'true'
         
-        if use_docling and DOCLING_AVAILABLE:
-            try:
-                logger.info(f"🚀 Using Docling for PDF: {Path(filepath).name}")
-                extractor = DoclingExtractor()
-                text = extractor.extract(filepath)
-                
-                if text and len(text.strip()) > 0:
-                    logger.info(f"✅ Docling success: {len(text)} chars")
-                    return text
-                else:
-                    logger.warning("⚠️ Docling returned empty, using fallback")
-            
-            except Exception as e:
-                logger.warning(f"⚠️ Docling failed ({e}), using pdfplumber fallback")
+        if not use_docling:
+            logger.warning(f" USE_DOCLING=false but {ext} requires Docling! Enabling...")
         
-        # Fallback: pdfplumber
-        return _extract_pdf_legacy(filepath)
+        # Force Docling for PDF/DOCX
+        logger.info(f" Using Docling for {ext}: {Path(filepath).name}")
+        extractor = DoclingExtractor()
+        text = extractor.extract(filepath)
+        
+        if not text or len(text.strip()) == 0:
+            raise RuntimeError(
+                f" Docling returned empty text for {Path(filepath).name}\n"
+                f"The file may be corrupted or empty."
+            )
+        
+        logger.info(f" Docling extracted {len(text)} chars from {Path(filepath).name}")
+        return text
     
-    # ⚡ DOCX: Legacy (python-docx is already good)
-    elif ext in ['.docx', '.doc']:
-        return _extract_docx_legacy(filepath)
-    
-    # ⚡ Markdown
+    # ⚡ Other formats: Use legacy extractors
     elif ext in ['.md', '.markdown']:
         return _extract_markdown(filepath)
     
-    # ⚡ HTML
     elif ext in ['.html', '.htm']:
         return _extract_html(filepath)
     
-    # ⚡ JSON
     elif ext == '.json':
         return _extract_json(filepath)
     
-    # ⚡ XML
     elif ext == '.xml':
         return _extract_xml(filepath)
     
-    # ⚡ Text & Code
     elif ext in ['.txt', '.py', '.js', '.java', '.cpp', '.c', '.h', '.hpp', 
                  '.css', '.scss', '.sql', '.sh', '.bash', '.yml', '.yaml',
                  '.toml', '.ini', '.cfg', '.conf', '.log', '.r', '.rb', 
                  '.php', '.go', '.rs', '.swift', '.kt', '.ts', '.jsx', '.tsx']:
         return _extract_text(filepath)
     
-    # ⚡ Excel
     elif ext in ['.xlsx', '.xls']:
         return _extract_excel(filepath)
     
-    # ⚡ CSV
     elif ext == '.csv':
         return _extract_csv(filepath)
     
-    # ⚡ PPTX
     elif ext in ['.pptx', '.ppt']:
         return _extract_pptx(filepath)
     
-    # Unsupported
     else:
         logger.warning(f"⚠️ Unsupported file type: {ext}")
         return ""
-
-
-# ================= Legacy Extractors =================
-
-def _extract_pdf_legacy(filepath: str) -> str:
-    """Legacy PDF extraction with pdfplumber"""
-    try:
-        import pdfplumber
-        text_parts = []
-        with pdfplumber.open(filepath) as pdf:
-            for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    text_parts.append(text)
-        return "\n\n".join(text_parts)
-    except Exception as e:
-        logger.error(f"❌ PDF extraction error: {e}")
-        return ""
-
-
-def _extract_docx_legacy(filepath: str) -> str:
-    """Legacy DOCX extraction with python-docx"""
-    try:
-        from docx import Document
-        
-        doc = Document(filepath)
-        output = []
-        
-        # Process paragraphs with formatting
-        for para in doc.paragraphs:
-            if not para.text.strip():
-                output.append("")
-                continue
-            
-            # Build formatted text (Markdown style)
-            text_parts = []
-            for run in para.runs:
-                text = run.text
-                if not text:
-                    continue
-                
-                # Apply basic formatting
-                if run.bold and run.italic:
-                    text = f"***{text}***"
-                elif run.bold:
-                    text = f"**{text}**"
-                elif run.italic:
-                    text = f"*{text}*"
-                
-                if run.underline:
-                    text = f"<u>{text}</u>"
-                
-                if run.font.strike:
-                    text = f"~~{text}~~"
-                
-                # Color support (if available)
-                if run.font.color and run.font.color.rgb:
-                    try:
-                        rgb = run.font.color.rgb
-                        if rgb != (0, 0, 0):  # Not black
-                            hex_color = f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
-                            text = f'<span style="color:{hex_color}">{text}</span>'
-                    except:
-                        pass  # Ignore color errors
-                
-                text_parts.append(text)
-            
-            full_text = "".join(text_parts)
-            
-            # Apply heading styles
-            style = para.style.name.lower()
-            if 'heading 1' in style or 'title' in style:
-                full_text = f"# {full_text}"
-            elif 'heading 2' in style or 'subtitle' in style:
-                full_text = f"## {full_text}"
-            elif 'heading 3' in style:
-                full_text = f"### {full_text}"
-            elif 'heading 4' in style:
-                full_text = f"#### {full_text}"
-            elif 'quote' in style:
-                full_text = f"> {full_text}"
-            
-            output.append(full_text)
-        
-        # Process tables (Markdown format)
-        for table in doc.tables:
-            if not table.rows:
-                continue
-            
-            try:
-                # Header row
-                header_cells = [cell.text.strip() for cell in table.rows[0].cells]
-                output.append("\n| " + " | ".join(header_cells) + " |")
-                output.append("| " + " | ".join(["---"] * len(header_cells)) + " |")
-                
-                # Data rows
-                for row in table.rows[1:]:
-                    cells = [cell.text.strip() for cell in row.cells]
-                    output.append("| " + " | ".join(cells) + " |")
-                
-                output.append("")
-            except Exception as e:
-                logger.warning(f"⚠️ Table extraction warning: {e}")
-                continue
-        
-        result = "\n".join(output)
-        return result if result.strip() else ""
-        
-    except ImportError:
-        # Fallback nếu chưa cài python-docx
-        logger.warning("⚠️ python-docx not installed, using basic extraction")
-        try:
-            import docx2txt
-            return docx2txt.process(filepath)
-        except:
-            return ""
-    except Exception as e:
-        logger.error(f"❌ DOCX extraction error: {e}")
-        # Fallback to docx2txt
-        try:
-            import docx2txt
-            return docx2txt.process(filepath)
-        except:
-            return ""
 
 
 def _extract_markdown(filepath: str) -> str:
@@ -481,7 +456,6 @@ def _extract_html(filepath: str) -> str:
         from bs4 import BeautifulSoup
         with open(filepath, 'r', encoding='utf-8') as f:
             soup = BeautifulSoup(f.read(), 'html.parser')
-            # Remove script and style elements
             for script in soup(["script", "style"]):
                 script.decompose()
             return soup.get_text(separator='\n', strip=True)
@@ -589,22 +563,64 @@ def _extract_pptx(filepath: str) -> str:
         return ""
 
 
-# ================= Main Entry Point =================
+#  Main Entry 
+
 def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> List[Dict]:
-    """Main entry point for document processing"""
-    config = config or ChunkConfig()
+    """
+    Main entry point for document processing  
+    Args:
+        filepath: Path to document
+        config: Chunking configuration (uses Config defaults if None)
+        
+    Returns:
+        List of chunk dictionaries with format:
+        {
+            'chunk_id': str,
+            'content': str,
+            'tokens': int,
+            'order': int,
+            'file_path': str,
+            'file_type': str,
+            'section': str
+        }
+        
+    Raises:
+        RuntimeError if processing fails for PDF/DOCX
+    """
+    if config is None:
+        try:
+            from backend.config import Config
+            config = ChunkConfig(
+                max_tokens=Config.DEFAULT_CHUNK_SIZE,
+                overlap_tokens=Config.DEFAULT_CHUNK_OVERLAP
+            )
+        except:
+            config = ChunkConfig()
     
     logger.info(f"📄 Processing: {filepath}")
+    
     text = extract_text_from_file(filepath)
     
     if not text.strip():
         logger.warning(f"⚠️ Warning: No text extracted from {filepath}")
         return []
     
-    logger.info(f"✅ Extracted {len(text)} characters")
+    logger.info(f" Extracted {len(text)} characters")
     
+
     chunker = Chunker(config)
     chunks = chunker.chunk_text(text, filepath)
     
-    logger.info(f"✅ Created {len(chunks)} chunks")
+    logger.info(f" Created {len(chunks)} chunks")
     return chunks
+
+
+__all__ = [
+    'ChunkConfig',
+    'DocChunkConfig',  
+    'Chunker',
+    'DoclingExtractor',
+    'extract_text_from_file',
+    'process_document_to_chunks',
+    'DOCLING_AVAILABLE'
+]

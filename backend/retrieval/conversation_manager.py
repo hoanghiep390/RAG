@@ -62,9 +62,9 @@ class ConversationManager:
                     )
                     for m in messages
                 ]
-                logger.info(f"✅ Loaded {len(self.history)} messages from MongoDB")
+                logger.info(f" Loaded {len(self.history)} messages from MongoDB")
             except Exception as e:
-                logger.error(f"❌ Failed to load messages: {e}")
+                logger.error(f" Failed to load messages: {e}")
                 self.history = []
     
     def add_message(self, role: str, content: str, save_to_db: bool = True):
@@ -92,9 +92,9 @@ class ConversationManager:
                     content=content
                 )
                 message.message_id = message_id
-                logger.debug(f"💾 Saved message to MongoDB: {message_id}")
+                logger.debug(f" Saved message to MongoDB: {message_id}")
             except Exception as e:
-                logger.error(f"❌ Failed to save message: {e}")
+                logger.error(f" Failed to save message: {e}")
     
     def get_context_for_llm(self) -> List[Dict]:
         """
@@ -163,13 +163,13 @@ Rewritten Query:"""
             rewritten = rewritten.strip().strip('"\'')
             
             if rewritten and len(rewritten.split()) <= 50:
-                logger.info(f"🔄 Rewritten: '{current_query}' → '{rewritten}'")
+                logger.info(f" Rewritten: '{current_query}' → '{rewritten}'")
                 return rewritten
             
             return current_query
         
         except Exception as e:
-            logger.error(f"❌ Rewrite error: {e}")
+            logger.error(f" Rewrite error: {e}")
             return current_query
     
     def _format_history_for_rewrite(self) -> str:
