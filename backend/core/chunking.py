@@ -1,4 +1,4 @@
-# backend/core/chunking.py - DOCLING ONLY (FIXED API)
+# backend/core/chunking.py 
 
 from dataclasses import dataclass
 from typing import List, Dict, Any

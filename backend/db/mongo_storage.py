@@ -6,6 +6,9 @@ from pathlib import Path
 from backend.config import get_mongodb
 import logging
 
+# ✅ Import EntityValidator
+from backend.db.entity_validator import EntityValidator
+
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
@@ -133,19 +136,51 @@ class MongoStorage:
             logger.error(f" Failed to save chunks: {e}")
             return 0
     
-    def save_entities_bulk(self, doc_id: str, entities_dict: Dict):
-        """Bulk save entities"""
+    def save_entities_bulk(self, doc_id: str, entities_dict: Dict, enable_linking: bool = True, strict_mode: bool = False):
+        """
+        Bulk save entities with enhanced entity linking support
+        
+        Args:
+            doc_id: Document ID
+            entities_dict: Dict of {entity_name: [entity_dicts]}
+            enable_linking: Enable cross-document entity linking (fuzzy matching)
+            strict_mode: Use stricter matching threshold (0.9 vs 0.8)
+        """
         if not entities_dict:
             return 0
         
         try:
+            # ✅ ENHANCED: Use new entity linking module
+            from backend.db.entity_linking import link_entities_batch, get_linking_statistics
+            
             entity_docs = []
+            
+            # ✅ OPTIMIZATION: Load existing entities once
+            existing_entities = []
+            if enable_linking:
+                existing_entities = list(self.entities.find(
+                    {'user_id': self.user_id},
+                    {'entity_name': 1}
+                ).limit(1000))  # Limit for performance
+            
+            # ✅ ENHANCED: Batch entity linking with multi-level matching
+            canonical_mapping, match_info = link_entities_batch(
+                entities_dict,
+                existing_entities,
+                strict_mode=strict_mode
+            )
+            
+            # Build entity documents with canonical names
             for entity_name, entity_list in entities_dict.items():
+                canonical_name = canonical_mapping.get(entity_name, entity_name)
+                
+                # Save entities with canonical name
                 for entity in entity_list:
                     entity_docs.append({
                         'user_id': self.user_id,
                         'doc_id': doc_id,
-                        'entity_name': entity_name,
+                        'entity_name': canonical_name,  # Use canonical name
+                        'original_name': entity_name if canonical_name != entity_name else None,  # Track original
                         'entity_type': entity['entity_type'],
                         'description': entity.get('description', ''),
                         'source_id': entity.get('source_id', ''),
@@ -155,32 +190,58 @@ class MongoStorage:
             
             if entity_docs:
                 result = self.entities.insert_many(entity_docs, ordered=False)
-                logger.info(f" Saved {len(result.inserted_ids)} entities")
+                
+                # ✅ ENHANCED: Log detailed statistics
+                stats = get_linking_statistics(match_info)
+                linked_count = stats['exact'] + stats['high_similarity'] + stats['medium_similarity'] + stats['acronym']
+                
+                logger.info(
+                    f"✅ Saved {len(result.inserted_ids)} entities "
+                    f"({linked_count} linked: {stats['exact']} exact, "
+                    f"{stats['high_similarity']} high-sim, "
+                    f"{stats['medium_similarity']} med-sim, "
+                    f"{stats['acronym']} acronym)"
+                )
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f" Failed to save entities: {e}")
+            logger.error(f"❌ Failed to save entities: {e}")
             return 0
     
     def save_relationships_bulk(self, doc_id: str, relationships_dict: Dict):
-        """Bulk save relationships"""
+        """Bulk save relationships - LightRAG style"""
         if not relationships_dict:
             return 0
         
         try:
+            # Validate relationships before saving
+            validator = EntityValidator(self)
+            valid_rels, invalid_rels = validator.validate_relationships_bulk(
+                relationships_dict,
+                use_cache=True
+            )
+            
+            if invalid_rels:
+                logger.warning(
+                    f"⚠️ Filtered {len(invalid_rels)} invalid relationships "
+                    f"(entities not found)"
+                )
+            
+            if not valid_rels:
+                logger.warning("⚠️ No valid relationships to save")
+                return 0
+            
+            # Build relationship documents from valid relationships
             rel_docs = []
-            for (source, target), rel_list in relationships_dict.items():
+            for (source, target), rel_list in valid_rels.items():
                 for rel in rel_list:
                     rel_docs.append({
                         'user_id': self.user_id,
                         'doc_id': doc_id,
                         'source_id': source,
                         'target_id': target,
-                        'relationship_type': rel.get('relationship_type', 'RELATED_TO'),
-                        'verb_phrase': rel.get('verb_phrase', ''),
-                        'category': rel.get('category', 'ASSOCIATIVE'),
-                        'description': rel.get('description', ''),
                         'keywords': rel.get('keywords', ''),
+                        'description': rel.get('description', ''),
                         'weight': rel.get('weight', 1.0),
                         'chunk_id': rel.get('chunk_id', ''),
                         'created_at': datetime.now()
@@ -194,12 +255,13 @@ class MongoStorage:
         except Exception as e:
             logger.error(f"❌ Failed to save relationships: {e}")
             return 0
+
     
     # ==========  SAVE GRAPH WITH DOC_ID TRACKING ==========
     
     def save_graph_bulk(self, graph_data: Dict, doc_id: str = None):
         """
-         Track doc_id for proper deletion
+        Save graph with doc_id tracking - LightRAG style
         
         Args:
             graph_data: Graph dict with nodes/links
@@ -221,12 +283,11 @@ class MongoStorage:
                             {'user_id': self.user_id, 'node_id': node['id']},
                             {
                                 '$set': {
-                                    'type': node.get('type', 'UNKNOWN'),
+                                    'type': node.get('type', 'unknown'),
                                     'description': node.get('description', ''),
                                     'sources': list(node.get('sources', [])),
                                     'updated_at': datetime.now()
                                 },
-                                #  Track doc_id
                                 '$addToSet': {'doc_id': doc_id}
                             },
                             upsert=True
@@ -235,7 +296,7 @@ class MongoStorage:
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to save node {node.get('id')}: {e}")
             
-            # Save edges with doc_id
+            # Save edges with doc_id - LightRAG style (only keywords + description)
             if graph_data.get('links'):
                 for link in graph_data['links']:
                     try:
@@ -247,15 +308,12 @@ class MongoStorage:
                             },
                             {
                                 '$set': {
-                                    'relationship_type': link.get('relationship_type', 'RELATED_TO'),
-                                    'verb_phrase': link.get('verb_phrase', ''),
-                                    'category': link.get('category', 'ASSOCIATIVE'),
+                                    'keywords': link.get('keywords', ''),
                                     'description': link.get('description', ''),
                                     'strength': link.get('strength', 1.0),
                                     'chunks': list(link.get('chunks', [])),
                                     'updated_at': datetime.now()
                                 },
-                                #  Track doc_id
                                 '$addToSet': {'doc_id': doc_id}
                             },
                             upsert=True
@@ -270,11 +328,12 @@ class MongoStorage:
         except Exception as e:
             logger.error(f"❌ Failed to save graph: {e}")
             return {'nodes': nodes_saved, 'edges': edges_saved}
+
     
     def save_document_complete(self, doc_id: str, filename: str, filepath: str,
                                chunks: List[Dict], entities: Dict = None,
                                relationships: Dict = None, graph: Dict = None, stats: Dict = None):
-        """Complete save with doc_id tracking"""
+        """Complete save with doc_id tracking and graph rebuild"""
         try:
             self.save_document(doc_id, filename, filepath)
             
@@ -287,8 +346,14 @@ class MongoStorage:
             if relationships:
                 self.save_relationships_bulk(doc_id, relationships)
             
-            if graph:
-                #  Pass doc_id to save_graph_bulk
+            # ✅ CHANGE: Rebuild graph from entities + relationships
+            # Graph nodes/edges are now cache, not source of truth
+            if entities and relationships:
+                logger.info(f"🔄 Rebuilding graph cache for doc: {doc_id}")
+                self.sync_graph_cache(doc_id)
+            elif graph:
+                # Fallback: use provided graph if no entities/relationships
+                logger.warning(f"⚠️ Using provided graph (no entities/relationships)")
                 self.save_graph_bulk(graph, doc_id=doc_id)
             
             self.update_document_status(doc_id, 'completed', stats)
@@ -495,7 +560,7 @@ class MongoStorage:
             return stats
     
     def get_graph(self) -> Dict:
-        """Get combined knowledge graph for user"""
+        """Get combined knowledge graph for user - LightRAG style"""
         try:
             nodes = list(self.graph_nodes.find({'user_id': self.user_id}))
             edges = list(self.graph_edges.find({'user_id': self.user_id}))
@@ -504,10 +569,10 @@ class MongoStorage:
                 'nodes': [
                     {
                         'id': n['node_id'],
-                        'type': n.get('type', 'UNKNOWN'),
+                        'type': n.get('type', 'unknown'),
                         'description': n.get('description', ''),
                         'sources': n.get('sources', []),
-                        'doc_id': n.get('doc_id', [])  
+                        'doc_id': n.get('doc_id', [])
                     }
                     for n in nodes
                 ],
@@ -515,13 +580,11 @@ class MongoStorage:
                     {
                         'source': e['source'],
                         'target': e['target'],
-                        'relationship_type': e.get('relationship_type', 'RELATED_TO'),
-                        'verb_phrase': e.get('verb_phrase', ''),
-                        'category': e.get('category', 'ASSOCIATIVE'),
+                        'keywords': e.get('keywords', ''),
                         'description': e.get('description', ''),
                         'strength': e.get('strength', 1.0),
                         'chunks': e.get('chunks', []),
-                        'doc_id': e.get('doc_id', []) 
+                        'doc_id': e.get('doc_id', [])
                     }
                     for e in edges
                 ]
@@ -533,6 +596,189 @@ class MongoStorage:
         except Exception as e:
             logger.error(f"❌ Failed to get graph: {e}")
             return {'nodes': [], 'links': []}
+
+    
+    # ========== 🔄 GRAPH REBUILD METHODS (NEW) ==========
+    
+    def sync_graph_cache(self, doc_id: str) -> Dict:
+        """
+        Sync graph cache for specific document
+        Rebuild graph nodes/edges from entities + relationships
+        
+        Args:
+            doc_id: Document ID to sync
+        
+        Returns:
+            Stats dict with nodes/edges counts
+        """
+        stats = {'nodes': 0, 'edges': 0}
+        
+        try:
+            # 1. Get entities for this document
+            entities_cursor = self.entities.find({
+                'user_id': self.user_id,
+                'doc_id': doc_id
+            })
+            
+            # Group entities by name (for deduplication)
+            from collections import defaultdict
+            entities_by_name = defaultdict(list)
+            
+            for entity in entities_cursor:
+                entities_by_name[entity['entity_name']].append(entity)
+            
+            # 2. Create/update graph nodes
+            for entity_name, entity_list in entities_by_name.items():
+                # Merge descriptions
+                descriptions = [e.get('description', '') for e in entity_list if e.get('description')]
+                merged_desc = '; '.join(set(descriptions))[:500]
+                
+                # Get type (use first non-empty)
+                entity_type = next((e['entity_type'] for e in entity_list if e.get('entity_type')), 'UNKNOWN')
+                
+                # Get sources
+                sources = list(set(e.get('source_id', '') for e in entity_list if e.get('source_id')))
+                
+                # Upsert node
+                self.graph_nodes.update_one(
+                    {'user_id': self.user_id, 'node_id': entity_name},
+                    {
+                        '$set': {
+                            'type': entity_type,
+                            'description': merged_desc,
+                            'sources': sources,
+                            'updated_at': datetime.now()
+                        },
+                        '$addToSet': {'doc_id': doc_id}
+                    },
+                    upsert=True
+                )
+                stats['nodes'] += 1
+            
+            # 3. Get relationships for this document
+            relationships_cursor = self.relationships.find({
+                'user_id': self.user_id,
+                'doc_id': doc_id
+            })
+            
+            # Group relationships by (source, target)
+            relationships_by_pair = defaultdict(list)
+            
+            for rel in relationships_cursor:
+                key = (rel['source_id'], rel['target_id'])
+                relationships_by_pair[key].append(rel)
+            
+            # 4. Create/update graph edges - LightRAG style
+            for (source, target), rel_list in relationships_by_pair.items():
+                # Merge descriptions
+                descriptions = [r.get('description', '') for r in rel_list if r.get('description')]
+                merged_desc = '; '.join(set(descriptions))[:500]
+                
+                # Merge keywords
+                all_keywords = []
+                for r in rel_list:
+                    if r.get('keywords'):
+                        all_keywords.extend(r['keywords'].split(','))
+                merged_keywords = ','.join(sorted(set(k.strip() for k in all_keywords if k.strip())))
+                
+                # Calculate strength (average weight)
+                weights = [r.get('weight', 1.0) for r in rel_list]
+                avg_strength = sum(weights) / len(weights)
+                
+                # Get chunks
+                chunks = list(set(r.get('chunk_id', '') for r in rel_list if r.get('chunk_id')))
+                
+                # Upsert edge
+                self.graph_edges.update_one(
+                    {
+                        'user_id': self.user_id,
+                        'source': source,
+                        'target': target
+                    },
+                    {
+                        '$set': {
+                            'keywords': merged_keywords,
+                            'description': merged_desc,
+                            'strength': avg_strength,
+                            'chunks': chunks,
+                            'updated_at': datetime.now()
+                        },
+                        '$addToSet': {'doc_id': doc_id}
+                    },
+                    upsert=True
+                )
+                stats['edges'] += 1
+
+            
+            logger.info(
+                f"✅ Synced graph cache for {doc_id}: "
+                f"{stats['nodes']} nodes, {stats['edges']} edges"
+            )
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to sync graph cache: {e}")
+            return stats
+    
+    def rebuild_graph_from_entities(self, user_id: str = None) -> Dict:
+        """
+        Rebuild entire graph from entities + relationships
+        
+        Args:
+            user_id: User ID (default: self.user_id)
+        
+        Returns:
+            Stats dict
+        """
+        target_user = user_id or self.user_id
+        
+        stats = {
+            'nodes_created': 0,
+            'edges_created': 0,
+            'nodes_deleted': 0,
+            'edges_deleted': 0
+        }
+        
+        try:
+            logger.info(f"🔄 Rebuilding graph for user: {target_user}")
+            
+            # 1. Clear existing graph
+            delete_nodes = self.graph_nodes.delete_many({'user_id': target_user})
+            delete_edges = self.graph_edges.delete_many({'user_id': target_user})
+            
+            stats['nodes_deleted'] = delete_nodes.deleted_count
+            stats['edges_deleted'] = delete_edges.deleted_count
+            
+            logger.info(
+                f"🗑️ Cleared: {stats['nodes_deleted']} nodes, "
+                f"{stats['edges_deleted']} edges"
+            )
+            
+            # 2. Get all documents for user
+            documents = self.documents.find(
+                {'user_id': target_user},
+                {'doc_id': 1}
+            )
+            
+            doc_ids = [doc['doc_id'] for doc in documents]
+            
+            # 3. Rebuild for each document
+            for doc_id in doc_ids:
+                doc_stats = self.sync_graph_cache(doc_id)
+                stats['nodes_created'] += doc_stats['nodes']
+                stats['edges_created'] += doc_stats['edges']
+            
+            logger.info(
+                f"✅ Rebuilt graph: {stats['nodes_created']} nodes, "
+                f"{stats['edges_created']} edges"
+            )
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to rebuild graph: {e}")
+            return stats
     
     def get_user_statistics(self) -> Dict:
         """Get comprehensive user statistics"""

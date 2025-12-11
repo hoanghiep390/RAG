@@ -103,6 +103,8 @@ with st.sidebar:
         st.switch_page("pages/chat.py")
     if st.button("🕸️ Knowledge Graph"):
         st.switch_page("pages/graph.py")
+    if st.button("📊 Analytics"):
+        st.switch_page("pages/analytics.py")
     
     st.markdown("---")
     
@@ -313,7 +315,7 @@ if uploaded_files:
                         st.json({
                             'Chunks': result['stats'].get('chunks_count', 0),
                             'Entities': result['stats'].get('entities_count', 0),
-                            'Graph Nodes': result['stats'].get('graph_nodes', 0),
+                            'Relationships': result['stats'].get('relationships_count', 0),  # ✅ Changed from Graph Nodes
                             'Embeddings': result['stats'].get('embeddings_count', 0),
                             'Vectors Added': result.get('vectors_added', 0)  # ✅ NEW
                         })
@@ -430,7 +432,7 @@ try:
                 'Status': doc.get('status', 'unknown'),
                 'Chunks': stats.get('chunks_count', 0),
                 'Entities': stats.get('entities_count', 0),
-                'Graph Nodes': stats.get('graph_nodes', 0),
+                'Relationships': stats.get('relationships_count', 0),  # ✅ Changed from Graph Nodes
                 'Embeddings': stats.get('embeddings_count', 0),
                 'Uploaded': doc['uploaded_at'].strftime("%m/%d %H:%M")
             })

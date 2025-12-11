@@ -1,6 +1,7 @@
 # backend/retrieval/graph_retriever.py 
 """
-🕸️ Graph Retriever - With full relationship metadata
+🕸️ Graph Retriever - LightRAG Style
+Simplified to work with keywords instead of relationship_type/category
 """
 from typing import List, Dict, Set, Optional
 from dataclasses import dataclass
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GraphContext:
-    """Entity context with enhanced relationship info"""
+    """Entity context with relationship info"""
     entity_name: str
     entity_type: str
     description: str
@@ -24,7 +25,7 @@ class GraphContext:
         return f"GraphContext({self.entity_name}, score={self.score:.3f}, neighbors={len(self.neighbors)})"
 
 class GraphRetriever:
-    """Enhanced graph search with relationship metadata"""
+    """Graph search with keyword-based scoring"""
     
     def __init__(self, mongo_storage):
         self.storage = mongo_storage
@@ -44,19 +45,17 @@ class GraphRetriever:
         k_hops: int = 1,
         max_neighbors: int = 5,
         min_strength: float = 0.0,
-        filter_category: Optional[List[str]] = None,
-        filter_rel_type: Optional[List[str]] = None
+        filter_keywords: Optional[List[str]] = None
     ) -> List[GraphContext]:
         """
-        Enhanced graph search with relationship filtering
+        Graph search with keyword filtering
         
         Args:
             entity_names: Starting entities
             k_hops: Traversal depth (1-2)
             max_neighbors: Max neighbors per entity
             min_strength: Min edge strength
-            filter_category: Filter by categories (e.g., ['FUNCTIONAL', 'HIERARCHICAL'])
-            filter_rel_type: Filter by types (e.g., ['DEVELOPS', 'MANAGES'])
+            filter_keywords: Filter by keywords (e.g., ['development', 'management'])
         """
         if not entity_names:
             return []
@@ -94,8 +93,7 @@ class GraphRetriever:
                     k_hops=k_hops,
                     max_neighbors=max_neighbors,
                     min_strength=min_strength,
-                    filter_category=filter_category,
-                    filter_rel_type=filter_rel_type,
+                    filter_keywords=filter_keywords,
                     visited=visited
                 )
                 
@@ -129,6 +127,47 @@ class GraphRetriever:
         
         return matched
     
+    def _calculate_edge_score(self, edge: Dict, filter_keywords: Optional[List[str]] = None) -> float:
+        """
+        Calculate edge score based on strength and keywords
+        
+        Args:
+            edge: Edge dict with 'strength', 'keywords', 'description'
+            filter_keywords: Optional keywords to boost score
+        
+        Returns:
+            Score (0.0-2.0+)
+        """
+        # Base score from strength
+        score = edge.get('strength', 1.0)
+        
+        # Boost based on description quality
+        description = edge.get('description', '')
+        if len(description) > 50:
+            score *= 1.2
+        elif len(description) > 20:
+            score *= 1.1
+        
+        # Boost based on keywords
+        keywords = edge.get('keywords', '').lower()
+        if keywords:
+            keyword_list = [k.strip() for k in keywords.split(',')]
+            
+            # More keywords = stronger relationship
+            if len(keyword_list) >= 3:
+                score *= 1.15
+            elif len(keyword_list) >= 2:
+                score *= 1.1
+            
+            # Boost if matches filter keywords
+            if filter_keywords:
+                filter_lower = [k.lower() for k in filter_keywords]
+                matches = sum(1 for k in keyword_list if any(f in k or k in f for f in filter_lower))
+                if matches > 0:
+                    score *= (1.0 + 0.2 * matches)  # 20% boost per match
+        
+        return score
+    
     def _build_context(
         self,
         entity_name: str,
@@ -137,11 +176,10 @@ class GraphRetriever:
         k_hops: int,
         max_neighbors: int,
         min_strength: float,
-        filter_category: Optional[List[str]],
-        filter_rel_type: Optional[List[str]],
+        filter_keywords: Optional[List[str]],
         visited: Set[str]
     ) -> Optional[GraphContext]:
-        """Build enhanced context with full relationship metadata"""
+        """Build context with keyword-based scoring"""
         if entity_name not in node_map:
             return None
         
@@ -149,52 +187,70 @@ class GraphRetriever:
         neighbors = []
         relationships = []
         
+        # Score and rank edges
+        scored_edges = []
+        
         for edge in edges_by_source.get(entity_name, []):
             strength = edge.get('strength', 1.0)
-            rel_type = edge.get('relationship_type', 'UNKNOWN')
-            category = edge.get('category', 'UNKNOWN')
             
-            # Apply filters
+            # Apply strength filter
             if strength < min_strength:
-                continue
-            if filter_category and category not in filter_category:
-                continue
-            if filter_rel_type and rel_type not in filter_rel_type:
                 continue
             
             target = edge['target']
             
             if target not in visited:
-                neighbors.append(target)
-                
-                # ✅ ENHANCED: Include full relationship metadata
-                relationships.append({
-                    'target': target,
-                    'relationship_type': rel_type,
-                    'verb_phrase': edge.get('verb_phrase', rel_type.lower()),
-                    'category': category,
-                    'description': edge.get('description', ''),
-                    'strength': strength,
-                    'keywords': edge.get('keywords', '')
-                })
+                # Calculate importance score
+                importance_score = self._calculate_edge_score(edge, filter_keywords)
+                scored_edges.append((importance_score, edge))
         
-        # 2-hop expansion
+        # Sort by importance score (descending)
+        scored_edges.sort(key=lambda x: x[0], reverse=True)
+        
+        # Build relationships from top-scored edges
+        for importance_score, edge in scored_edges[:max_neighbors]:
+            target = edge['target']
+            keywords = edge.get('keywords', '')
+            description = edge.get('description', '')
+            strength = edge.get('strength', 1.0)
+            
+            neighbors.append(target)
+            
+            relationships.append({
+                'target': target,
+                'keywords': keywords,
+                'description': description,
+                'strength': strength,
+                'importance_score': importance_score
+            })
+        
+        # 2-hop expansion (with same scoring)
         if k_hops >= 2:
-            second_hop = set()
+            second_hop_scored = []
             for neighbor in neighbors[:max_neighbors]:
                 for edge in edges_by_source.get(neighbor, []):
                     if edge['target'] not in visited and edge['target'] != entity_name:
-                        second_hop.add(edge['target'])
-            neighbors.extend(list(second_hop)[:max_neighbors])
+                        # Score 2nd hop edges
+                        score = self._calculate_edge_score(edge, filter_keywords)
+                        second_hop_scored.append((score, edge['target']))
+            
+            # Sort and add top 2nd hop neighbors
+            second_hop_scored.sort(key=lambda x: x[0], reverse=True)
+            second_hop_neighbors = [target for _, target in second_hop_scored[:max_neighbors]]
+            neighbors.extend(second_hop_neighbors)
         
-        neighbors = neighbors[:max_neighbors]
-        relationships = relationships[:max_neighbors]
+        neighbors = neighbors[:max_neighbors * 2]  # Allow more neighbors with 2-hop
         
-        score = min(1.0, len(neighbors) / 10.0)
+        # Calculate context score based on relationship quality
+        if relationships:
+            avg_importance = sum(r['importance_score'] for r in relationships) / len(relationships)
+            score = min(1.0, avg_importance * (len(neighbors) / 10.0))
+        else:
+            score = 0.0
         
         return GraphContext(
             entity_name=entity_name,
-            entity_type=node.get('type', 'UNKNOWN'),
+            entity_type=node.get('type', 'unknown'),
             description=node.get('description', ''),
             neighbors=neighbors,
             relationships=relationships,
@@ -242,7 +298,7 @@ class GraphRetriever:
     
     def format_context_text(self, contexts: List[GraphContext]) -> str:
         """
-        ✅ ENHANCED: Format with relationship types & categories
+        Format context with keywords
         """
         if not contexts:
             return ""
@@ -258,16 +314,16 @@ class GraphRetriever:
             if ctx.relationships:
                 lines.append("   🔗 Relationships:")
                 for rel in ctx.relationships[:5]:  # Top 5
-                    rel_type = rel['relationship_type']
-                    verb = rel['verb_phrase']
-                    category = rel['category']
+                    keywords = rel.get('keywords', '')
                     target = rel['target']
                     desc = rel.get('description', '')
+                    strength = rel.get('strength', 1.0)
                     
-                    # Format: "OpenAI DEVELOPS (FUNCTIONAL) GPT-4: develops and maintains the model"
+                    # Format: "OpenAI → GPT-4 [development, AI] (strength: 0.95): develops and maintains"
+                    keyword_str = f"[{keywords}]" if keywords else ""
                     lines.append(
-                        f"     • {ctx.entity_name} **{rel_type}** ({category}) {target}: "
-                        f"\"{verb}\" - {desc[:80]}"
+                        f"     • {ctx.entity_name} → {target} {keyword_str} "
+                        f"(strength: {strength:.2f}): {desc[:80]}"
                     )
             
             if ctx.neighbors:

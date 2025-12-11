@@ -1,4 +1,4 @@
-# frontend/login.py (UPDATED - Direct to chat after login)
+# frontend/login.py 
 import streamlit as st
 import hashlib
 import json
@@ -10,6 +10,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from backend.utils.file_utils import ensure_dir
+from backend.config import get_mongodb  
 
 try:
     from backend.db.user_manager import load_users, save_users
@@ -160,12 +161,11 @@ if 'role' not in st.session_state:
 if 'login_mode' not in st.session_state:
     st.session_state.login_mode = "login"
 
-# ✅ UPDATED: Redirect based on role after login
+# Redirect based on role after login
 if st.session_state.authenticated:
     if st.session_state.role == 'admin':
         st.switch_page("pages/upload.py")
     else:
-        # ✅ Users go directly to chat (not upload)
         st.switch_page("pages/chat.py")
 
 with st.container():
@@ -201,7 +201,21 @@ with st.container():
                         st.session_state.username = users[user_key]["username"]
                         st.session_state.role = users[user_key]["role"]
                         
-                        # ✅ Only create dirs for admin
+                        try:
+                            db = get_mongodb()
+                            login_logs = db['login_logs']
+                            login_logs.insert_one({
+                                'user_id': st.session_state.user_id,
+                                'username': st.session_state.username,
+                                'role': st.session_state.role,
+                                'timestamp': datetime.now(),
+                                'ip_address': 'N/A',
+                                'user_agent': 'Streamlit App'
+                            })
+                        except Exception as e:
+                            pass
+                        
+                        # Only create dirs for admin
                         if st.session_state.role == 'admin':
                             ensure_dir(Path(f"backend/data/{st.session_state.user_id}/uploads"))
                             ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
@@ -253,12 +267,11 @@ with st.container():
                         "username": new_username,
                         "password": hash_password(new_password),
                         "user_id": user_id,
-                        "role": "user",  # ✅ Always create as 'user'
+                        "role": "user",
                         "created_at": datetime.now().isoformat()
                     }
                     save_users(users)
 
-                    # ✅ Users don't need data directories
                     st.markdown("<div class='success-msg'>✅ Đăng ký thành công! Vui lòng đăng nhập.</div>", unsafe_allow_html=True)
                     st.session_state.login_mode = "login"
                     st.rerun()
@@ -272,11 +285,13 @@ with st.expander("ℹ️ Thông tin tài khoản", expanded=False):
         • Can upload documents<br>
         • Can view knowledge graph<br>
         • Can chat with uploaded documents<br>
+        • Can view analytics<br>
         <br>
         <strong>User:</strong> Register to create account<br>
         • Can chat with admin's uploaded documents<br>
         • Cannot upload documents<br>
         • Cannot view graph<br>
+        • Cannot view analytics<br>
         • Personal conversation history is saved separately
     </div>
     """, unsafe_allow_html=True)

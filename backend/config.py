@@ -31,6 +31,11 @@ class Config:
     # ========== Processing ==========
     EXTRACTION_BATCH_SIZE = int(os.getenv('EXTRACTION_BATCH_SIZE', '20'))
     EMBEDDING_BATCH_SIZE = int(os.getenv('EMBEDDING_BATCH_SIZE', '128'))
+    MAX_GLEANING = int(os.getenv('MAX_GLEANING', '1'))  # Continue extraction attempts
+    USE_LLM_ENTITY_MERGE = os.getenv('USE_LLM_ENTITY_MERGE', 'true').lower() == 'true'
+    MIN_DESCRIPTIONS_FOR_LLM_MERGE = int(os.getenv('MIN_DESCRIPTIONS_FOR_LLM_MERGE', '3'))
+    USE_LLM_RELATIONSHIP_MERGE = os.getenv('USE_LLM_RELATIONSHIP_MERGE', 'true').lower() == 'true'
+
     
     # ========== Chunking ==========
     DEFAULT_CHUNK_SIZE = int(os.getenv('DEFAULT_CHUNK_SIZE', '300'))
@@ -45,6 +50,11 @@ class Config:
     # ========== Performance ==========
     MAX_FILE_SIZE_MB = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
     AUTO_REBUILD_THRESHOLD = float(os.getenv('AUTO_REBUILD_THRESHOLD', '0.2'))
+    
+    # ========== Retrieval Performance ==========
+    ENABLE_QUERY_EXPANSION = os.getenv('ENABLE_QUERY_EXPANSION', 'false').lower() == 'true'
+    MAX_CONTEXT_CHUNKS = int(os.getenv('MAX_CONTEXT_CHUNKS', '3'))
+    MAX_ENTITY_CACHE = int(os.getenv('MAX_ENTITY_CACHE', '300'))
     
     # ========== Storage Paths ==========
     DATA_DIR = os.getenv('DATA_DIR', 'backend/data')

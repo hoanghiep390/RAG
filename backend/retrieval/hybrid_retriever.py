@@ -23,7 +23,7 @@ class RetrievalMode:
     use_global: bool = True      
     use_local: bool = True       
     use_multi_hop: bool = False  
-    expand_query: bool = True    
+    expand_query: bool = False   # ✅ OPTIMIZED: Disabled by default for speed
     rerank: bool = True          
 
 #  QUERY EXPANSION 
@@ -289,7 +289,8 @@ class EnhancedHybridRetriever:
     """
     
     def __init__(self, vector_db, mongo_storage):
-        self.query_analyzer = QueryAnalyzer()
+        # ✅ ENHANCED: Pass mongo_storage to QueryAnalyzer for semantic entity recognition
+        self.query_analyzer = QueryAnalyzer(mongo_storage=mongo_storage)
         self.vector_retriever = VectorRetriever(vector_db)
         self.graph_retriever = GraphRetriever(mongo_storage)
         self.query_expander = QueryExpander()
@@ -299,6 +300,7 @@ class EnhancedHybridRetriever:
         self,
         query: str,
         mode: Optional[RetrievalMode] = None,
+        force_mode: Optional[str] = None,
         top_k: int = 10,
         expand_query: bool = True,
         rerank: bool = True
@@ -308,13 +310,23 @@ class EnhancedHybridRetriever:
         
         Args:
             query: User query
-            mode: Retrieval mode configuration
+            mode: Retrieval mode configuration (RetrievalMode object)
+            force_mode: Force specific mode ('vector', 'graph', 'hybrid') - for backward compatibility
             top_k: Number of results
             expand_query: Enable query expansion
             rerank: Enable result reranking
         """
         import time
         start = time.time()
+        
+        # Handle force_mode for backward compatibility
+        if force_mode is not None and mode is None:
+            if force_mode == 'vector':
+                mode = RetrievalMode(use_global=True, use_local=False, use_multi_hop=False)
+            elif force_mode == 'graph':
+                mode = RetrievalMode(use_global=False, use_local=True, use_multi_hop=False)
+            elif force_mode == 'hybrid':
+                mode = RetrievalMode(use_global=True, use_local=True, use_multi_hop=False)
         
         # Default mode
         if mode is None:
@@ -324,11 +336,13 @@ class EnhancedHybridRetriever:
         analysis = self.query_analyzer.analyze(query)
         logger.info(f"📊 Intent: {analysis.intent}, Entities: {analysis.entities}")
         
-        # Query expansion
+        # Query expansion (optimized: only when explicitly enabled)
         queries = [query]
         if expand_query and mode.expand_query:
-            queries = self.query_expander.expand(query)
-            logger.info(f"🔍 Expanded to {len(queries)} queries")
+            from backend.config import Config
+            if Config.ENABLE_QUERY_EXPANSION:
+                queries = self.query_expander.expand(query)
+                logger.info(f"🔍 Expanded to {len(queries)} queries")
         
         # Execute retrieval
         try:
@@ -369,8 +383,8 @@ class EnhancedHybridRetriever:
             formatted_text=formatted,
             metadata={
                 'retrieval_time_ms': int(elapsed * 1000),
-                'num_global': len(global_chunks),
-                'num_local': len(local_entities),
+                'num_chunks': len(global_chunks),
+                'num_entities': len(local_entities),
                 'num_paths': len(paths),
                 'expanded_queries': len(queries),
                 'intent': analysis.intent
@@ -384,7 +398,7 @@ class EnhancedHybridRetriever:
         mode: RetrievalMode,
         top_k: int
     ) -> Tuple[List[ScoredChunk], List[GraphContext], List[Dict]]:
-        """Execute parallel retrieval"""
+        """Execute parallel retrieval - ✅ OPTIMIZED: Early returns for speed"""
         
         tasks = []
         
@@ -395,7 +409,7 @@ class EnhancedHybridRetriever:
                     global_retrieval(q, self.vector_retriever, top_k)
                 )
         
-        # Local retrieval
+        # Local retrieval - ✅ OPTIMIZED: Skip if no entities
         if mode.use_local and entities:
             tasks.append(
                 local_retrieval(entities, self.graph_retriever, k_hops=2, max_neighbors=top_k)
@@ -424,9 +438,9 @@ class EnhancedHybridRetriever:
                 local_entities = r
                 break
         
-        # Multi-hop reasoning
+        # Multi-hop reasoning - ✅ OPTIMIZED: Skip if no entities (saves time)
         paths = []
-        if mode.use_multi_hop and entities:
+        if mode.use_multi_hop and entities and len(entities) > 0:
             paths = await asyncio.to_thread(
                 multi_hop_traversal,
                 entities,
@@ -456,22 +470,26 @@ class EnhancedHybridRetriever:
         lines.append("=" * 80)
         lines.append("")
         
-        # Global context (documents)
+        # Global context (documents) - ✅ OPTIMIZED: Reduced from 5 to 3 chunks, 400 to 200 chars
         if global_chunks:
+            from backend.config import Config
+            max_chunks = Config.MAX_CONTEXT_CHUNKS
             lines.append("## 🌐 GLOBAL CONTEXT (Documents)")
             lines.append("")
             
-            for i, chunk in enumerate(global_chunks[:5], 1):
+            for i, chunk in enumerate(global_chunks[:max_chunks], 1):
                 lines.append(f"[{i}] **Score: {chunk.score:.3f}** | {chunk.filename}")
-                lines.append(f"{chunk.content[:400]}...")
+                lines.append(f"{chunk.content[:200]}...")
                 lines.append("")
         
-        # Local context (graph)
+        # Local context (graph) - ✅ OPTIMIZED: Reduced from 5 to 3 entities
         if local_entities:
+            from backend.config import Config
+            max_chunks = Config.MAX_CONTEXT_CHUNKS
             lines.append("## 📍 LOCAL CONTEXT (Knowledge Graph)")
             lines.append("")
             
-            for i, entity in enumerate(local_entities[:5], 1):
+            for i, entity in enumerate(local_entities[:max_chunks], 1):
                 lines.append(f"[{i}] **{entity.entity_name}** ({entity.entity_type})")
                 
                 if entity.description:

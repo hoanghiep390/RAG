@@ -1,266 +1,269 @@
 # backend/core/extraction.py 
 """
-🚀 Enhanced Entity & Relationship Extraction 
+🚀 Entity & Relationship Extraction - LightRAG Style
+Simplified single-stage extraction following LightRAG approach
 """
 
 import asyncio
 import re
 from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
-from difflib import SequenceMatcher
 import logging
 
 logger = logging.getLogger(__name__)
 
-TUPLE_DELIMITER = "<|>"
-RECORD_DELIMITER = "##"
+TUPLE_DELIMITER = "<|#|>"
+COMPLETION_DELIMITER = "<|COMPLETE|>"
 
-# ================= Configuration =================
+#  Entity Types 
 
-ENTITY_TYPES = {
-    'PERSON': 'Individuals, characters, historical figures',
-    'ORGANIZATION': 'Companies, institutions, groups',
-    'LOCATION': 'Places, geographical locations',
-    'EVENT': 'Meetings, conferences, occurrences',
-    'PRODUCT': 'Goods, services, brands',
-    'CONCEPT': 'Ideas, theories, methodologies',
-    'TECHNOLOGY': 'Tools, systems, platforms',
-    'DATE': 'Temporal references',
-    'METRIC': 'Numbers, measurements, statistics'
-}
+ENTITY_TYPES = [
+    'person',
+    'organization', 
+    'location',
+    'event',
+    'product',
+    'concept',
+    'technology',
+    'date',
+    'metric',
+    'equipment',
+    'category',
+    'other'
+]
 
-STATIC_TYPES = {
-    'WORKS_FOR': 'Employment', 'MANAGES': 'Management', 'REPORTS_TO': 'Hierarchy',
-    'COLLABORATES_WITH': 'Partnership', 'COMPETES_WITH': 'Competition',
-    'PRODUCES': 'Manufacturing', 'PROVIDES': 'Service', 'USES': 'Utilization',
-    'DEVELOPS': 'Innovation', 'OWNS': 'Ownership', 'SELLS': 'Commercial',
-    'LOCATED_IN': 'Location', 'OPERATES_IN': 'Operation', 'BASED_IN': 'Headquarters',
-    'PARTICIPATES_IN': 'Participation', 'ORGANIZES': 'Organization', 'ATTENDS': 'Attendance',
-    'IMPLEMENTS': 'Implementation', 'RESEARCHES': 'Research', 'INVENTED_BY': 'Invention',
-    'RELATED_TO': 'General', 'PART_OF': 'Membership',
-    'FOUNDED': 'Establishment', 'ACQUIRED': 'Acquisition', 'MERGED_WITH': 'Merger',
-    'INVESTED_IN': 'Investment', 'ASSOCIATED_WITH': 'Association',
-    'INFLUENCES': 'Influence', 'DEPENDS_ON': 'Dependency'
-}
+#  Helper Functions
 
-CATEGORIES = {
-    'HIERARCHICAL': ['part of', 'belongs to', 'member of', 'within', 'reports to'],
-    'FUNCTIONAL': ['creates', 'produces', 'develops', 'operates', 'uses', 'implements'],
-    'TEMPORAL': ['founded', 'acquired', 'merged', 'started', 'ended'],
-    'LOCATIONAL': ['in', 'at', 'based', 'located', 'operates in'],
-    'ASSOCIATIVE': ['works', 'employed', 'member', 'collaborates', 'partners'],
-    'CAUSAL': ['causes', 'leads to', 'results in', 'affects', 'impacts'],
-    'COMPARATIVE': ['similar to', 'differs from', 'competes with']
-}
-
-DOMAIN_KEYWORDS = {
-    'tech': ['software', 'AI', 'algorithm', 'cloud', 'API', 'code', 'data'],
-    'medical': ['patient', 'treatment', 'drug', 'clinical', 'disease', 'doctor'],
-    'legal': ['court', 'law', 'case', 'judge', 'ruling', 'contract'],
-    'business': ['revenue', 'market', 'sales', 'investment', 'profit']
-}
-
-# ================= Core Functions =================
-
-def detect_domain(chunks: List[Dict]) -> str:
-    """Detect domain from content"""
-    text = " ".join([c['content'][:500] for c in chunks[:5]]).lower()
-    scores = {d: sum(1 for k in kws if k in text) for d, kws in DOMAIN_KEYWORDS.items()}
-    return max(scores, key=scores.get) if max(scores.values()) >= 3 else 'general'
-
-
-def select_mode(chunks: List[Dict], domain: Optional[str] = None, force_mode: Optional[str] = None) -> str:
-    """Select extraction mode"""
-    if force_mode and force_mode != 'auto':
-        return force_mode
+def sanitize_text(text: str) -> str:
+    """Sanitize and normalize extracted text"""
+    if not text:
+        return ""
     
-    domain = domain or detect_domain(chunks)
-    mode_map = {'medical': 'dynamic', 'legal': 'dynamic'}
-    selected = mode_map.get(domain, 'static')
+    # Remove quotes
+    text = text.strip().strip('"').strip("'")
     
-    logger.info(f"🎯 Mode: {selected} (domain: {domain})")
-    return selected
+    # Remove special characters that shouldn't be in entity names
+    text = re.sub(r'[<>|/\\]', '', text)
+    
+    # Normalize whitespace
+    text = ' '.join(text.split())
+    
+    return text.strip()
 
 
-def categorize(text: str) -> str:
-    """Categorize relationship type"""
-    text_lower = text.lower()
-    for cat, patterns in CATEGORIES.items():
-        if any(p in text_lower for p in patterns):
-            return cat
-    return 'ASSOCIATIVE'
+# ================= Prompt Creation =================
 
-
-def safe_float(value: str, default: float = 0.7) -> float:
-    """Convert to float safely"""
-    try:
-        return max(0.0, min(1.0, float(str(value).strip().strip('"\'').lower())))
-    except:
-        word_map = {'strong': 0.85, 'high': 0.8, 'medium': 0.6, 'low': 0.4, 'weak': 0.35}
-        for word, score in word_map.items():
-            if word in str(value).lower():
-                return score
-        return default
-
-
-# ================= STAGE 1: Coarse Extraction =================
-
-def create_coarse_prompt(text: str, context: Optional[str] = None) -> str:
+def create_extraction_prompt(text: str, entity_types: List[str] = None) -> str:
     """
-    Stage 1: Quick entity identification
-    Fast, inclusive extraction
-    """
-    ctx = f"\n**Context**: {context}\n" if context else ""
+    Create LightRAG-style extraction prompt
     
-    return f"""Identify ALL important entities in this text.{ctx}
+    Args:
+        text: Text to extract from
+        entity_types: List of entity types (default: ENTITY_TYPES)
+    
+    Returns:
+        Formatted prompt string
+    """
+    if entity_types is None:
+        entity_types = ENTITY_TYPES
+    
+    entity_types_str = ', '.join(entity_types)
+    
+    prompt = f"""---Role---
+You are a Knowledge Graph Specialist responsible for extracting entities and relationships from the input text.
 
-# ENTITY TYPES
-{', '.join(ENTITY_TYPES.keys())}
+---Instructions---
+1. **Entity Extraction & Output:**
+   - **Identification:** Identify clearly defined and meaningful entities in the input text.
+   - **Entity Details:** For each identified entity, extract the following information:
+       - `entity_name`: The name of the entity. Use title case for proper nouns. Ensure **consistent naming** across the entire extraction process.
+       - `entity_type`: Categorize the entity using one of the following types: {entity_types_str}. If none apply, use `other`.
+       - `entity_description`: Provide a concise yet comprehensive description of the entity's attributes and activities, based *solely* on the information present in the input text.
+   - **Output Format - Entities:** Output a total of 4 fields for each entity, delimited by `{TUPLE_DELIMITER}`, on a single line. The first field *must* be the literal string `entity`.
+       - Format: `entity{TUPLE_DELIMITER}entity_name{TUPLE_DELIMITER}entity_type{TUPLE_DELIMITER}entity_description`
 
-# INSTRUCTIONS
-- Extract EVERY significant entity (people, organizations, locations, concepts)
-- Be INCLUSIVE - when in doubt, extract it
-- One entity per line
+2. **Relationship Extraction & Output:**
+   - **Identification:** Identify direct, clearly stated, and meaningful relationships between previously extracted entities.
+   - **N-ary Relationship Decomposition:** If a single statement describes a relationship involving more than two entities, decompose it into multiple binary (two-entity) relationship pairs.
+       - **Example:** For "Alice, Bob, and Carol collaborated on Project X," extract binary relationships such as "Alice collaborated with Project X," "Bob collaborated with Project X," and "Carol collaborated with Project X."
+   - **Relationship Details:** For each binary relationship, extract the following fields:
+       - `source_entity`: The name of the source entity. Ensure **consistent naming** with entity extraction.
+       - `target_entity`: The name of the target entity. Ensure **consistent naming** with entity extraction.
+       - `relationship_keywords`: One or more high-level keywords summarizing the overarching nature, concepts, or themes of the relationship. Multiple keywords within this field must be separated by a comma `,`. **DO NOT use `{TUPLE_DELIMITER}` for separating multiple keywords within this field.**
+       - `relationship_description`: A concise explanation of the nature of the relationship between the source and target entities, providing a clear rationale for their connection.
+   - **Output Format - Relationships:** Output a total of 5 fields for each relationship, delimited by `{TUPLE_DELIMITER}`, on a single line. The first field *must* be the literal string `relation`.
+       - Format: `relation{TUPLE_DELIMITER}source_entity{TUPLE_DELIMITER}target_entity{TUPLE_DELIMITER}relationship_keywords{TUPLE_DELIMITER}relationship_description`
 
-# FORMAT
-EntityName | EntityType | Brief description
+3. **Delimiter Usage Protocol:**
+   - The `{TUPLE_DELIMITER}` is a complete, atomic marker and **must not be filled with content**. It serves strictly as a field separator.
+   - **Incorrect Example:** `entity{TUPLE_DELIMITER}Tokyo<|location|>Tokyo is the capital of Japan.`
+   - **Correct Example:** `entity{TUPLE_DELIMITER}Tokyo{TUPLE_DELIMITER}location{TUPLE_DELIMITER}Tokyo is the capital of Japan.`
 
-# EXAMPLE
-OpenAI | ORGANIZATION | AI research company
-GPT-4 | PRODUCT | Large language model
-Sam Altman | PERSON | CEO of OpenAI
+4. **Relationship Direction & Duplication:**
+   - Treat all relationships as **undirected** unless explicitly stated otherwise. Swapping the source and target entities for an undirected relationship does not constitute a new relationship.
+   - Avoid outputting duplicate relationships.
 
-# TEXT
+5. **Output Order & Prioritization:**
+   - Output all extracted entities first, followed by all extracted relationships.
+   - Within the list of relationships, prioritize and output those relationships that are **most significant** to the core meaning of the input text first.
+
+6. **Context & Objectivity:**
+   - Ensure all entity names and descriptions are written in the **third person**.
+   - Explicitly name the subject or object; **avoid using pronouns** such as `this article`, `this paper`, `our company`, `I`, `you`, and `he/she`.
+
+7. **Completion Signal:** Output the literal string `{COMPLETION_DELIMITER}` only after all entities and relationships have been completely extracted and outputted.
+
+---Examples---
+
+<Input Text>
+```
+At the World Athletics Championship in Tokyo, Noah Carter broke the 100m sprint record using cutting-edge carbon-fiber spikes.
+```
+
+<Output>
+entity{TUPLE_DELIMITER}World Athletics Championship{TUPLE_DELIMITER}event{TUPLE_DELIMITER}The World Athletics Championship is a global sports competition featuring top athletes in track and field.
+entity{TUPLE_DELIMITER}Tokyo{TUPLE_DELIMITER}location{TUPLE_DELIMITER}Tokyo is the host city of the World Athletics Championship.
+entity{TUPLE_DELIMITER}Noah Carter{TUPLE_DELIMITER}person{TUPLE_DELIMITER}Noah Carter is a sprinter who set a new record in the 100m sprint at the World Athletics Championship.
+entity{TUPLE_DELIMITER}100m Sprint Record{TUPLE_DELIMITER}metric{TUPLE_DELIMITER}The 100m sprint record is a benchmark in athletics, recently broken by Noah Carter.
+entity{TUPLE_DELIMITER}Carbon-Fiber Spikes{TUPLE_DELIMITER}equipment{TUPLE_DELIMITER}Carbon-fiber spikes are advanced sprinting shoes that provide enhanced speed and traction.
+relation{TUPLE_DELIMITER}World Athletics Championship{TUPLE_DELIMITER}Tokyo{TUPLE_DELIMITER}event location, international competition{TUPLE_DELIMITER}The World Athletics Championship is being hosted in Tokyo.
+relation{TUPLE_DELIMITER}Noah Carter{TUPLE_DELIMITER}100m Sprint Record{TUPLE_DELIMITER}athlete achievement, record-breaking{TUPLE_DELIMITER}Noah Carter set a new 100m sprint record at the championship.
+relation{TUPLE_DELIMITER}Noah Carter{TUPLE_DELIMITER}Carbon-Fiber Spikes{TUPLE_DELIMITER}athletic equipment, performance boost{TUPLE_DELIMITER}Noah Carter used carbon-fiber spikes to enhance performance during the race.
+relation{TUPLE_DELIMITER}Noah Carter{TUPLE_DELIMITER}World Athletics Championship{TUPLE_DELIMITER}athlete participation, competition{TUPLE_DELIMITER}Noah Carter is competing at the World Athletics Championship.
+{COMPLETION_DELIMITER}
+
+---Real Data to be Processed---
+
+<Input Text>
+```
 {text}
+```
 
-# OUTPUT:"""
-
-
-def parse_coarse_result(result: str, chunk_id: str) -> Dict[str, List[Dict]]:
-    """Parse coarse extraction results"""
-    entities = defaultdict(list)
+<Output>
+"""
     
-    for line in result.strip().split('\n'):
-        line = line.strip()
-        if not line or '|' not in line:
-            continue
-        
-        parts = [p.strip() for p in line.split('|')]
-        if len(parts) >= 2:
-            name = parts[0].strip().strip('"\'')
-            etype = parts[1].strip().upper() if len(parts) > 1 else 'CONCEPT'
-            desc = parts[2].strip() if len(parts) > 2 else ''
-            
-            # Filter noise
-            if name and len(name) > 1 and name.lower() not in ['entity', 'name', 'type']:
-                entities[name].append({
-                    'entity_name': name,
-                    'entity_type': etype if etype in ENTITY_TYPES else 'CONCEPT',
-                    'description': desc,
-                    'source_id': chunk_id,
-                    'chunk_id': chunk_id,
-                    'stage': 'coarse'
-                })
-    
-    return dict(entities)
+    return prompt
 
 
-# ================= STAGE 2: Fine Extraction =================
-
-def create_fine_prompt(text: str, coarse_entities: List[str], mode: str, context: Optional[str] = None) -> str:
+def create_continue_extraction_prompt(text: str, previous_result: str) -> str:
     """
-    Stage 2: Detailed extraction with relationships
-    Validates entities + extracts connections
+    Create continue extraction prompt for gleaning (LightRAG-style)
+    
+    Args:
+        text: Original text
+        previous_result: Previous extraction result
+    
+    Returns:
+        Continue extraction prompt
     """
-    entities_list = ', '.join(coarse_entities[:20]) if coarse_entities else 'Extract from text'
-    ctx = f"\n**Context**: {context}\n" if context else ""
-    
-    if mode == 'static':
-        rel_types = '\n'.join([f"- {t}" for t in list(STATIC_TYPES.keys())[:15]])
-        rel_format = "<RELATIONSHIP_TYPE from list>"
-        example = "DEVELOPS"
-    else:  # dynamic
-        rel_types = "Use natural verbs: develops, manages, located_in, works_for, etc."
-        rel_format = "<verb_phrase>"
-        example = "develops and maintains"
-    
-    return f"""Refine entities and extract relationships.{ctx}
+    prompt = f"""---Task---
+Based on the last extraction task, identify and extract any **missed or incorrectly formatted** entities and relationships from the input text.
 
-# KNOWN ENTITIES
-{entities_list}
+---Instructions---
+1. **Strict Adherence to Format:** Follow the same format as before with `{TUPLE_DELIMITER}` delimiter.
+2. **Focus on Corrections/Additions:**
+   - **Do NOT** re-output entities and relationships that were **correctly and fully** extracted in the last task.
+   - If an entity or relationship was **missed**, extract and output it now.
+   - If an entity or relationship was **truncated or incorrectly formatted**, re-output the corrected version.
+3. **Output Format - Entities:** `entity{TUPLE_DELIMITER}entity_name{TUPLE_DELIMITER}entity_type{TUPLE_DELIMITER}entity_description`
+4. **Output Format - Relationships:** `relation{TUPLE_DELIMITER}source{TUPLE_DELIMITER}target{TUPLE_DELIMITER}keywords{TUPLE_DELIMITER}description`
+5. **Completion Signal:** Output `{COMPLETION_DELIMITER}` when done.
 
-# RELATIONSHIP TYPES
-{rel_types}
+---Previous Extraction---
+```
+{previous_result}
+```
 
-# FORMAT
-Entity: ("entity"{TUPLE_DELIMITER}<name>{TUPLE_DELIMITER}<type>{TUPLE_DELIMITER}<description>){RECORD_DELIMITER}
-Relation: ("relationship"{TUPLE_DELIMITER}<source>{TUPLE_DELIMITER}<target>{TUPLE_DELIMITER}{rel_format}{TUPLE_DELIMITER}<description>{TUPLE_DELIMITER}<keywords>{TUPLE_DELIMITER}<0.0-1.0>){RECORD_DELIMITER}
-
-# EXAMPLE
-("entity"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}ORGANIZATION{TUPLE_DELIMITER}Leading AI research organization){RECORD_DELIMITER}
-("entity"{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}PRODUCT{TUPLE_DELIMITER}Advanced large language model){RECORD_DELIMITER}
-("relationship"{TUPLE_DELIMITER}OpenAI{TUPLE_DELIMITER}GPT-4{TUPLE_DELIMITER}{example}{TUPLE_DELIMITER}OpenAI developed and maintains GPT-4{TUPLE_DELIMITER}AI, LLM, development{TUPLE_DELIMITER}0.95){RECORD_DELIMITER}
-
-# TEXT
+---Original Text---
+```
 {text}
+```
 
-# OUTPUT:"""
+<Output>
+"""
+    return prompt
 
 
-def parse_fine_result(result: str, chunk_id: str, mode: str) -> Tuple[Dict, Dict]:
-    """Parse fine extraction with validation"""
+# ================= Parsing Functions =================
+
+def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
+    """
+    Parse LightRAG-style extraction result
+    
+    Args:
+        result: LLM output string
+        chunk_id: Chunk identifier
+    
+    Returns:
+        (entities_dict, relationships_dict)
+    """
     entities = defaultdict(list)
     relationships = defaultdict(list)
     
-    for record in re.split(f'{RECORD_DELIMITER}|<\\|COMPLETE\\|>', result):
-        match = re.search(r'\((.*?)\)', record)
-        if not match:
+    # Split by newlines
+    lines = result.strip().split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
             continue
         
-        parts = match.group(1).split(TUPLE_DELIMITER)
+        # Skip completion delimiter
+        if COMPLETION_DELIMITER in line:
+            continue
         
-        # Entity
-        if len(parts) >= 4 and 'entity' in parts[0].lower():
-            name = parts[1].strip().strip('"\'')
-            if name and len(name) > 1:
-                entities[name].append({
-                    'entity_name': name,
-                    'entity_type': parts[2].strip().upper(),
-                    'description': parts[3].strip().strip('"\''),
-                    'source_id': chunk_id,
-                    'chunk_id': chunk_id,
-                    'stage': 'fine'
-                })
+        # Split by tuple delimiter
+        parts = line.split(TUPLE_DELIMITER)
         
-        # Relationship
-        elif len(parts) >= 6 and 'relationship' in parts[0].lower():
-            src = parts[1].strip().strip('"\'')
-            tgt = parts[2].strip().strip('"\'')
-            rel_type = parts[3].strip().strip('"\'')
+        if len(parts) < 4:
+            continue
+        
+        record_type = parts[0].strip().lower()
+        
+        # Parse entity
+        if 'entity' in record_type and len(parts) >= 4:
+            entity_name = sanitize_text(parts[1])
+            entity_type = sanitize_text(parts[2]).lower()
+            entity_description = sanitize_text(parts[3])
             
-            if src and tgt and src != tgt and rel_type and len(src) > 1 and len(tgt) > 1:
-                # Normalize
-                if mode == 'static':
-                    rel_type_upper = rel_type.upper()
-                    rel_type_final = rel_type_upper if rel_type_upper in STATIC_TYPES else 'RELATED_TO'
-                    verb = rel_type.lower()
-                else:  # dynamic
-                    verb = rel_type.lower()
-                    rel_type_final = verb.upper().replace(' ', '_')
-                
-                relationships[(src, tgt)].append({
-                    'source_id': src,
-                    'target_id': tgt,
-                    'relationship_type': rel_type_final,
-                    'verb_phrase': verb,
-                    'category': categorize(verb),
-                    'description': parts[4].strip().strip('"\''),
-                    'keywords': parts[5].strip().strip('"\''),
-                    'weight': safe_float(parts[6] if len(parts) > 6 else '0.7'),
-                    'chunk_id': chunk_id,
-                    'extraction_mode': mode,
-                    'stage': 'fine'
-                })
+            # Validate
+            if not entity_name or not entity_description:
+                logger.debug(f"Skipping invalid entity: {parts}")
+                continue
+            
+            # Validate entity type
+            if entity_type not in ENTITY_TYPES:
+                entity_type = 'other'
+            
+            entities[entity_name].append({
+                'entity_name': entity_name,
+                'entity_type': entity_type,
+                'description': entity_description,
+                'source_id': chunk_id,
+                'chunk_id': chunk_id
+            })
+        
+        # Parse relationship
+        elif 'relation' in record_type and len(parts) >= 5:
+            source = sanitize_text(parts[1])
+            target = sanitize_text(parts[2])
+            keywords = sanitize_text(parts[3])
+            description = sanitize_text(parts[4])
+            
+            # Validate
+            if not source or not target or source == target:
+                logger.debug(f"Skipping invalid relationship: {parts}")
+                continue
+            
+            relationships[(source, target)].append({
+                'src_id': source,
+                'tgt_id': target,
+                'keywords': keywords,
+                'description': description,
+                'source_id': chunk_id,
+                'chunk_id': chunk_id,
+                'weight': 1.0  # Default weight
+            })
     
     return dict(entities), dict(relationships)
 
@@ -269,74 +272,155 @@ def parse_fine_result(result: str, chunk_id: str, mode: str) -> Tuple[Dict, Dict
 
 def deduplicate_entities(entities: Dict[str, List[Dict]]) -> Dict[str, List[Dict]]:
     """
-    Merge similar entities using fuzzy matching
-    Inspired by LightRAG's entity merging
+    Merge similar entities using case-insensitive matching
+    
+    Args:
+        entities: Dict of {entity_name: [entity_dicts]}
+    
+    Returns:
+        Deduplicated entities dict
     """
     if not entities:
         return {}
     
-    # Step 1: Exact match (case-insensitive)
+    # Case-insensitive merge
     canonical = {}
+    name_mapping = {}  # lowercase -> canonical name
+    
     for name, ents in entities.items():
         name_lower = name.lower().strip()
         
-        found = False
-        for canon_name in list(canonical.keys()):
-            if name_lower == canon_name.lower():
-                canonical[canon_name].extend(ents)
-                found = True
-                break
-        
-        if not found:
+        if name_lower in name_mapping:
+            # Merge with existing
+            canonical_name = name_mapping[name_lower]
+            canonical[canonical_name].extend(ents)
+        else:
+            # New entity
             canonical[name] = ents
+            name_mapping[name_lower] = name
     
-    # Step 2: Fuzzy match (similarity > 0.85)
-    merged = {}
-    processed = set()
-    names = list(canonical.keys())
-    
-    for i, name1 in enumerate(names):
-        if name1 in processed:
-            continue
-        
-        cluster = [name1]
-        
-        for j, name2 in enumerate(names[i+1:], start=i+1):
-            if name2 in processed:
-                continue
-            
-            # Calculate similarity
-            ratio = SequenceMatcher(None, name1.lower(), name2.lower()).ratio()
-            
-            if ratio > 0.85:
-                cluster.append(name2)
-                processed.add(name2)
-        
-        # Use longest name as canonical
-        canonical_name = max(cluster, key=len)
-        
-        merged[canonical_name] = []
-        for name in cluster:
-            merged[canonical_name].extend(canonical[name])
-        
-        processed.add(name1)
-    
-    # Step 3: Merge descriptions
-    for name, ents in merged.items():
+    # Merge descriptions for duplicates
+    for name, ents in canonical.items():
         if len(ents) > 1:
+            # Combine descriptions
             descriptions = [e['description'] for e in ents if e.get('description')]
-            merged_desc = '; '.join(set(descriptions))[:500]
+            unique_descriptions = []
+            seen = set()
             
-            best = max(ents, key=lambda e: len(e.get('description', '')))
+            for desc in descriptions:
+                desc_lower = desc.lower()
+                if desc_lower not in seen:
+                    unique_descriptions.append(desc)
+                    seen.add(desc_lower)
+            
+            merged_desc = '; '.join(unique_descriptions)[:500]
+            
+            # Keep first entity with merged description
+            best = ents[0].copy()
             best['description'] = merged_desc
             
-            merged[name] = [best]
+            canonical[name] = [best]
     
-    reduction = len(entities) - len(merged)
+    reduction = len(entities) - len(canonical)
     if reduction > 0:
-        logger.info(f"✅ Deduplication: {len(entities)} → {len(merged)} entities ({reduction} removed)")
+        logger.info(f"✅ Deduplication: {len(entities)} → {len(canonical)} entities ({reduction} merged)")
     
-    return merged
+    return canonical
+
+
+async def deduplicate_entities_with_llm(
+    entities: Dict[str, List[Dict]], 
+    llm_func,
+    min_descriptions_for_llm: int = 3
+) -> Dict[str, List[Dict]]:
+    """
+    Advanced entity deduplication with LLM-based description summarization
+    
+    Args:
+        entities: Dict of {entity_name: [entity_dicts]}
+        llm_func: Async LLM function for summarization
+        min_descriptions_for_llm: Minimum unique descriptions to trigger LLM (default: 3)
+    
+    Returns:
+        Deduplicated entities dict with LLM-summarized descriptions
+    """
+    if not entities:
+        return {}
+    
+    # First do basic deduplication
+    canonical = {}
+    name_mapping = {}
+    
+    for name, ents in entities.items():
+        name_lower = name.lower().strip()
+        
+        if name_lower in name_mapping:
+            canonical_name = name_mapping[name_lower]
+            canonical[canonical_name].extend(ents)
+        else:
+            canonical[name] = ents
+            name_mapping[name_lower] = name
+    
+    # Merge descriptions with LLM for complex cases
+    llm_merge_count = 0
+    
+    for name, ents in canonical.items():
+        if len(ents) > 1:
+            # Get unique descriptions
+            descriptions = [e['description'] for e in ents if e.get('description')]
+            unique_descriptions = []
+            seen = set()
+            
+            for desc in descriptions:
+                desc_lower = desc.lower()
+                if desc_lower not in seen:
+                    unique_descriptions.append(desc)
+                    seen.add(desc_lower)
+            
+            # Use LLM if many unique descriptions
+            if len(unique_descriptions) >= min_descriptions_for_llm and llm_func:
+                try:
+                    # Create summarization prompt
+                    prompt = f"""Summarize the following descriptions of "{name}" into one concise, comprehensive description.
+Combine all unique information without repetition. Keep it under 200 words.
+
+Descriptions:
+{chr(10).join(f"{i+1}. {d}" for i, d in enumerate(unique_descriptions))}
+
+Provide only the final summarized description, no additional text."""
+                    
+                    merged_desc = await llm_func(prompt)
+                    merged_desc = merged_desc.strip()[:500]
+                    llm_merge_count += 1
+                    
+                except Exception as e:
+                    logger.warning(f"LLM merge failed for {name}: {e}, using simple merge")
+                    merged_desc = '; '.join(unique_descriptions)[:500]
+            else:
+                # Simple concatenation for few descriptions
+                merged_desc = '; '.join(unique_descriptions)[:500]
+            
+            # Keep first entity with merged description
+            best = ents[0].copy()
+            best['description'] = merged_desc
+            
+            # Track all source_ids
+            all_sources = set()
+            for e in ents:
+                if 'source_id' in e:
+                    all_sources.add(e['source_id'])
+            best['source_ids'] = list(all_sources)
+            
+            canonical[name] = [best]
+    
+    reduction = len(entities) - len(canonical)
+    if reduction > 0:
+        logger.info(
+            f"✅ Deduplication: {len(entities)} → {len(canonical)} entities "
+            f"({reduction} merged, {llm_merge_count} with LLM)"
+        )
+    
+    return canonical
 
 
 # ================= Relationship Validation =================
@@ -347,36 +431,37 @@ def validate_relationships(
 ) -> Dict[Tuple[str, str], List[Dict]]:
     """
     Validate relationships - ensure both entities exist
+    
+    Args:
+        relationships: Dict of {(src, tgt): [relationship_dicts]}
+        entities: Dict of {entity_name: [entity_dicts]}
+    
+    Returns:
+        Validated relationships dict
     """
     if not relationships or not entities:
         return relationships
     
     valid_relationships = {}
-    entity_names = set(entities.keys())
-    entity_names_lower = {n.lower(): n for n in entity_names}
+    entity_names_lower = {n.lower(): n for n in entities.keys()}
     
     filtered_count = 0
     
     for (src, tgt), rels in relationships.items():
-        # Try exact match
-        src_found = src in entity_names
-        tgt_found = tgt in entity_names
+        # Case-insensitive lookup
+        src_lower = src.lower()
+        tgt_lower = tgt.lower()
         
-        # Try case-insensitive
-        if not src_found:
-            src_lower = src.lower()
-            if src_lower in entity_names_lower:
-                src = entity_names_lower[src_lower]
-                src_found = True
+        src_canonical = entity_names_lower.get(src_lower)
+        tgt_canonical = entity_names_lower.get(tgt_lower)
         
-        if not tgt_found:
-            tgt_lower = tgt.lower()
-            if tgt_lower in entity_names_lower:
-                tgt = entity_names_lower[tgt_lower]
-                tgt_found = True
-        
-        if src_found and tgt_found and src != tgt:
-            valid_relationships[(src, tgt)] = rels
+        if src_canonical and tgt_canonical and src_canonical != tgt_canonical:
+            # Update relationship with canonical names
+            for rel in rels:
+                rel['src_id'] = src_canonical
+                rel['tgt_id'] = tgt_canonical
+            
+            valid_relationships[(src_canonical, tgt_canonical)] = rels
         else:
             filtered_count += len(rels)
     
@@ -386,82 +471,165 @@ def validate_relationships(
     return valid_relationships
 
 
-# ================= Two-Stage Extraction =================
-
-async def extract_two_stage(
-    chunk: Dict,
+async def deduplicate_relationships_with_llm(
+    relationships: Dict[Tuple[str, str], List[Dict]],
     llm_func,
-    mode: str,
-    context: Optional[str] = None
-) -> Tuple[Dict, Dict]:
+    min_descriptions_for_llm: int = 3
+) -> Dict[Tuple[str, str], List[Dict]]:
     """
-    Two-stage extraction: coarse → fine
+    Advanced relationship deduplication with LLM-based description summarization
+    
+    Args:
+        relationships: Dict of {(src, tgt): [relationship_dicts]}
+        llm_func: Async LLM function for summarization
+        min_descriptions_for_llm: Minimum unique descriptions to trigger LLM (default: 3)
+    
+    Returns:
+        Deduplicated relationships dict with LLM-summarized descriptions
+    """
+    if not relationships:
+        return {}
+    
+    merged_relationships = {}
+    llm_merge_count = 0
+    
+    for (src, tgt), rels in relationships.items():
+        if len(rels) > 1:
+            # Get unique descriptions
+            descriptions = [r['description'] for r in rels if r.get('description')]
+            unique_descriptions = []
+            seen = set()
+            
+            for desc in descriptions:
+                desc_lower = desc.lower()
+                if desc_lower not in seen:
+                    unique_descriptions.append(desc)
+                    seen.add(desc_lower)
+            
+            # Merge keywords
+            all_keywords = []
+            for r in rels:
+                if r.get('keywords'):
+                    all_keywords.extend([k.strip() for k in r['keywords'].split(',')])
+            unique_keywords = list(set(all_keywords))
+            merged_keywords = ', '.join(unique_keywords[:5])  # Top 5 keywords
+            
+            # Use LLM if many unique descriptions
+            if len(unique_descriptions) >= min_descriptions_for_llm and llm_func:
+                try:
+                    # Create summarization prompt
+                    prompt = f"""Summarize the following descriptions of the relationship between "{src}" and "{tgt}" into one concise description.
+Combine all unique information without repetition. Keep it under 150 words.
+
+Descriptions:
+{chr(10).join(f"{i+1}. {d}" for i, d in enumerate(unique_descriptions))}
+
+Provide only the final summarized description, no additional text."""
+                    
+                    merged_desc = await llm_func(prompt)
+                    merged_desc = merged_desc.strip()[:400]
+                    llm_merge_count += 1
+                    
+                except Exception as e:
+                    logger.warning(f"LLM merge failed for relationship ({src}, {tgt}): {e}, using simple merge")
+                    merged_desc = '; '.join(unique_descriptions)[:400]
+            else:
+                # Simple concatenation for few descriptions
+                merged_desc = '; '.join(unique_descriptions)[:400]
+            
+            # Keep first relationship with merged description
+            best = rels[0].copy()
+            best['description'] = merged_desc
+            best['keywords'] = merged_keywords
+            
+            # Track all source_ids
+            all_sources = set()
+            for r in rels:
+                if 'source_id' in r:
+                    all_sources.add(r['source_id'])
+            best['source_ids'] = list(all_sources)
+            
+            merged_relationships[(src, tgt)] = [best]
+        else:
+            # Single relationship, keep as is
+            merged_relationships[(src, tgt)] = rels
+    
+    reduction = sum(len(v) for v in relationships.values()) - sum(len(v) for v in merged_relationships.values())
+    if reduction > 0:
+        logger.info(
+            f"✅ Relationship deduplication: {sum(len(v) for v in relationships.values())} → "
+            f"{sum(len(v) for v in merged_relationships.values())} relationships "
+            f"({reduction} merged, {llm_merge_count} with LLM)"
+        )
+    
+    return merged_relationships
+
+
+# ================= Async Extraction =================
+
+async def extract_from_chunk(chunk: Dict, llm_func, max_gleaning: int = 1) -> Tuple[Dict, Dict]:
+    """
+    Multi-stage extraction from one chunk with gleaning (LightRAG-style)
+    
+    Args:
+        chunk: Chunk dict with 'content' and 'chunk_id'
+        llm_func: Async LLM function
+        max_gleaning: Max number of continue extraction attempts (default: 1)
+    
+    Returns:
+        (entities_dict, relationships_dict)
     """
     try:
-        # Stage 1: Coarse (fast)
-        coarse_prompt = create_coarse_prompt(chunk['content'], context)
-        coarse_result = await llm_func(coarse_prompt)
-        coarse_entities = parse_coarse_result(coarse_result, chunk['chunk_id'])
+        # First extraction
+        prompt = create_extraction_prompt(chunk['content'])
+        result = await llm_func(prompt)
         
-        if not coarse_entities:
-            logger.debug(f"No entities in coarse stage for {chunk['chunk_id']}")
-            return {}, {}
+        # Continue extraction (gleaning) if incomplete
+        for i in range(max_gleaning):
+            # Check if complete
+            if COMPLETION_DELIMITER in result:
+                break
+            
+            # Continue extraction
+            logger.debug(f"Continue extraction {i+1}/{max_gleaning} for chunk {chunk.get('chunk_id')}")
+            continue_prompt = create_continue_extraction_prompt(
+                chunk['content'], 
+                result
+            )
+            continue_result = await llm_func(continue_prompt)
+            result += "\n" + continue_result
         
-        # Stage 2: Fine (detailed)
-        entity_names = list(coarse_entities.keys())
-        fine_prompt = create_fine_prompt(chunk['content'], entity_names, mode, context)
-        fine_result = await llm_func(fine_prompt)
-        fine_entities, relationships = parse_fine_result(fine_result, chunk['chunk_id'], mode)
+        # Parse combined result
+        entities, relationships = parse_extraction_result(result, chunk['chunk_id'])
         
-        # Merge (prioritize fine)
-        merged_entities = {**coarse_entities, **fine_entities}
-        
-        return merged_entities, relationships
+        return entities, relationships
     
     except Exception as e:
-        logger.error(f"Two-stage extraction failed for {chunk.get('chunk_id')}: {e}")
+        logger.error(f"Extraction failed for chunk {chunk.get('chunk_id')}: {e}")
         return {}, {}
 
-
-# ================= Single-Stage Fallback =================
-
-async def extract_single_stage(
-    chunk: Dict,
-    llm_func,
-    mode: str,
-    context: Optional[str] = None
-) -> Tuple[Dict, Dict]:
-    """Single-stage extraction (fallback)"""
-    try:
-        prompt = create_fine_prompt(chunk['content'], [], mode, context)
-        result = await llm_func(prompt)
-        return parse_fine_result(result, chunk['chunk_id'], mode)
-    except Exception as e:
-        logger.error(f"Single-stage extraction failed: {e}")
-        return {}, {}
-
-
-# ================= Main Async Extraction =================
 
 async def extract_async(
     chunks: List[Dict],
     llm_func,
-    mode: str,
-    max_concurrent: int = 16,
-    context: Optional[str] = None,
-    use_two_stage: bool = True
+    max_concurrent: int = 16
 ) -> Tuple[Dict, Dict]:
     """
-    Main async extraction with enhancements
+    Async extraction from multiple chunks
+    
+    Args:
+        chunks: List of chunk dicts
+        llm_func: Async LLM function
+        max_concurrent: Max concurrent LLM calls
+    
+    Returns:
+        (entities_dict, relationships_dict)
     """
     sem = asyncio.Semaphore(max_concurrent)
     
     async def process(chunk):
         async with sem:
-            if use_two_stage:
-                return await extract_two_stage(chunk, llm_func, mode, context)
-            else:
-                return await extract_single_stage(chunk, llm_func, mode, context)
+            return await extract_from_chunk(chunk, llm_func)
     
     results = await asyncio.gather(*[process(c) for c in chunks])
     
@@ -475,9 +643,20 @@ async def extract_async(
         for k, v in relationships.items():
             all_relationships[k].extend(v)
     
-    # Post-processing
-    all_entities = deduplicate_entities(dict(all_entities))
+    # Post-processing with LLM-based deduplication
+    all_entities = await deduplicate_entities_with_llm(
+        dict(all_entities), 
+        llm_func,
+        min_descriptions_for_llm=3
+    )
     all_relationships = validate_relationships(dict(all_relationships), all_entities)
+    
+    # Deduplicate relationships with LLM
+    all_relationships = await deduplicate_relationships_with_llm(
+        all_relationships,
+        llm_func,
+        min_descriptions_for_llm=3
+    )
     
     return dict(all_entities), dict(all_relationships)
 
@@ -487,21 +666,15 @@ async def extract_async(
 def extract_entities_relations(
     chunks: List[Dict],
     global_config: Dict = None,
-    mode: str = 'auto',
-    domain: Optional[str] = None,
-    context: Optional[str] = None,
-    use_two_stage: bool = True
+    **kwargs  # Accept but ignore legacy parameters
 ) -> Tuple[Dict, Dict]:
     """
-    Main extraction function with LightRAG enhancements
+    Main extraction function - LightRAG style
     
     Args:
-        chunks: List of chunks
-        global_config: Config with 'llm_model_func'
-        mode: 'static', 'dynamic', or 'auto'
-        domain: Domain hint
-        context: Optional context
-        use_two_stage: Enable two-stage extraction (default: True)
+        chunks: List of chunks with 'content' and 'chunk_id'
+        global_config: Config dict with 'llm_model_func' (optional)
+        **kwargs: Legacy parameters (ignored)
     
     Returns:
         (entities_dict, relationships_dict)
@@ -510,17 +683,14 @@ def extract_entities_relations(
         logger.warning("⚠️ No chunks provided")
         return {}, {}
     
-    # Select mode
-    selected_mode = select_mode(chunks, domain, mode)
-    
-    # Get LLM
+    # Get LLM function
     llm_func = global_config.get('llm_model_func') if global_config else None
     if not llm_func:
         from backend.utils.llm_utils import call_llm_async
         llm_func = call_llm_async
     
     try:
-        # Event loop
+        # Get or create event loop
         try:
             loop = asyncio.get_event_loop()
             if loop.is_closed():
@@ -529,12 +699,11 @@ def extract_entities_relations(
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        extraction_type = "two-stage" if use_two_stage else "single-stage"
-        logger.info(f"🚀 Enhanced extraction ({extraction_type}, mode={selected_mode}, chunks={len(chunks)})")
+        logger.info(f"🚀 LightRAG-style extraction with gleaning (chunks={len(chunks)})")
         
         # Extract
         entities, relationships = loop.run_until_complete(
-            extract_async(chunks, llm_func, selected_mode, 16, context, use_two_stage)
+            extract_async(chunks, llm_func, max_concurrent=16)
         )
         
         # Stats
@@ -553,36 +722,13 @@ def extract_entities_relations(
 
 # ================= Statistics =================
 
-def get_statistics(relationships: Dict) -> Dict:
-    """Get relationship statistics"""
-    stats = {
-        'total': sum(len(v) for v in relationships.values()),
-        'by_type': defaultdict(int),
-        'by_category': defaultdict(int),
-        'by_mode': defaultdict(int)
-    }
-    
-    for rels in relationships.values():
-        for rel in rels:
-            stats['by_type'][rel.get('relationship_type', 'UNKNOWN')] += 1
-            stats['by_category'][rel.get('category', 'UNKNOWN')] += 1
-            stats['by_mode'][rel.get('extraction_mode', 'unknown')] += 1
-    
-    return stats
-
-
 def get_extraction_statistics(entities: Dict, relationships: Dict) -> Dict:
     """Get detailed extraction statistics"""
     entity_types = defaultdict(int)
-    rel_categories = defaultdict(int)
     
     for ents in entities.values():
         for ent in ents:
             entity_types[ent['entity_type']] += 1
-    
-    for rels in relationships.values():
-        for rel in rels:
-            rel_categories[rel['category']] += 1
     
     total_entities = sum(len(v) for v in entities.values())
     unique_entities = len(entities)
@@ -592,7 +738,7 @@ def get_extraction_statistics(entities: Dict, relationships: Dict) -> Dict:
         'unique_entities': unique_entities,
         'entity_types': dict(entity_types),
         'total_relationships': sum(len(v) for v in relationships.values()),
-        'relationship_categories': dict(rel_categories),
+        'unique_relationship_pairs': len(relationships),
         'deduplication_ratio': 1 - (unique_entities / max(total_entities, 1))
     }
 
@@ -601,12 +747,11 @@ def get_extraction_statistics(entities: Dict, relationships: Dict) -> Dict:
 
 __all__ = [
     'extract_entities_relations',
-    'select_mode',
-    'get_statistics',
     'get_extraction_statistics',
     'deduplicate_entities',
+    'deduplicate_entities_with_llm',
     'validate_relationships',
-    'STATIC_TYPES',
-    'CATEGORIES',
-    'ENTITY_TYPES'
+    'ENTITY_TYPES',
+    'TUPLE_DELIMITER',
+    'COMPLETION_DELIMITER'
 ]

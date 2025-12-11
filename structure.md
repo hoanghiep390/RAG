@@ -1,124 +1,53 @@
-mini-lightrag/
-│
-├── 📁 backend/                              # Backend processing logic
+
+Đồ ÁN 2/
+├── backend/                    # Backend API và xử lý logic
+│   ├── config.py              # Cấu hình tập trung (MongoDB, LLM, embeddings, performance)
+│   ├── main.py                # FastAPI entry point
 │   │
-│   ├── 📁 core/                             # Core processing modules (Pure functions)
-│   │   ├── 📄 chunking.py                   # ✂️ Text → Chunks (300 tokens default)
-│   │   │   ├── extract_segments()           # PDF, DOCX, TXT, CSV, JSON, XML
-│   │   │   ├── Chunker class               # Smart chunking with overlap
-│   │   │   └── process_document_to_chunks() # Main entry point
-│   │   │
-│   │   ├── 📄 embedding.py                  # 🧮 Text → Vectors (384-dim)
-│   │   │   ├── EmbeddingModel              # SentenceTransformer wrapper
-│   │   │   ├── generate_embeddings()       # Chunk embeddings (batch 128)
-│   │   │   ├── generate_entity_embeddings() # Entity embeddings
-│   │   │   └── generate_relationship_embeddings()
-│   │   │
-│   │   ├── 📄 extraction.py                 # 🔍 Chunks → Entities/Relations
-│   │   │   ├── extract_entities()          # 16 parallel LLM calls
-│   │   │   ├── parse_extraction_result()   # LightRAG format parser
-│   │   │   └── extract_entities_relations() # Sync wrapper
-│   │   │
-│   │   ├── 📄 graph_builder.py              # 🕸️ Entities → Knowledge Graph
-│   │   │   ├── KnowledgeGraph class        # NetworkX DiGraph wrapper
-│   │   │   ├── build_knowledge_graph()     # Async graph builder
-│   │   │   ├── _merge_nodes_then_upsert()  # Smart node merging
-│   │   │   └── _merge_edges_then_upsert()  # Smart edge merging
-│   │   │
-│   │   └── 📄 pipeline.py                   # 🔄 Main orchestrator
-│   │       ├── DocumentPipeline class      # Unified processing
-│   │       ├── process_file()              # Single file (progress tracking)
-│   │       └── process_multiple_files_parallel() # Multi-file (3x parallel)
+│   ├── core/                  # Core processing pipeline
+│   │   ├── chunking.py        # Chia văn bản thành chunks với semantic chunking
+│   │   ├── embedding.py       # Tạo embeddings cho chunks và entities (SentenceTransformer)
+│   │   ├── extraction.py      # 🆕 Extract entities/relationships (LightRAG-style với gleaning + LLM merge)
+│   │   ├── graph_builder.py   # Xây dựng knowledge graph từ entities/relationships
+│   │   └── pipeline.py        # Orchestrate toàn bộ pipeline (chunk → extract → build graph)
 │   │
-│   ├── 📁 db/                               # Storage layer
-│   │   ├── 📄 mongo_storage.py              # 🗄️ MongoDB operations
-│   │   │   ├── save_document()             # Document metadata
-│   │   │   ├── save_chunks_bulk()          # Bulk chunk insert
-│   │   │   ├── save_entities_bulk()        # Bulk entity insert
-│   │   │   ├── save_relationships_bulk()   # Bulk relationship insert
-│   │   │   ├── save_graph_bulk()           # Bulk graph upsert
-│   │   │   ├── delete_document_cascade()   # Cascade delete
-│   │   │   └── save_document_complete()    # All-in-one save
-│   │   │
-│   │   └── 📄 vector_db.py                  # 🚀 FAISS operations
-│   │       ├── VectorDatabase class        # FAISS manager
-│   │       ├── add_document_embeddings_batch() # Batch add
-│   │       ├── search()                    # Vector search
-│   │       ├── delete_document()           # Mark deleted
-│   │       └── rebuild_index()             # Compact index
+│   ├── db/                    # Database và storage
+│   │   ├── mongo_storage.py   # MongoDB operations (graph, entities, relationships, chunks)
+│   │   ├── vector_db.py       # FAISS vector database cho similarity search
+│   │   ├── entity_linking.py  # Link entities giữa các chunks (fuzzy matching)
+│   │   ├── entity_validator.py # Validate entities (type, description quality)
+│   │   ├── conversation_storage.py # Lưu trữ conversation history
+│   │   └── user_manager.py    # Quản lý users và permissions
 │   │
-│   ├── 📁 utils/                            # Utility functions
-│   │   ├── 📄 file_utils.py                 # 📁 File operations
-│   │   │   ├── save_uploaded_file()        # Save to uploads/
-│   │   │   ├── read_file_content()         # Read text files
-│   │   │   ├── get_file_info()             # File metadata
-│   │   │   └── delete_uploaded_file()      # Remove file
-│   │   │
-│   │   ├── 📄 llm_utils.py                  # 🤖 LLM API calls
-│   │   │   ├── call_openai_async()         # OpenAI GPT
-│   │   │   ├── call_groq_async()           # Groq Llama
-│   │   │   ├── call_llm_async()            # Universal async
-│   │   │   └── call_llm_batch()            # Batch processing
-│   │   │
-│   │   ├── 📄 utils.py                      # 📝 Logging setup
-│   │   │   └── logger                      # Configured logger
-│   │   │
-│   │   └── 📄 cache_utils.py                # ⚠️ DEPRECATED (do not use)
+│   ├── retrieval/             # Retrieval và query processing
+│   │   ├── query_analyzer.py  # Phân tích query (intent, entities, keywords)
+│   │   ├── vector_retriever.py # Vector search trên chunks
+│   │   ├── graph_retriever.py  # Graph traversal từ entities
+│   │   ├── hybrid_retriever.py # 🆕 Dual-level retrieval (global + local, LightRAG-inspired)
+│   │   └── conversation_manager.py # Quản lý conversation context
 │   │
-│   ├── 📄 config.py                         # ⚙️ MongoDB configuration
-│   │   ├── MongoDBConfig class             # Connection manager
-│   │   ├── get_mongodb()                   # Get DB instance
-│   │   └── close_mongodb()                 # Close connection
+│   ├── utils/                 # Utilities
+│   │   ├── llm_utils.py       # LLM API calls (OpenAI, Groq)
+│   │   ├── file_utils.py      # File processing (PDF, DOCX, TXT)
+│   │   └── utils.py           # General utilities
 │   │
-│   ├── 📄 main.py                           # (Empty placeholder)
-│   │
-│   └── 📁 data/                             # 💾 User data storage
-│       └── {user_id}/                       # Per-user isolation
-│           ├── uploads/                     # 📄 Original uploaded files
-│           ├── vectors/                     # 🚀 FAISS indexes
-│           │   ├── combined.index          # FAISS index file
-│           │   ├── combined_metadata.json  # Chunk metadata
-│           │   └── document_map.json       # Doc-to-index mapping
-│           └── logs/                        # 📝 Processing logs
+│   └── data/                  # Data storage (user uploads, vectors)
+│       └── {user_id}/
+│           ├── uploads/       # Uploaded files
+│           └── vectors/       # FAISS indices
 │
-├── 📁 frontend/                             # Streamlit UI
-│   ├── 📄 login.py                          # 🔐 Login/Register page
-│   │   ├── User authentication             # SHA256 password hashing
-│   │   ├── Session management              # st.session_state
-│   │   └── Default admin account           # admin/admin123
-│   │
-│   └── 📁 pages/                            # Multi-page app
-│       ├── 📄 upload.py                     # 📤 Document upload & processing
-│       │   ├── File uploader               # Multiple files support
-│       │   ├── Processing pipeline         # With progress bars
-│       │   ├── MongoDB + FAISS save        # Bulk operations
-│       │   ├── Document list               # View processed docs
-│       │   ├── Unified delete              # MongoDB + FAISS + Files
-│       │   └── FAISS rebuild UI            # Optimize index
-│       │
-│       └── 📄 graph.py                      # 🕸️ Knowledge graph viewer
-│           ├── Load from MongoDB           # Get combined graph
-│           ├── Interactive visualization   # PyVis network graph
-│           ├── Statistics dashboard        # Nodes, edges, types
-│           ├── Entity browser              # Search & filter
-│           └── Relationship browser        # View connections
+├── frontend/                  # React frontend
+│   ├── public/
+│   ├── src/
+│   │   ├── components/        # React components
+│   │   ├── pages/            # Page components
+│   │   ├── services/         # API services
+│   │   └── App.js            # Main app
+│   └── package.json
 │
-├── 📁 scripts/                              # Utility scripts (if any)
+├── lib/                       # Shared libraries
 │
-├── 📄 .env                                  # 🔑 Environment variables
-│   ├── MONGODB_URI                         # MongoDB connection string
-│   ├── MONGODB_DATABASE                    # Database name
-│   ├── LLM_PROVIDER                        # openai / groq
-│   ├── LLM_MODEL                           # Model name
-│   ├── OPENAI_API_KEY                      # OpenAI API key
-│   ├── GROQ_API_KEY                        # Groq API key
-│   ├── MAX_CONCURRENT_LLM_CALLS            # 16 (default)
-│   ├── EXTRACTION_BATCH_SIZE               # 20 (default)
-│   └── EMBEDDING_BATCH_SIZE                # 128 (default)
-│
-├── 📄 .env.example                          # 📝 Example config
-├── 📄 .gitignore                            # Git ignore rules
-│
-├── 📄 requirements.txt                      # 📦 Python dependencies
-│
-├── 📄 structure.md                          # 📁 This file
+├── .env                       # Environment variables (API keys, configs)
+├── .env.example              # Example env file với documentation
+├── requirements.txt          # Python dependencies
+└── structure.md              # This file

@@ -66,6 +66,7 @@ with st.sidebar:
     
     if st.button("📤 Upload"): st.switch_page("pages/upload.py")
     if st.button("💬 Chat"): st.switch_page("pages/chat.py")
+    if st.button("📊 Analytics"):st.switch_page("pages/analytics.py")
     st.markdown("---")
     
     if st.button("🔄 Refresh"):

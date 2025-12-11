@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from backend.db.vector_db import VectorDatabase
 from backend.db.mongo_storage import MongoStorage
 from backend.db.conversation_storage import ConversationStorage
-from backend.retrieval.hybrid_retriever import HybridRetriever
+from backend.retrieval.hybrid_retriever import EnhancedHybridRetriever
 from backend.retrieval.conversation_manager import ConversationManager
 from backend.utils.llm_utils import call_llm_async
 import asyncio
@@ -132,7 +132,7 @@ def init_storage(data_user_id: str, conv_user_id: str):
         # ✅ Conversations are personal
         conv_storage = ConversationStorage(conv_user_id)
         
-        retriever = HybridRetriever(vector_db, mongo_storage)
+        retriever = EnhancedHybridRetriever(vector_db, mongo_storage)
         
         vec_stats = vector_db.get_statistics()
         graph = mongo_storage.get_graph()
@@ -313,6 +313,8 @@ with st.sidebar:
             st.switch_page("pages/upload.py")
         if st.button("🕸️ Graph"):
             st.switch_page("pages/graph.py")
+        if st.button("📊 Analytics"):  
+            st.switch_page("pages/analytics.py")
     else:
         st.info("👁️ View-only access")
     
@@ -412,6 +414,34 @@ for message in st.session_state.messages:
                 <span class="stat-badge badge-time">⏱️ {meta.get('retrieval_time_ms', 0)}ms</span>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Show retrieved chunks
+            if 'retrieved_chunks' in message and message['retrieved_chunks']:
+                with st.expander(f"📄 Retrieved Documents ({len(message['retrieved_chunks'])})", expanded=False):
+                    for i, chunk in enumerate(message['retrieved_chunks'], 1):
+                        st.markdown(f"**[{i}] {chunk['filename']}** (Score: {chunk['score']:.3f})")
+                        st.text(chunk['content'][:300] + "..." if len(chunk['content']) > 300 else chunk['content'])
+                        st.markdown("---")
+            
+            # Show retrieved entities
+            if 'retrieved_entities' in message and message['retrieved_entities']:
+                with st.expander(f"🕸️ Retrieved Entities ({len(message['retrieved_entities'])})", expanded=False):
+                    for i, entity in enumerate(message['retrieved_entities'], 1):
+                        st.markdown(f"**[{i}] {entity['name']}** ({entity['type']}) - Score: {entity['score']:.3f}")
+                        
+                        if entity.get('description'):
+                            st.markdown(f"*{entity['description'][:200]}...*" if len(entity['description']) > 200 else f"*{entity['description']}*")
+                        
+                        if entity.get('relationships'):
+                            st.markdown("**🔗 Relationships:**")
+                            for rel in entity['relationships']:
+                                rel_type = rel.get('relationship_type', 'RELATED_TO')
+                                target = rel.get('target', 'Unknown')
+                                category = rel.get('category', 'general')
+                                strength = rel.get('strength', 0.0)
+                                st.markdown(f"- **{rel_type}** → {target} [{category}] (strength: {strength:.2f})")
+                        
+                        st.markdown("---")
 
 # ================= Chat Input =================
 st.markdown("---")
@@ -454,13 +484,12 @@ if user_query:
             # Build prompt
             messages_for_llm = []
             
-            system_prompt = """You are a helpful AI assistant.
+            system_prompt = """You are a helpful AI assistant with access to document context and knowledge graph.
 
 Instructions:
-1. Answer using the provided context
-2. Cite sources with [1], [2], etc.
-3. Consider conversation history
-4. Be concise but comprehensive"""
+1. **Relationship queries**: Use LOCAL CONTEXT (Knowledge Graph) to explain entity relationships with specific relationship types and categories
+2. **Document queries**: Use GLOBAL CONTEXT (Documents) and cite sources with [1], [2], etc.
+3. **General**: Consider conversation history, be concise, and explain the basis of your answer"""
 
             if use_history:
                 history_context = st.session_state.conv_manager.get_context_for_llm()
@@ -521,11 +550,30 @@ Question: {user_query}
                 st.session_state.conv_manager.add_message('user', original_query, save_to_db=True)
                 st.session_state.conv_manager.add_message('assistant', response, save_to_db=True)
             
-            # Save to UI
+            # Save to UI with full context - ✅ OPTIMIZED: Reduced from 5 to 3 items
             assistant_message = {
                 'role': 'assistant',
                 'content': response,
-                'metadata': context.metadata
+                'metadata': context.metadata,
+                'retrieved_chunks': [
+                    {
+                        'content': chunk.content,
+                        'filename': chunk.filename,
+                        'score': chunk.score,
+                        'chunk_id': chunk.chunk_id
+                    }
+                    for chunk in context.global_chunks[:3]  # ✅ OPTIMIZED: Reduced from 5 to 3
+                ],
+                'retrieved_entities': [
+                    {
+                        'name': entity.entity_name,
+                        'type': entity.entity_type,
+                        'description': entity.description,
+                        'relationships': entity.relationships[:3],  # ✅ OPTIMIZED: Reduced from 5 to 3
+                        'score': entity.score
+                    }
+                    for entity in context.local_entities[:3]  # ✅ OPTIMIZED: Reduced from 5 to 3
+                ]
             }
             st.session_state.messages.append(assistant_message)
             

@@ -1,10 +1,12 @@
 # backend/retrieval/query_analyzer.py
 """
 Phân tích câu hỏi để quyết định retrieval
+✅ ENHANCED: Semantic entity recognition with DB lookup
 """
 import re
-from typing import Dict, List, Literal
+from typing import Dict, List, Literal, Optional
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 
 @dataclass
 class QueryAnalysis:
@@ -46,18 +48,133 @@ STOP_WORDS = {
 }
 
 class QueryAnalyzer:
-    """Simple query analyzer """
+    """Enhanced query analyzer with semantic entity recognition"""
     
-    def __init__(self):
+    def __init__(self, mongo_storage=None):
+        """
+        Args:
+            mongo_storage: MongoStorage instance for entity lookup (optional)
+        """
         self.stop_words = STOP_WORDS['en'] | STOP_WORDS['vi']
+        self.mongo_storage = mongo_storage
+        self._entity_cache = None
+        self._cache_loaded = False
+        
+        # ✅ OPTIMIZED: Load cache once at initialization instead of per-query
+        if mongo_storage:
+            self._load_entity_cache()
+    
+    def _load_entity_cache(self):
+        """✅ OPTIMIZED: Load entities once at init, reduced from 500 to 300 for speed"""
+        if self._cache_loaded or not self.mongo_storage:
+            return
+        
+        try:
+            from backend.config import Config
+            max_entities = Config.MAX_ENTITY_CACHE
+            
+            entities = self.mongo_storage.entities.find(
+                {'user_id': self.mongo_storage.user_id},
+                {'entity_name': 1, 'entity_type': 1}
+            ).limit(max_entities)
+            
+            # Build cache: {entity_name_lower: entity_name}
+            self._entity_cache = {}
+            for e in entities:
+                entity_name = e['entity_name']
+                self._entity_cache[entity_name.lower()] = entity_name
+            
+            self._cache_loaded = True
+            
+            if self._entity_cache:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"✅ Loaded {len(self._entity_cache)} entities for query analysis")
+        
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Failed to load entity cache: {e}")
+            self._entity_cache = {}
+    
+    def _extract_entities_semantic(self, query: str) -> List[str]:
+        """
+        ✅ ENHANCED: Semantic entity extraction using DB lookup
+        ✅ OPTIMIZED: Cache already loaded at init, no need to reload
+        
+        Matching strategy:
+        1. Exact match (case-insensitive)
+        2. Fuzzy match (similarity > 0.90, reduced from 0.85)
+        3. Regex patterns (fallback)
+        """
+        entities = []
+        
+        # ✅ OPTIMIZED: No need to load cache here, already loaded at init
+        if not self._entity_cache:
+            # Fallback to regex if no cache
+            return self._extract_entities_regex(query)
+        
+        query_lower = query.lower()
+        
+        # Level 1: Exact match (case-insensitive)
+        for entity_lower, entity_name in self._entity_cache.items():
+            if entity_lower in query_lower:
+                entities.append(entity_name)
+        
+        # Level 2: Fuzzy match for multi-word entities
+        # ✅ OPTIMIZED: Reduced from 5 to 3 words (1-3 word phrases only)
+        # Split query into n-grams (1-3 words)
+        query_tokens = query.split()
+        for i in range(len(query_tokens)):
+            for j in range(i+1, min(i+4, len(query_tokens)+1)):  # Up to 3-word phrases
+                phrase = ' '.join(query_tokens[i:j]).lower()
+                
+                # Skip if already found exact match
+                if phrase in [e.lower() for e in entities]:
+                    continue
+                
+                # Fuzzy match against entity cache
+                for entity_lower, entity_name in self._entity_cache.items():
+                    # Skip short entities (risky for fuzzy match)
+                    if len(entity_lower) < 4:
+                        continue
+                    
+                    # ✅ OPTIMIZED: Increased threshold from 0.85 to 0.90 for fewer comparisons
+                    score = SequenceMatcher(None, phrase, entity_lower).ratio()
+                    if score > 0.90:
+                        entities.append(entity_name)
+                        break
+        
+        # Level 3: Regex fallback for entities not in DB
+        if not entities:
+            entities = self._extract_entities_regex(query)
+        
+        # Deduplicate
+        entities = list(dict.fromkeys(entities))  # Preserve order
+        
+        return entities[:5]  # Top 5
+    
+    def _extract_entities_regex(self, query: str) -> List[str]:
+        """Fallback: Extract entities using regex patterns"""
+        entities = []
+        
+        for pattern in ENTITY_MARKERS:
+            matches = re.findall(pattern, query)
+            entities.extend(matches)
+        
+        entities = list(set(entities))
+        entities.sort(key=len, reverse=True)
+        
+        return entities[:5]
     
     def analyze(self, query: str) -> QueryAnalysis:
-        """Phân tích query đơn giản"""
+        """Phân tích query với semantic entity recognition"""
         query_lower = query.lower().strip()
     
         intent = self._detect_intent(query_lower)
         
-        entities = self._extract_entities(query)
+        # ✅ ENHANCED: Use semantic entity extraction
+        entities = self._extract_entities_semantic(query)
         
         keywords = self._extract_keywords(query_lower)
         
@@ -82,28 +199,15 @@ class QueryAnalyzer:
                     return intent
         return 'fact' 
     
-    def _extract_entities(self, query: str) -> List[str]:
-        """Extract entities đơn giản (proper nouns + acronyms)"""
-        entities = []
-        
-        for pattern in ENTITY_MARKERS:
-            matches = re.findall(pattern, query)
-            entities.extend(matches)
-        
-        entities = list(set(entities))
-        entities.sort(key=len, reverse=True)
-        
-        return entities[:5]  
-    
     def _extract_keywords(self, query: str) -> List[str]:
-        """Extract keywords """
+        """Extract keywords"""
         tokens = re.findall(r'\b\w+\b', query)
         
         keywords = [
             t for t in tokens 
             if len(t) > 2 and t not in self.stop_words
         ]
-        return keywords[:10]  
+        return keywords[:10]
     
     def _decide_mode(self, intent: str, entities: List[str]) -> str:
         """Quyết định retrieval mode"""
@@ -122,4 +226,4 @@ class QueryAnalyzer:
         elif intent == 'comparison':
             return 8
         else:
-            return 5  
+            return 5
