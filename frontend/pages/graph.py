@@ -172,11 +172,74 @@ with col4:
 
 st.markdown("---")
 
-# COLORS
+# COLOR LEGEND
+st.markdown("### 🎨 Entity Type Colors")
+legend_cols = st.columns(6)
+
+entity_type_colors_display = [
+    ('person', 'PERSON', '#FF6B6B'),
+    ('organization', 'ORGANIZATION', '#4ECDC4'),
+    ('location', 'LOCATION', '#45B7D1'),
+    ('event', 'EVENT', '#F39C12'),
+    ('product', 'PRODUCT', '#9B59B6'),
+    ('concept', 'CONCEPT', '#1ABC9C'),
+    ('technology', 'TECHNOLOGY', '#3498DB'),
+    ('date', 'DATE', '#E74C3C'),
+    ('metric', 'METRIC', '#16A085'),
+    ('equipment', 'EQUIPMENT', '#D35400'),
+    ('category', 'CATEGORY', '#8E44AD'),
+    ('other', 'OTHER', '#95A5A6'),
+]
+
+for idx, (key, label, color) in enumerate(entity_type_colors_display):
+    with legend_cols[idx % 6]:
+        st.markdown(
+            f"<div style='background:{color}; padding:0.5rem; border-radius:5px; "
+            f"text-align:center; color:white; font-size:0.8rem; margin-bottom:0.5rem;'>"
+            f"<b>{label}</b></div>",
+            unsafe_allow_html=True
+        )
+
+# COLORS - Match với 12 entity types trong extraction.py
 ENTITY_COLORS = {
-    'PERSON': '#FF6B6B', 'ORGANIZATION': '#4ECDC4', 'LOCATION': '#45B7D1',
-    'EVENT': '#F39C12', 'PRODUCT': '#9B59B6', 'CONCEPT': '#1ABC9C',
-    'TECHNOLOGY': '#3498DB', 'UNKNOWN': '#95A5A6'
+    # Core types
+    'PERSON': '#FF6B6B',           # Đỏ cam - Người
+    'person': '#FF6B6B',
+    
+    'ORGANIZATION': '#4ECDC4',     # Xanh ngọc - Tổ chức
+    'organization': '#4ECDC4',
+    
+    'LOCATION': '#45B7D1',         # Xanh dương nhạt - Địa điểm
+    'location': '#45B7D1',
+    
+    'EVENT': '#F39C12',            # Cam - Sự kiện
+    'event': '#F39C12',
+    
+    'PRODUCT': '#9B59B6',          # Tím - Sản phẩm
+    'product': '#9B59B6',
+    
+    'CONCEPT': '#1ABC9C',          # Xanh lá - Khái niệm
+    'concept': '#1ABC9C',
+    
+    'TECHNOLOGY': '#3498DB',       # Xanh dương - Công nghệ
+    'technology': '#3498DB',
+    
+    # Extended types
+    'DATE': '#E74C3C',             # Đỏ - Ngày tháng
+    'date': '#E74C3C',
+    
+    'METRIC': '#16A085',           # Xanh lá đậm - Số liệu
+    'metric': '#16A085',
+    
+    'EQUIPMENT': '#D35400',        # Cam đậm - Thiết bị
+    'equipment': '#D35400',
+    
+    'CATEGORY': '#8E44AD',         # Tím đậm - Danh mục
+    'category': '#8E44AD',
+    
+    'OTHER': '#95A5A6',            # Xám - Khác
+    'other': '#95A5A6',
+    'UNKNOWN': '#95A5A6'
 }
 
 CATEGORY_COLORS = {

@@ -1,9 +1,8 @@
 # backend/utils/llm_utils.py
 """
-✅ CLEAN: LLM utilities - No file I/O operations
+LLM utilities - No file I/O operations
 Chỉ xử lý API calls, không lưu file
 
-STATUS: ✅ ALREADY CLEAN - No changes needed
 """
 
 import os

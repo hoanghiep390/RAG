@@ -49,8 +49,6 @@ class DoclingExtractor:
         if not DOCLING_AVAILABLE:
             raise ImportError(
                 "❌ Docling is required but not installed!\n"
-                "Install with: pip install docling\n"
-                "Or: pip install -r requirements.txt"
             )
         
         try:
@@ -78,9 +76,6 @@ class DoclingExtractor:
                 logger.error(f" Docling initialization failed: {e2}")
                 raise RuntimeError(
                     f"Failed to initialize Docling with both API versions:\n"
-                    f"New API error: {e}\n"
-                    f"Old API error: {e2}\n"
-                    f"Please check your Docling version: pip show docling"
                 )
         
         self._initialized = True
@@ -135,7 +130,7 @@ class DoclingExtractor:
             )
     
     def _custom_export(self, result) -> str:
-        """Custom structured export with enhanced formatting"""
+        """Custom structured export with enhanced formatting and comprehensive element type support"""
         lines = []
         
         try:
@@ -148,32 +143,93 @@ class DoclingExtractor:
                     if not text:
                         continue
                     
-                    # Format based on element type
+                    # Format based on element type - EXPANDED COVERAGE
                     if label == "title":
                         lines.append(f"# {text}")
                     elif label == "section_header":
                         lines.append(f"## {text}")
                     elif label == "subtitle":
                         lines.append(f"### {text}")
+                    elif label in ["heading", "heading_1", "h1"]:
+                        lines.append(f"# {text}")
+                    elif label in ["heading_2", "h2"]:
+                        lines.append(f"## {text}")
+                    elif label in ["heading_3", "h3"]:
+                        lines.append(f"### {text}")
+                    elif label in ["heading_4", "h4"]:
+                        lines.append(f"#### {text}")
+                    elif label in ["heading_5", "h5"]:
+                        lines.append(f"##### {text}")
+                    elif label in ["heading_6", "h6"]:
+                        lines.append(f"###### {text}")
+                    
+                    # Table handling with improved error logging
                     elif label == "table":
-                        # Try to export table as markdown
                         if hasattr(element, 'export_to_dataframe'):
                             try:
                                 df = element.export_to_dataframe()
-                                lines.append(df.to_markdown(index=False))
-                            except:
-                                lines.append(text)
+                                table_md = df.to_markdown(index=False)
+                                lines.append(table_md)
+                                logger.debug(f"✅ Table exported as markdown ({len(df)} rows)")
+                            except Exception as table_err:
+                                logger.warning(f"⚠ Table export_to_dataframe failed: {table_err}, using raw text")
+                                lines.append(f"```\n{text}\n```")
                         else:
-                            lines.append(text)
+                            logger.debug(f"ℹ Table has no export_to_dataframe, using raw text")
+                            lines.append(f"```\n{text}\n```")
+                    
+                    # Lists
                     elif label == "list_item":
                         lines.append(f"- {text}")
-                    elif label == "paragraph":
-                        lines.append(text)
+                    elif label in ["numbered_list", "ordered_list"]:
+                        lines.append(f"1. {text}")
+                    elif label in ["bullet_list", "unordered_list"]:
+                        lines.append(f"- {text}")
+                    
+                    # Code blocks
+                    elif label in ["code_block", "code", "pre"]:
+                        lines.append(f"```\n{text}\n```")
+                    
+                    # Formulas and equations
+                    elif label in ["formula", "equation", "math"]:
+                        lines.append(f"$$\n{text}\n$$")
+                    
+                    # Quotes
+                    elif label in ["quote", "block_quote", "blockquote"]:
+                        quoted = "\n".join(f"> {line}" for line in text.split("\n"))
+                        lines.append(quoted)
+                    
+                    # Figures and images (preserve caption)
+                    elif label in ["figure", "picture", "image"]:
+                        lines.append(f"![Figure: {text}]")
+                    
+                    # Headers and footers
+                    elif label in ["page_header", "header"]:
+                        lines.append(f"*[Header: {text}]*")
+                    elif label in ["page_footer", "footer"]:
+                        lines.append(f"*[Footer: {text}]*")
+                    
+                    # References and citations
+                    elif label in ["reference", "citation", "bibliography"]:
+                        lines.append(f"[^{text}]")
+                    
+                    # Text boxes and callouts
+                    elif label in ["text_box", "callout", "note"]:
+                        lines.append(f"📌 **Note:** {text}")
+                    
+                    # Captions and footnotes
                     elif label == "caption":
                         lines.append(f"*{text}*")
                     elif label == "footnote":
-                        lines.append(f"^{text}")
+                        lines.append(f"[^{text}]")
+                    
+                    # Paragraph (default)
+                    elif label == "paragraph":
+                        lines.append(text)
+                    
+                    # Unknown types - log and preserve
                     else:
+                        logger.debug(f"ℹ Unknown element type '{label}', preserving as text")
                         lines.append(text)
                     
                     lines.append("")  # Add spacing
@@ -184,20 +240,31 @@ class DoclingExtractor:
             
             # Final fallback: try to get raw text
             if hasattr(result.document, 'text'):
+                logger.warning("⚠ Using document.text fallback")
                 return result.document.text
             
-            # Last resort: convert result to string
-            return str(result.document)
+            # Last resort: try dict representation
+            if hasattr(result.document, 'to_dict'):
+                logger.warning("⚠ Using document.to_dict fallback")
+                doc_dict = result.document.to_dict()
+                return str(doc_dict.get('text', ''))
+            
+            logger.error("❌ All export methods failed, returning empty string")
+            return ""
         
         except Exception as e:
-            logger.warning(f" Custom export failed: {e}")
+            logger.error(f"❌ Custom export failed: {e}")
             
             # Try to get any text from result
             try:
                 if hasattr(result.document, 'text'):
                     return result.document.text
-                return str(result.document)
-            except:
+                if hasattr(result.document, 'to_dict'):
+                    return str(result.document.to_dict().get('text', ''))
+                logger.error("❌ No fallback method available")
+                return ""
+            except Exception as fallback_err:
+                logger.error(f"❌ Fallback also failed: {fallback_err}")
                 raise RuntimeError(f"Cannot extract text from document: {e}")
 
 
