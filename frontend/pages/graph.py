@@ -103,11 +103,8 @@ def load_graph(user_id: str):
         for link in graph_data['links']:
             G.add_edge(
                 link['source'], link['target'],
-                relationship_type=link.get('relationship_type', 'RELATED_TO'),
-                verb_phrase=link.get('verb_phrase', ''),
-                category=link.get('category', 'ASSOCIATIVE'),
-                description=link.get('description', ''),
                 keywords=link.get('keywords', ''),
+                description=link.get('description', ''),
                 strength=link.get('strength', 1.0),
                 chunks=link.get('chunks', []),
                 source_documents=link.get('source_documents', [])
@@ -127,18 +124,20 @@ if not G or G.number_of_nodes() == 0:
 
 # STATISTICS
 entity_types = {}
-rel_types = {}
-rel_categories = {}
+rel_keywords = {}
 
 for _, d in G.nodes(data=True):
     t = d.get('type', 'UNKNOWN')
     entity_types[t] = entity_types.get(t, 0) + 1
 
 for _, _, d in G.edges(data=True):
-    rt = d.get('relationship_type', 'UNKNOWN')
-    cat = d.get('category', 'UNKNOWN')
-    rel_types[rt] = rel_types.get(rt, 0) + 1
-    rel_categories[cat] = rel_categories.get(cat, 0) + 1
+    kw = d.get('keywords', '')
+    if kw:
+        # Count unique keywords
+        for k in kw.split(','):
+            k = k.strip()
+            if k:
+                rel_keywords[k] = rel_keywords.get(k, 0) + 1
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -158,15 +157,16 @@ with col2:
 
 with col3:
     st.markdown(
-        f"<div class='stat-card'><div class='stat-value'>{len(rel_types)}</div>"
-        f"<div class='stat-label'>🏷️ Types</div></div>",
+        f"<div class='stat-card'><div class='stat-value'>{len(rel_keywords)}</div>"
+        f"<div class='stat-label'>🏷️ Keywords</div></div>",
         unsafe_allow_html=True
     )
 
 with col4:
+    avg_strength = sum(d.get('strength', 1.0) for _, _, d in G.edges(data=True)) / max(G.number_of_edges(), 1)
     st.markdown(
-        f"<div class='stat-card'><div class='stat-value'>{len(rel_categories)}</div>"
-        f"<div class='stat-label'>📂 Categories</div></div>",
+        f"<div class='stat-card'><div class='stat-value'>{avg_strength:.1f}</div>"
+        f"<div class='stat-label'>💪 Avg Strength</div></div>",
         unsafe_allow_html=True
     )
 
@@ -203,49 +203,43 @@ for idx, (key, label, color) in enumerate(entity_type_colors_display):
 # COLORS - Match với 12 entity types trong extraction.py
 ENTITY_COLORS = {
     # Core types
-    'PERSON': '#FF6B6B',           # Đỏ cam - Người
+    'PERSON': '#FF6B6B',       
     'person': '#FF6B6B',
     
-    'ORGANIZATION': '#4ECDC4',     # Xanh ngọc - Tổ chức
+    'ORGANIZATION': '#4ECDC4',     
     'organization': '#4ECDC4',
     
-    'LOCATION': '#45B7D1',         # Xanh dương nhạt - Địa điểm
+    'LOCATION': '#45B7D1',         
     'location': '#45B7D1',
     
-    'EVENT': '#F39C12',            # Cam - Sự kiện
+    'EVENT': '#F39C12',           
     'event': '#F39C12',
     
-    'PRODUCT': '#9B59B6',          # Tím - Sản phẩm
+    'PRODUCT': '#9B59B6',          
     'product': '#9B59B6',
     
-    'CONCEPT': '#1ABC9C',          # Xanh lá - Khái niệm
+    'CONCEPT': '#1ABC9C',          
     'concept': '#1ABC9C',
     
-    'TECHNOLOGY': '#3498DB',       # Xanh dương - Công nghệ
+    'TECHNOLOGY': '#3498DB',       
     'technology': '#3498DB',
     
     # Extended types
-    'DATE': '#E74C3C',             # Đỏ - Ngày tháng
+    'DATE': '#E74C3C',             
     'date': '#E74C3C',
     
-    'METRIC': '#16A085',           # Xanh lá đậm - Số liệu
+    'METRIC': '#16A085',          
     'metric': '#16A085',
     
-    'EQUIPMENT': '#D35400',        # Cam đậm - Thiết bị
+    'EQUIPMENT': '#D35400',        
     'equipment': '#D35400',
     
-    'CATEGORY': '#8E44AD',         # Tím đậm - Danh mục
+    'CATEGORY': '#8E44AD',         
     'category': '#8E44AD',
     
-    'OTHER': '#95A5A6',            # Xám - Khác
+    'OTHER': '#95A5A6',            
     'other': '#95A5A6',
     'UNKNOWN': '#95A5A6'
-}
-
-CATEGORY_COLORS = {
-    'HIERARCHICAL': '#ef4444', 'FUNCTIONAL': '#3b82f6', 'TEMPORAL': '#f59e0b',
-    'LOCATIONAL': '#10b981', 'ASSOCIATIVE': '#6b7280', 'INFLUENCE': '#8b5cf6',
-    'UNKNOWN': '#4b5563'
 }
 
 # TABS
@@ -266,7 +260,7 @@ with tab1:
     
     # 🆕 FILTERS
     st.markdown("#### 🎯 Filters")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
     with col1:
         filter_entity_type = st.multiselect(
@@ -276,20 +270,13 @@ with tab1:
         )
     
     with col2:
-        filter_rel_type = st.multiselect(
-            "Relationship Types",
-            options=['ALL'] + sorted(rel_types.keys()),
+        filter_keywords = st.multiselect(
+            "Keywords",
+            options=['ALL'] + sorted(rel_keywords.keys())[:50],  # Limit to top 50
             default=['ALL']
         )
     
-    with col3:
-        filter_category = st.multiselect(
-            "Categories",
-            options=['ALL'] + sorted(rel_categories.keys()),
-            default=['ALL']
-        )
-    
-    color_by = st.radio("Edge Color By", ['Category', 'Type'], horizontal=True)
+    min_strength_filter = st.slider("Min Edge Strength", 0.0, 10.0, 0.0, 0.5)
     
     if st.button("🎨 Generate", type="primary"):
         with st.spinner("Creating graph..."):
@@ -329,26 +316,30 @@ with tab1:
                     if s not in nodes_to_show or t not in nodes_to_show:
                         continue
                     
-                    rt = d.get('relationship_type', 'UNKNOWN')
-                    cat = d.get('category', 'UNKNOWN')
-                    
-                    if 'ALL' not in filter_rel_type and rt not in filter_rel_type:
-                        continue
-                    if 'ALL' not in filter_category and cat not in filter_category:
-                        continue
-                    
+                    keywords = d.get('keywords', '')
                     strength = d.get('strength', 1.0)
-                    verb = d.get('verb_phrase', rt.lower())
                     
-                    # Color by category or type
-                    if color_by == 'Category':
-                        edge_color = CATEGORY_COLORS.get(cat, '#4b5563')
+                    # Filter by strength
+                    if strength < min_strength_filter:
+                        continue
+                    
+                    # Filter by keywords
+                    if 'ALL' not in filter_keywords:
+                        kw_list = [k.strip() for k in keywords.split(',') if k.strip()]
+                        if not any(k in filter_keywords for k in kw_list):
+                            continue
+                    
+                    # Edge color based on strength
+                    if strength >= 5.0:
+                        edge_color = '#ef4444'  # Red - strong
+                    elif strength >= 3.0:
+                        edge_color = '#f59e0b'  # Orange - medium
                     else:
-                        edge_color = '#848484'
+                        edge_color = '#6b7280'  # Gray - weak
                     
                     net.add_edge(
                         s, t,
-                        title=f"<b>{rt}</b> ({cat})<br>{verb}<br>{d.get('description', '')}",
+                        title=f"<b>Keywords:</b> {keywords}<br><b>Strength:</b> {strength:.1f}<br>{d.get('description', '')}",
                         value=strength * edge_width,
                         color={'color': edge_color, 'opacity': 0.8}
                     )
@@ -431,45 +422,49 @@ with tab3:
 with tab4:
     st.markdown("### 🔗 Relationships")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         min_strength = st.slider("Min Strength", 0.0, 10.0, 0.0, 0.5)
     with col2:
-        filter_type_rel = st.selectbox("Type", ['ALL'] + sorted(rel_types.keys()))
-    with col3:
-        filter_cat_rel = st.selectbox("Category", ['ALL'] + sorted(rel_categories.keys()))
+        filter_keyword_rel = st.selectbox("Keyword", ['ALL'] + sorted(rel_keywords.keys())[:50])
     
     rels = []
     for s, t, d in G.edges(data=True):
         strength = d.get('strength', 1.0)
-        rt = d.get('relationship_type', 'UNKNOWN')
-        cat = d.get('category', 'UNKNOWN')
+        keywords = d.get('keywords', '')
         
         if strength < min_strength:
             continue
-        if filter_type_rel != 'ALL' and rt != filter_type_rel:
-            continue
-        if filter_cat_rel != 'ALL' and cat != filter_cat_rel:
-            continue
+        
+        # Filter by keyword
+        if filter_keyword_rel != 'ALL':
+            kw_list = [k.strip() for k in keywords.split(',') if k.strip()]
+            if filter_keyword_rel not in kw_list:
+                continue
         
         rels.append({
-            's': s, 't': t, 'rt': rt, 'cat': cat, 'verb': d.get('verb_phrase', ''),
-            'd': d.get('description', ''), 'kw': d.get('keywords', ''), 'str': strength
+            's': s, 't': t, 'kw': keywords,
+            'd': d.get('description', ''), 'str': strength
         })
     
     rels.sort(key=lambda x: x['str'], reverse=True)
     st.markdown(f"**{len(rels)} relationships**")
     
     for r in rels[:50]:
-        cat_color = CATEGORY_COLORS.get(r['cat'], '#4b5563')
+        # Color based on strength
+        if r['str'] >= 5.0:
+            strength_color = '#ef4444'  # Red
+        elif r['str'] >= 3.0:
+            strength_color = '#f59e0b'  # Orange
+        else:
+            strength_color = '#6b7280'  # Gray
         
         st.markdown(f"""
         <div class='entity-card'>
             <strong>{r['s']}</strong> → <strong>{r['t']}</strong><br>
-            <span class='badge' style='background:{cat_color}'>{r['cat']}</span>
-            <span class='badge' style='background:#6b7280'>{r['rt']}</span>
-            <span class='badge' style='background:#3b82f6'>S: {r['str']:.1f}</span><br>
-            <small><em>"{r['verb']}"</em> - {r['d'] if r['d'] else '_No desc_'}</small>
+            <span class='badge' style='background:#3b82f6'>{r['kw']}</span>
+            <span class='badge' style='background:{strength_color}'>Strength: {r['str']:.1f}</span><br>
+            <small>{r['d'] if r['d'] else '_No description_'}</small>
         </div>
         """, unsafe_allow_html=True)
 

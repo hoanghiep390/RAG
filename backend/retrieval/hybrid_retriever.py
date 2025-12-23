@@ -1,6 +1,6 @@
 # backend/retrieval/hybrid_retriever.py
 """
-🚀 ENHANCED HYBRID RETRIEVAL - Inspired by LightRAG
+🚀 ENHANCED HYBRID RETRIEVAL 
 """
 
 from typing import List, Dict, Optional, Any, Tuple
@@ -16,14 +16,14 @@ from backend.retrieval.graph_retriever import GraphRetriever, GraphContext
 logger = logging.getLogger(__name__)
 
 #  RETRIEVAL MODES 
-            
+
 @dataclass
 class RetrievalMode:
     """Retrieval configuration"""
     use_global: bool = True      
     use_local: bool = True       
     use_multi_hop: bool = False  
-    expand_query: bool = False   # ✅ OPTIMIZED: Disabled by default for speed
+    expand_query: bool = False
     rerank: bool = True          
 
 #  QUERY EXPANSION 
@@ -72,11 +72,11 @@ async def global_retrieval(
             top_k=top_k
         )
         
-        logger.info(f"🌐 Global retrieval: {len(chunks)} chunks")
+        logger.info(f"🌐 Truy xuất toàn cục: {len(chunks)} chunks")
         return chunks
     
     except Exception as e:
-        logger.error(f"Global retrieval failed: {e}")
+        logger.error(f"❌ Truy xuất toàn cục thất bại: {e}")
         return []
 
 
@@ -100,11 +100,11 @@ async def local_retrieval(
             max_neighbors=max_neighbors
         )
         
-        logger.info(f"📍 Local retrieval: {len(contexts)} entities")
+        logger.info(f"📍 Truy xuất cục bộ: {len(contexts)} entities")
         return contexts
     
     except Exception as e:
-        logger.error(f"Local retrieval failed: {e}")
+        logger.error(f"❌ Truy xuất cục bộ thất bại: {e}")
         return []
 
 
@@ -178,11 +178,11 @@ def multi_hop_traversal(
             
             all_paths.extend(paths[:max_paths])
         
-        logger.info(f"🔀 Multi-hop: {len(all_paths)} paths found")
+        logger.info(f"🔀 Multi-hop: đã tìm thấy {len(all_paths)} đường đi")
         return all_paths[:max_paths]
     
     except Exception as e:
-        logger.error(f"Multi-hop traversal failed: {e}")
+        logger.error(f"❌ Duyệt multi-hop thất bại: {e}")
         return []
 
 
@@ -334,7 +334,7 @@ class EnhancedHybridRetriever:
         
         # Analyze query
         analysis = self.query_analyzer.analyze(query)
-        logger.info(f"📊 Intent: {analysis.intent}, Entities: {analysis.entities}")
+        logger.info(f"📊 Ý định: {analysis.intent}, Entities: {analysis.entities}")
         
         # Query expansion (optimized: only when explicitly enabled)
         queries = [query]
@@ -342,7 +342,7 @@ class EnhancedHybridRetriever:
             from backend.config import Config
             if Config.ENABLE_QUERY_EXPANSION:
                 queries = self.query_expander.expand(query)
-                logger.info(f"🔍 Expanded to {len(queries)} queries")
+                logger.info(f"🔍 Đã mở rộng thành {len(queries)} queries")
         
         # Execute retrieval
         try:
@@ -498,9 +498,11 @@ class EnhancedHybridRetriever:
                 if entity.relationships:
                     lines.append(f"    🔗 Relationships:")
                     for rel in entity.relationships[:3]:
+                        rel_type = rel.get('relationship_type', rel.get('keywords', 'RELATED_TO'))
+                        category = rel.get('category', rel.get('keywords', ''))
                         lines.append(
-                            f"       • {rel['relationship_type']} → {rel['target']} "
-                            f"[{rel['category']}]"
+                            f"       • {rel_type} → {rel['target']} "
+                            f"[{category}]"
                         )
                 
                 lines.append("")

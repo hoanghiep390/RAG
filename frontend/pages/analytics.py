@@ -9,6 +9,7 @@ import plotly.graph_objects as go
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from backend.config import get_mongodb
 from backend.db.user_manager import load_users
+from backend.db.feedback_storage import FeedbackStorage
 
 # Auth Check
 if not st.session_state.get('authenticated') or st.session_state.get('role') != 'admin':
@@ -156,4 +157,97 @@ for log in filtered[:show_n]:
     st.markdown(f"**🔐 {ui.get('username', 'Unknown')}** ({ui.get('role', 'N/A')}) - {log['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.markdown("---")
-st.caption("📊 Analytics v2.2 - Data cached 5min")
+
+# ================= FEEDBACK ANALYTICS =================
+st.subheader("💬 User Feedback Analytics")
+
+# Get all users for feedback aggregation
+all_user_ids = [uid for uid in user_stats.keys()]
+
+if all_user_ids:
+    # Aggregate feedback stats
+    total_feedbacks = 0
+    all_ratings = []
+    rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+    recent_feedbacks = []
+    
+    for uid in all_user_ids:
+        try:
+            fb_storage = FeedbackStorage(uid)
+            stats = fb_storage.get_statistics()
+            
+            total_feedbacks += stats['total_feedbacks']
+            
+            # Aggregate ratings
+            for rating, count in stats['rating_distribution'].items():
+                rating_dist[rating] += count
+                all_ratings.extend([rating] * count)
+            
+            # Get recent feedbacks
+            feedbacks = fb_storage.list_user_feedbacks(limit=10)
+            for fb in feedbacks:
+                fb['username'] = user_stats.get(uid, {}).get('username', 'Unknown')
+                recent_feedbacks.append(fb)
+        except:
+            continue
+    
+    # Calculate overall average
+    avg_rating = sum(all_ratings) / len(all_ratings) if all_ratings else 0
+    
+    # Display stats
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Feedbacks", total_feedbacks)
+    with col2:
+        st.metric("Average Rating", f"{avg_rating:.2f}/5.0")
+    with col3:
+        satisfaction = (avg_rating / 5.0) * 100
+        st.metric("Satisfaction", f"{satisfaction:.1f}%")
+    
+    # Rating Distribution Chart
+    st.markdown("**📊 Rating Distribution**")
+    ratings = list(rating_dist.keys())
+    counts = [rating_dist[r] for r in ratings]
+    
+    fig = go.Figure(go.Bar(
+        x=[f"{r} ⭐" for r in ratings],
+        y=counts,
+        marker=dict(color=['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e']),
+        text=counts,
+        textposition='outside'
+    ))
+    fig.update_layout(
+        template='plotly_dark',
+        height=300,
+        showlegend=False,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        xaxis_title="Rating",
+        yaxis_title="Count"
+    )
+    st.plotly_chart(fig, width='stretch')
+    
+    # Recent Feedbacks
+    st.markdown("**📝 Recent Feedbacks**")
+    
+    # Sort by created_at
+    recent_feedbacks.sort(key=lambda x: x.get('created_at', datetime.min), reverse=True)
+    
+    show_feedbacks = st.slider("Show feedbacks", 5, 50, 20)
+    
+    for fb in recent_feedbacks[:show_feedbacks]:
+        rating_stars = '⭐' * fb['rating']
+        username = fb.get('username', 'Unknown')
+        created = fb.get('created_at', datetime.now()).strftime('%Y-%m-%d %H:%M')
+        text = fb.get('feedback_text', '')
+        
+        with st.container():
+            st.markdown(f"**{rating_stars}** ({fb['rating']}/5) - {username} - {created}")
+            if text:
+                st.markdown(f"💬 *\"{text}\"*")
+            st.markdown("---")
+else:
+    st.info("No users found")
+
+st.markdown("---")
+st.caption("📊 Analytics v2.3 - Data cached 5min")

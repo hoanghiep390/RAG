@@ -46,6 +46,9 @@ def validate_password(password: str) -> bool:
 
 def create_default_admin():
     users = load_users()
+    if users is None:
+        users = {}
+    
     if "admin" not in users:
         users["admin"] = {
             "username": "admin",
@@ -194,37 +197,40 @@ with st.container():
                     st.markdown("<div class='error-msg'>❌ Vui lòng nhập đầy đủ thông tin.</div>", unsafe_allow_html=True)
                 else:
                     users = load_users()
-                    user_key = username.lower()
-                    if user_key in users and users[user_key]["password"] == hash_password(password):
-                        st.session_state.authenticated = True
-                        st.session_state.user_id = users[user_key]["user_id"]
-                        st.session_state.username = users[user_key]["username"]
-                        st.session_state.role = users[user_key]["role"]
-                        
-                        try:
-                            db = get_mongodb()
-                            login_logs = db['login_logs']
-                            login_logs.insert_one({
-                                'user_id': st.session_state.user_id,
-                                'username': st.session_state.username,
-                                'role': st.session_state.role,
-                                'timestamp': datetime.now(),
-                                'ip_address': 'N/A',
-                                'user_agent': 'Streamlit App'
-                            })
-                        except Exception as e:
-                            pass
-                        
-                        # Only create dirs for admin
-                        if st.session_state.role == 'admin':
-                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/uploads"))
-                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
-                            ensure_dir(Path(f"backend/data/{st.session_state.user_id}/graphs"))
-
-                        st.success(f"✅ Đăng nhập thành công! Chào {st.session_state.role.title()}.")
-                        st.rerun()
+                    if users is None:
+                        st.markdown("<div class='error-msg'>❌ Lỗi kết nối cơ sở dữ liệu. Vui lòng thử lại sau.</div>", unsafe_allow_html=True)
                     else:
-                        st.markdown("<div class='error-msg'>❌ Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
+                        user_key = username.lower()
+                        if user_key in users and users[user_key]["password"] == hash_password(password):
+                            st.session_state.authenticated = True
+                            st.session_state.user_id = users[user_key]["user_id"]
+                            st.session_state.username = users[user_key]["username"]
+                            st.session_state.role = users[user_key]["role"]
+                            
+                            try:
+                                db = get_mongodb()
+                                login_logs = db['login_logs']
+                                login_logs.insert_one({
+                                    'user_id': st.session_state.user_id,
+                                    'username': st.session_state.username,
+                                    'role': st.session_state.role,
+                                    'timestamp': datetime.now(),
+                                    'ip_address': 'N/A',
+                                    'user_agent': 'Streamlit App'
+                                })
+                            except Exception as e:
+                                pass
+                            
+                            # Only create dirs for admin
+                            if st.session_state.role == 'admin':
+                                ensure_dir(Path(f"backend/data/{st.session_state.user_id}/uploads"))
+                                ensure_dir(Path(f"backend/data/{st.session_state.user_id}/chunks"))
+                                ensure_dir(Path(f"backend/data/{st.session_state.user_id}/graphs"))
+
+                            st.success(f"✅ Đăng nhập thành công! Chào {st.session_state.role.title()}.")
+                            st.rerun()
+                        else:
+                            st.markdown("<div class='error-msg'>❌ Sai tên đăng nhập hoặc mật khẩu!</div>", unsafe_allow_html=True)
 
     else:  # Signup mode
         st.markdown("<h1 class='login-title'>📝 Đăng Ký</h1>", unsafe_allow_html=True)
@@ -255,7 +261,9 @@ with st.container():
                     error = "❌ Mật khẩu xác nhận không khớp."
                 else:
                     users = load_users()
-                    if new_username.lower() in users:
+                    if users is None:
+                        error = "❌ Lỗi kết nối cơ sở dữ liệu. Vui lòng thử lại sau."
+                    elif new_username.lower() in users:
                         error = "❌ Tên người dùng đã tồn tại."
 
                 if error:

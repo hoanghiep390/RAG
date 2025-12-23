@@ -89,7 +89,7 @@ class Config:
         
         # Check embedding dimension
         if cls.EMBEDDING_MODEL == 'all-MiniLM-L6-v2' and cls.EMBEDDING_DIM != 384:
-            logger.warning(f"EMBEDDING_DIM is {cls.EMBEDDING_DIM} but all-MiniLM-L6-v2 produces 384-dim vectors")
+            logger.warning(f"⚠️ EMBEDDING_DIM là {cls.EMBEDDING_DIM} nhưng all-MiniLM-L6-v2 tạo vectors 384-chiều")
         
         # Check HNSW params
         if cls.USE_HNSW and cls.HNSW_M < 4:
@@ -98,7 +98,7 @@ class Config:
         if errors:
             raise ValueError(f"Configuration errors:\n" + "\n".join(f"- {e}" for e in errors))
         
-        logger.info("✅ Configuration validated successfully")
+        logger.info("✅ Đã xác thực cấu hình thành công")
 # ================= MongoDB Connection Manager =================
 class MongoDBConfig:
     """MongoDB configuration and connection manager"""
@@ -116,10 +116,10 @@ class MongoDBConfig:
             # Test connection
             self.client.admin.command('ping')
             self.db = self.client[self.db_name]
-            logger.info(f"✅ Connected to MongoDB: {self.db_name}")
+            logger.info(f"✅ Đã kết nối MongoDB: {self.db_name}")
             return True
         except ConnectionFailure as e:
-            logger.error(f"❌ MongoDB connection failed: {e}")
+            logger.error(f"❌ Kết nối MongoDB thất bại: {e}")
             return False
     
     def get_database(self):
@@ -132,7 +132,7 @@ class MongoDBConfig:
         """Close MongoDB connection"""
         if self.client:
             self.client.close()
-            logger.info("🔒 MongoDB connection closed")
+            logger.info("✅ Đã đóng kết nối MongoDB")
     
     def health_check(self):
         """Check MongoDB health"""
@@ -142,7 +142,7 @@ class MongoDBConfig:
                 return True
             return False
         except Exception as e:
-            logger.error(f"❌ MongoDB health check failed: {e}")
+            logger.error(f"❌ Kiểm tra sức khỏe MongoDB thất bại: {e}")
             return False
 
 # Global instance
@@ -178,16 +178,15 @@ def initialize_config():
         Config.validate()
         Config.print_config()
         
-        # Test MongoDB connection
         db = get_mongodb()
         if db is not None:
-            logger.info("✅ Configuration initialized successfully")
+            logger.info("✅ Đã khởi tạo cấu hình thành công")
             return True
         else:
-            logger.error("❌ Failed to connect to MongoDB")
+            logger.error("❌ Không thể kết nối MongoDB")
             return False
     except Exception as e:
-        logger.error(f"❌ Configuration initialization failed: {e}")
+        logger.error(f"❌ Khởi tạo cấu hình thất bại: {e}")
         return False
 
 # ================= Export =================

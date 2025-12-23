@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 try:
     import faiss
     FAISS_AVAILABLE = True
-    logger.info(" FAISS library loaded successfully")
+    logger.info("✅ Thư viện FAISS đã tải thành công")
 except ImportError as e:
     FAISS_AVAILABLE = False
-    logger.error(f" FAISS not available: {e}")
-    logger.warning(" Using NumPy fallback (SLOW, NOT RECOMMENDED FOR PRODUCTION)")
+    logger.error(f"❌ FAISS không khả dụng: {e}")
+    logger.warning("⚠️ Sử dụng NumPy dự phòng (CHẬM, KHÔNG KHUYẾN NGHỊ CHO PRODUCTION)")
     
     class IndexFlatL2:
         def __init__(self, dim):
@@ -83,7 +83,7 @@ except ImportError as e:
         path = Path(path)
         arr = getattr(index, '_vectors', np.zeros((0, index.dim), dtype=np.float32))
         np.save(str(path), arr)
-        logger.debug(f"💾 Saved NumPy index: {path}")
+        logger.debug(f"💾 Đã lưu NumPy index: {path}")
 
     def read_index(path):
         """Load index from file"""
@@ -93,7 +93,7 @@ except ImportError as e:
             path = Path(str(path) + '.npy')
         
         if not path.exists():
-            logger.warning(f"⚠️ Index file not found: {path}")
+            logger.warning(f"⚠️ Không tìm thấy file index: {path}")
             return None
         
         arr = np.load(str(path), allow_pickle=False)
@@ -112,7 +112,7 @@ except ImportError as e:
         if arr.size:
             idx.add(arr)
         
-        logger.debug(f"📥 Loaded NumPy index: {path}")
+        logger.debug(f"📥 Đã tải NumPy index: {path}")
         return idx
 
     faiss = type('faiss_module', (), {
@@ -148,9 +148,9 @@ class VectorDatabase:
         self._deleted_count = 0
         self._index_type = 'FLAT'
         
-        logger.info(f" VectorDB initialized for user: {user_id}")
-        logger.info(f" Base dir: {self.base_dir}")
-        logger.info(f" FAISS available: {FAISS_AVAILABLE}")
+        logger.info(f"🔧 VectorDB đã khởi tạo cho user: {user_id}")
+        logger.info(f"📁 Thư mục gốc: {self.base_dir}")
+        logger.info(f"✅ FAISS khả dụng: {FAISS_AVAILABLE}")
         
         self._load_or_create()
     
@@ -158,12 +158,12 @@ class VectorDatabase:
         """ Robust load with proper error handling"""
         if self.index_path.exists() and self.metadata_path.exists():
             try:
-                logger.info(f" Loading existing index from: {self.index_path}")
+                logger.info(f"📂 Đang tải index hiện có từ: {self.index_path}")
                 
                 self.index = faiss.read_index(str(self.index_path))
                 
                 if self.index is None:
-                    logger.warning(" Index loaded but is None, creating new")
+                    logger.warning("⚠️ Index đã tải nhưng là None, đang tạo mới")
                     self._create_new_index()
                     return
                 
@@ -181,41 +181,41 @@ class VectorDatabase:
                 
                 self._deleted_count = sum(1 for m in self.metadata.values() if m.get('_deleted'))
                 
-                logger.info(f" Loaded index: {self.index.ntotal} vectors ({self._deleted_count} deleted)")
-                logger.info(f" Index type: {self._index_type}")
+                logger.info(f"✅ Đã tải index: {self.index.ntotal} vectors ({self._deleted_count} đã xóa)")
+                logger.info(f"📊 Loại index: {self._index_type}")
                 
             except Exception as e:
-                logger.error(f" Failed to load index: {e}")
-                logger.info(" Creating new index...")
+                logger.error(f"❌ Không thể tải index: {e}")
+                logger.info("🔨 Đang tạo index mới...")
                 self._create_new_index()
         else:
-            logger.info(" No existing index found, creating new")
+            logger.info("📝 Không tìm thấy index hiện có, đang tạo mới")
             self._create_new_index()
     
     def _create_new_index(self):
         """ Create index with proper metadata"""
         from backend.config import Config
         
-        logger.info(f" Creating new {self.dim}-dim index")
+        logger.info(f"🔨 Đang tạo index {self.dim}-chiều mới")
         
         if self.use_hnsw:
             try:
                 if hasattr(faiss, 'IndexHNSWFlat'):
                     self.index = faiss.IndexHNSWFlat(self.dim, Config.HNSW_M)
                     self._index_type = 'HNSW'
-                    logger.info(f" Created HNSW index (M={Config.HNSW_M})")
+                    logger.info(f"✅ Đã tạo HNSW index (M={Config.HNSW_M})")
                 else:
                     self.index = faiss.IndexFlatL2(self.dim)
                     self._index_type = 'FLAT'
-                    logger.warning(" HNSW not available, using Flat")
+                    logger.warning("⚠️ HNSW không khả dụng, sử dụng Flat")
             except Exception as e:
-                logger.error(f" HNSW creation failed: {e}, using Flat")
+                logger.error(f"❌ Tạo HNSW thất bại: {e}, sử dụng Flat")
                 self.index = faiss.IndexFlatL2(self.dim)
                 self._index_type = 'FLAT'
         else:
             self.index = faiss.IndexFlatL2(self.dim)
             self._index_type = 'FLAT'
-            logger.info(" Created Flat L2 index")
+            logger.info("✅ Đã tạo Flat L2 index")
         
         self.metadata = {}
         self.document_map = {}
@@ -228,11 +228,11 @@ class VectorDatabase:
                                       embeddings: List[Dict], tags: List[str] = None) -> int:
         """ Add embeddings with proper validation"""
         if not embeddings:
-            logger.warning(f" No embeddings to add for {filename}")
+            logger.warning(f"⚠️ Không có embeddings để thêm cho {filename}")
             return 0
         
         if not self.index:
-            logger.error(" Index not initialized!")
+            logger.error("❌ Index chưa được khởi tạo!")
             return 0
         
         start_idx = self.index.ntotal
@@ -240,7 +240,7 @@ class VectorDatabase:
         try:
             first_emb = embeddings[0]['embedding']
             if len(first_emb) != self.dim:
-                logger.error(f" Embedding dim mismatch: expected {self.dim}, got {len(first_emb)}")
+                logger.error(f"❌ Kích thước embedding không khớp: mong đợi {self.dim}, nhận được {len(first_emb)}")
                 return 0
             
             vectors = np.array([e['embedding'] for e in embeddings], dtype=np.float32)
@@ -272,25 +272,25 @@ class VectorDatabase:
             if self.auto_save:
                 self.save()
             
-            logger.info(f" Added {len(embeddings)} embeddings for {filename} (idx {start_idx}-{end_idx})")
+            logger.info(f"✅ Đã thêm {len(embeddings)} embeddings cho {filename} (idx {start_idx}-{end_idx})")
             return len(embeddings)
         
         except Exception as e:
-            logger.error(f" Failed to add embeddings: {e}")
+            logger.error(f"❌ Không thể thêm embeddings: {e}")
             return 0
     
     def search(self, query_embedding: List[float], top_k: int = 5,
                doc_ids: Optional[List[str]] = None, skip_deleted: bool = True) -> List[Dict]:
         """ Search with proper error handling"""
         if not self.index or self.index.ntotal == 0:
-            logger.warning(" Empty index")
+            logger.warning("⚠️ Index rỗng")
             return []
         
         try:
             query_array = np.array([query_embedding], dtype=np.float32)
             
             if query_array.shape[1] != self.dim:
-                logger.error(f" Query dim mismatch: expected {self.dim}, got {query_array.shape[1]}")
+                logger.error(f"❌ Kích thước query không khớp: mong đợi {self.dim}, nhận được {query_array.shape[1]}")
                 return []
             
             search_k = min(top_k * 5, self.index.ntotal)
@@ -319,13 +319,13 @@ class VectorDatabase:
             return results
         
         except Exception as e:
-            logger.error(f" Search failed: {e}")
+            logger.error(f"❌ Tìm kiếm thất bại: {e}")
             return []
     
     def delete_document(self, doc_id: str) -> Dict:
         """ Soft delete with proper stats"""
         if doc_id not in self.document_map:
-            logger.warning(f" Document {doc_id} not found")
+            logger.warning(f"⚠️ Không tìm thấy document {doc_id}")
             return {'marked': 0, 'needs_rebuild': False}
         
         start, end = self.document_map[doc_id]['embedding_range']
@@ -346,7 +346,7 @@ class VectorDatabase:
         if self.auto_save:
             self.save()
         
-        logger.info(f" Marked {marked_count} vectors as deleted for {doc_id}")
+        logger.info(f"🗑️ Đã đánh dấu {marked_count} vectors là đã xóa cho {doc_id}")
         
         return {
             'marked': marked_count,
@@ -358,11 +358,11 @@ class VectorDatabase:
     def rebuild_index(self) -> Dict:
         """ Rebuild with proper index recreation"""
         if not FAISS_AVAILABLE:
-            logger.warning(" Cannot rebuild without FAISS")
+            logger.warning("⚠️ Không thể rebuild mà không có FAISS")
             return {}
         
         before_count = len(self.metadata)
-        logger.info(f" Rebuilding index ({before_count} vectors, {self._deleted_count} deleted)...")
+        logger.info(f"🔄 Đang rebuild index ({before_count} vectors, {self._deleted_count} đã xóa)...")
         
         active_vectors = []
         new_metadata = {}
@@ -414,7 +414,7 @@ class VectorDatabase:
             self.save()
         
         removed = before_count - len(new_metadata)
-        logger.info(f" Rebuild complete: {removed} removed, {len(new_metadata)} remaining")
+        logger.info(f"✅ Rebuild hoàn tất: {removed} đã xóa, {len(new_metadata)} còn lại")
         
         return {
             'before': before_count,
@@ -426,10 +426,10 @@ class VectorDatabase:
         """ Robust save with all metadata"""
         try:
             if not self.index:
-                logger.warning(" No index to save")
+                logger.warning("⚠️ Không có index để lưu")
                 return
             
-            logger.debug(f"Saving index to: {self.index_path}")
+            logger.debug(f"💾 Đang lưu index vào: {self.index_path}")
             faiss.write_index(self.index, str(self.index_path))
             
             with open(self.metadata_path, 'w', encoding='utf-8') as f:
@@ -448,10 +448,10 @@ class VectorDatabase:
                     'faiss_available': FAISS_AVAILABLE
                 }, f, indent=2)
             
-            logger.debug(f" Saved all data ({self.index.ntotal} vectors)")
+            logger.debug(f"✅ Đã lưu tất cả dữ liệu ({self.index.ntotal} vectors)")
         
         except Exception as e:
-            logger.error(f" Save failed: {e}")
+            logger.error(f"❌ Lưu thất bại: {e}")
             raise
     
     def get_statistics(self) -> Dict:

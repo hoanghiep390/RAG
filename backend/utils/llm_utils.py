@@ -1,7 +1,6 @@
 # backend/utils/llm_utils.py
 """
-LLM utilities - No file I/O operations
-Chỉ xử lý API calls, không lưu file
+LLM utilities xử lý API calls
 
 """
 
@@ -23,7 +22,7 @@ async def call_openai_async(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Async OpenAI call - No file operations"""
+    """ Async OpenAI call - No file operations"""
     try:
         from openai import AsyncOpenAI
 
@@ -51,7 +50,7 @@ async def call_openai_async(
     except ImportError:
         raise ImportError("openai package not installed")
     except Exception as e:
-        logger.error(f"OpenAI API error: {str(e)}")
+        logger.error(f"❌ Lỗi OpenAI API: {str(e)}")
         raise
 
 
@@ -63,7 +62,7 @@ def call_openai_sync(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Sync OpenAI call - No file operations"""
+    """Sync OpenAI call - No file operations"""
     try:
         from openai import OpenAI
 
@@ -91,7 +90,7 @@ def call_openai_sync(
     except ImportError:
         raise ImportError("openai package not installed")
     except Exception as e:
-        logger.error(f"OpenAI API error: {str(e)}")
+        logger.error(f"❌ Lỗi OpenAI API: {str(e)}")
         raise
 
 async def call_groq_async(
@@ -102,7 +101,7 @@ async def call_groq_async(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Async Groq call - No file operations"""
+    """Async Groq call - No file operations"""
     try:
         from groq import AsyncGroq
 
@@ -130,7 +129,7 @@ async def call_groq_async(
     except ImportError:
         raise ImportError("groq package not installed")
     except Exception as e:
-        logger.error(f"Groq API error: {str(e)}")
+        logger.error(f"❌ Lỗi Groq API: {str(e)}")
         raise
 
 
@@ -142,7 +141,7 @@ def call_groq_sync(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Sync Groq call - No file operations"""
+    """Sync Groq call - No file operations"""
     try:
         from groq import Groq
 
@@ -170,7 +169,7 @@ def call_groq_sync(
     except ImportError:
         raise ImportError("groq package not installed")
     except Exception as e:
-        logger.error(f"Groq API error: {str(e)}")
+        logger.error(f"❌ Lỗi Groq API: {str(e)}")
         raise
 
 
@@ -184,7 +183,7 @@ async def call_llm_async(
     provider: Optional[str] = None,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Universal async LLM call - No file operations"""
+    """ Universal async LLM call - No file operations"""
     provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
     
@@ -213,7 +212,7 @@ def call_llm(
     provider: Optional[str] = None,
     **kwargs
 ) -> str:
-    """✅ CLEAN: Universal sync LLM call - No file operations"""
+    """ Universal sync LLM call - No file operations"""
     provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
     
@@ -233,7 +232,6 @@ def call_llm(
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-
 async def call_llm_batch(
     prompts: List[str],
     system_prompt: Optional[str] = None,
@@ -241,7 +239,7 @@ async def call_llm_batch(
     max_concurrent: int = 5,
     **kwargs
 ) -> List[str]:
-    """✅ CLEAN: Batch processing - No file operations"""
+    """ Batch processing - No file operations"""
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def process_with_semaphore(prompt):
@@ -249,7 +247,7 @@ async def call_llm_batch(
             try:
                 return await call_llm_async(prompt, system_prompt, model, **kwargs)
             except Exception as e:
-                logger.error(f"Batch processing error: {str(e)}")
+                logger.error(f"❌ Lỗi xử lý batch: {str(e)}")
                 return ""
 
     tasks = [process_with_semaphore(prompt) for prompt in prompts]
@@ -263,46 +261,22 @@ async def call_llm_with_retry(
     max_retries: int = 3,
     **kwargs
 ) -> str:
-    """✅ CLEAN: LLM call with retry - No file operations"""
+    """ LLM call with retry - No file operations"""
     for attempt in range(max_retries):
         try:
             return await call_llm_async(prompt, **kwargs)
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
-            logger.warning(f"LLM call failed (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            logger.warning(f"⚠️ LLM call thất bại (lần thử {attempt + 1}/{max_retries}): {str(e)}")
             await asyncio.sleep(2 ** attempt)
 
 
 # ============================================
-# ✅ DEFAULT MODEL FALLBACK - CLEAN
+#  DEFAULT MODEL FALLBACK
 # ============================================
 
 DEFAULT_MODEL = os.getenv("LLM_MODEL")
 if not DEFAULT_MODEL:
     provider = os.getenv("LLM_PROVIDER", "groq").lower()
     DEFAULT_MODEL = "llama-3.1-70b-versatile" if provider == "groq" else "gpt-4o-mini"
-
-
-# ============================================
-# SUMMARY
-# ============================================
-
-"""
-✅ STATUS: CLEAN - No file I/O operations detected
-
-This module only handles:
-- LLM API calls (OpenAI, Groq)
-- Async/sync wrappers
-- Batch processing
-- Retry logic
-- Configuration from environment variables
-
-No file operations:
-- ✅ No file saving
-- ✅ No file loading
-- ✅ No caching to disk
-- ✅ Pure API communication
-
-All functions are clean and can be used as-is.
-"""

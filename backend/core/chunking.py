@@ -12,10 +12,10 @@ try:
     from docling.document_converter import DocumentConverter
     from docling.datamodel.base_models import InputFormat
     DOCLING_AVAILABLE = True
-    logger.info(" Docling available for PDF/DOCX processing")
+    logger.info("✅ Docling khả dụng cho xử lý PDF/DOCX")
 except ImportError:
     DOCLING_AVAILABLE = False
-    logger.error(" Docling not available! PDF/DOCX processing will fail.")
+    logger.error("❌ Docling không khả dụng! Xử lý PDF/DOCX sẽ thất bại.")
 
 #  Config 
 @dataclass
@@ -53,7 +53,7 @@ class DoclingExtractor:
         
         try:
             self.converter = DocumentConverter()
-            logger.info(" Docling initialized (using latest API)")
+            logger.info("✅ Đã khởi tạo Docling (sử dụng API mới nhất)")
         
         except TypeError as e:
             try:
@@ -70,10 +70,10 @@ class DoclingExtractor:
                     allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
                     pipeline_options=pipeline_options
                 )
-                logger.info(f" Docling initialized (using old API, device={device}, ocr={do_ocr})")
+                logger.info(f"✅ Đã khởi tạo Docling (sử dụng API cũ, thiết bị={device}, ocr={do_ocr})")
             
             except Exception as e2:
-                logger.error(f" Docling initialization failed: {e2}")
+                logger.error(f"❌ Khởi tạo Docling thất bại: {e2}")
                 raise RuntimeError(
                     f"Failed to initialize Docling with both API versions:\n"
                 )
@@ -94,7 +94,7 @@ class DoclingExtractor:
             Exception if extraction fails
         """
         try:
-            logger.info(f" Docling extracting: {Path(filepath).name}")
+            logger.info(f"📄 Docling đang trích xuất: {Path(filepath).name}")
             
             # Convert document
             result = self.converter.convert(filepath)
@@ -103,27 +103,27 @@ class DoclingExtractor:
             try:
                 markdown = result.document.export_to_markdown()
                 if markdown and len(markdown.strip()) > 0:
-                    logger.info(f" Docling markdown export: {len(markdown)} chars")
+                    logger.info(f"✅ Xuất Docling markdown: {len(markdown)} ký tự")
                     return markdown
             except Exception as e:
-                logger.warning(f" Markdown export failed: {e}, trying custom export")
+                logger.warning(f"⚠️ Xuất markdown thất bại: {e}, đang thử xuất tùy chỉnh")
             
             # Try text export
             try:
                 text = result.document.export_to_text()
                 if text and len(text.strip()) > 0:
-                    logger.info(f" Docling text export: {len(text)} chars")
+                    logger.info(f"✅ Xuất văn bản Docling: {len(text)} ký tự")
                     return text
             except Exception as e:
-                logger.warning(f" Text export failed: {e}, trying custom export")
+                logger.warning(f"⚠️ Xuất văn bản thất bại: {e}, đang thử xuất tùy chỉnh")
             
             # Fallback: custom export
             text = self._custom_export(result)
-            logger.info(f" Docling custom export: {len(text)} chars")
+            logger.info(f"✅ Xuất tùy chỉnh Docling: {len(text)} ký tự")
             return text
         
         except Exception as e:
-            logger.error(f" Docling extraction failed for {Path(filepath).name}: {e}")
+            logger.error(f"❌ Trích xuất Docling thất bại cho {Path(filepath).name}: {e}")
             raise RuntimeError(
                 f"Docling extraction failed: {e}\n"
                 f"Make sure the file is not corrupted and Docling is properly installed."
@@ -170,12 +170,12 @@ class DoclingExtractor:
                                 df = element.export_to_dataframe()
                                 table_md = df.to_markdown(index=False)
                                 lines.append(table_md)
-                                logger.debug(f"✅ Table exported as markdown ({len(df)} rows)")
+                                logger.debug(f"✅ Bảng đã xuất dạng markdown ({len(df)} dòng)")
                             except Exception as table_err:
-                                logger.warning(f"⚠ Table export_to_dataframe failed: {table_err}, using raw text")
+                                logger.warning(f"⚠️ Xuất bảng sang dataframe thất bại: {table_err}, sử dụng văn bản thô")
                                 lines.append(f"```\n{text}\n```")
                         else:
-                            logger.debug(f"ℹ Table has no export_to_dataframe, using raw text")
+                            logger.debug(f"ℹ️ Bảng không có export_to_dataframe, sử dụng văn bản thô")
                             lines.append(f"```\n{text}\n```")
                     
                     # Lists
@@ -229,7 +229,7 @@ class DoclingExtractor:
                     
                     # Unknown types - log and preserve
                     else:
-                        logger.debug(f"ℹ Unknown element type '{label}', preserving as text")
+                        logger.warning(f"⚠️ Loại phần tử không xác định '{label}', giữ nguyên dạng văn bản")
                         lines.append(text)
                     
                     lines.append("")  # Add spacing
@@ -240,20 +240,20 @@ class DoclingExtractor:
             
             # Final fallback: try to get raw text
             if hasattr(result.document, 'text'):
-                logger.warning("⚠ Using document.text fallback")
+                logger.warning("⚠️ Sử dụng document.text dự phòng")
                 return result.document.text
             
             # Last resort: try dict representation
             if hasattr(result.document, 'to_dict'):
-                logger.warning("⚠ Using document.to_dict fallback")
+                logger.warning("⚠️ Sử dụng document.to_dict dự phòng")
                 doc_dict = result.document.to_dict()
                 return str(doc_dict.get('text', ''))
             
-            logger.error("❌ All export methods failed, returning empty string")
+            logger.error("❌ Tất cả phương thức xuất đều thất bại, trả về chuỗi rỗng")
             return ""
         
         except Exception as e:
-            logger.error(f"❌ Custom export failed: {e}")
+            logger.error(f"❌ Xuất tùy chỉnh thất bại: {e}")
             
             # Try to get any text from result
             try:
@@ -261,10 +261,10 @@ class DoclingExtractor:
                     return result.document.text
                 if hasattr(result.document, 'to_dict'):
                     return str(result.document.to_dict().get('text', ''))
-                logger.error("❌ No fallback method available")
+                logger.error("❌ Không có phương thức dự phòng khả dụng")
                 return ""
             except Exception as fallback_err:
-                logger.error(f"❌ Fallback also failed: {fallback_err}")
+                logger.error(f"❌ Phương thức dự phòng cũng thất bại: {fallback_err}")
                 raise RuntimeError(f"Cannot extract text from document: {e}")
 
 
@@ -338,7 +338,7 @@ def _split_table_text(header: str, rows: List[str], prefix: str, enc, max_tokens
     return chunks
 
 def _split_table_markdown(text: str, enc, max_tokens: int, overlap: int) -> List[str]:
-    """Split markdown tables intelligently"""
+    """Split markdown tables intelligently - FIXED: preserve text after table"""
     lines = text.splitlines()
     block_start, block_end = None, None
     for i in range(len(lines)-1):
@@ -355,13 +355,38 @@ def _split_table_markdown(text: str, enc, max_tokens: int, overlap: int) -> List
     table_lines = lines[block_start:block_end]
     header, separator = table_lines[:2]
     rows = table_lines[2:]
-
-    return _split_table_text(header + "\n" + separator, rows, prefix, enc, max_tokens, overlap)
+    
+    # ✅ FIX: Don't lose text after table!
+    suffix = "\n".join(lines[block_end:]).strip()
+    
+    # Process table
+    table_chunks = _split_table_text(header + "\n" + separator, rows, prefix, enc, max_tokens, overlap)
+    
+    # ✅ FIX: Append suffix to last chunk or create new chunk
+    if suffix:
+        if table_chunks:
+            # Try to append suffix to last chunk
+            last_chunk = table_chunks[-1]
+            combined = last_chunk + "\n\n" + suffix
+            combined_tokens = len(enc.encode(combined))
+            
+            if combined_tokens <= max_tokens:
+                # Can fit in last chunk
+                table_chunks[-1] = combined
+            else:
+                # Need separate chunks for suffix
+                suffix_chunks = _soft_split(suffix, enc, max_tokens, overlap)
+                table_chunks.extend(suffix_chunks)
+        else:
+            # No table chunks, just return suffix
+            table_chunks = _soft_split(suffix, enc, max_tokens, overlap)
+    
+    return table_chunks
 
 # Chunker 
 class Chunker:
     """
-    Token-aware text chunker
+    Token-aware text chunker with heading hierarchy tracking
     """
     def __init__(self, config: ChunkConfig = None):
         if config is None:
@@ -376,35 +401,74 @@ class Chunker:
         
         self.config = config
         self.enc = tiktoken.encoding_for_model("gpt-4o-mini")
+        self.heading_stack = [] 
 
     def count_tokens(self, text: str) -> int:
         """Count tokens in text"""
         return len(self.enc.encode(text))
+    
+    def _parse_heading(self, line: str) -> tuple:
+        """Parse markdown heading and return (level, title) or (0, None)"""
+        line = line.strip()
+        if line.startswith('#'):
+            level = 0
+            while level < len(line) and line[level] == '#':
+                level += 1
+            if level <= 6 and level < len(line) and line[level] == ' ':
+                title = line[level:].strip()
+                return (level, title)
+        return (0, None)
+    
+    def _update_heading_stack(self, level: int, title: str):
+        """Update heading hierarchy stack"""
+        # Remove headings at same or lower level
+        self.heading_stack = [h for h in self.heading_stack if h[0] < level]
+        # Add new heading
+        self.heading_stack.append((level, title))
+    
+    def _get_current_section(self) -> str:
+        """Get current section path from heading stack"""
+        if not self.heading_stack:
+            return "ROOT"
+        return " > ".join(h[1] for h in self.heading_stack)
 
     def chunk_text(self, text: str, filepath: str, section: str = "ROOT") -> List[Dict]:
         """
-        Chunk text with token-aware splitting and table handling
+        Chunk text with token-aware splitting, table handling, and heading hierarchy tracking
         """
         lines = text.split('\n')
         chunks, buf, buf_tokens, order = [], [], 0, 0
+        self.heading_stack = []  # Reset hierarchy for new document
 
         for line in lines:
+            # Check if line is a heading
+            level, title = self._parse_heading(line)
+            if level > 0:
+                self._update_heading_stack(level, title)
+            
             line_tokens = self.count_tokens(line)
             if buf_tokens + line_tokens > self.config.max_tokens and buf:
                 combined = "\n".join(buf).strip()
                 pieces = _split_table_markdown(combined, self.enc, self.config.max_tokens, self.config.overlap_tokens)
+                current_section = self._get_current_section()
                 for i, p in enumerate(pieces, 1):
+                    #  Skip empty or tiny chunks
+                    if len(p.strip()) < 10:
+                        logger.warning(f"⚠️ Bỏ qua chunk nhỏ ({len(p)} ký tự): {p[:50]}...")
+                        continue
+                    
                     chunks.append({
                         "chunk_id": str(uuid.uuid4()),
-                        "content": _with_breadcrumb(section, p, i, len(pieces)),
+                        "content": _with_breadcrumb(current_section, p, i, len(pieces)),
                         "tokens": self.count_tokens(p),
                         "order": order,
                         "file_path": filepath,
                         "file_type": Path(filepath).suffix[1:].upper(),
-                        "section": section
+                        "section": current_section
                     })
                     order += 1
-                overlap_lines = buf[-3:] if len(buf) > 3 else buf
+                #  set overlap to 5 lines for better context
+                overlap_lines = buf[-5:] if len(buf) > 5 else buf
                 buf = overlap_lines + [line]
                 buf_tokens = sum(self.count_tokens(l) for l in buf)
             else:
@@ -414,15 +478,20 @@ class Chunker:
         if buf:
             combined = "\n".join(buf).strip()
             pieces = _split_table_markdown(combined, self.enc, self.config.max_tokens, self.config.overlap_tokens)
+            current_section = self._get_current_section()
             for i, p in enumerate(pieces, 1):
+                if len(p.strip()) < 10:
+                    logger.warning(f"⚠️ Skipping tiny chunk ({len(p)} chars): {p[:50]}...")
+                    continue
+                
                 chunks.append({
                     "chunk_id": str(uuid.uuid4()),
-                    "content": _with_breadcrumb(section, p, i, len(pieces)),
+                    "content": _with_breadcrumb(current_section, p, i, len(pieces)),
                     "tokens": self.count_tokens(p),
                     "order": order,
                     "file_path": filepath,
                     "file_type": Path(filepath).suffix[1:].upper(),
-                    "section": section
+                    "section": current_section
                 })
                 order += 1
 
@@ -458,10 +527,10 @@ def extract_text_from_file(filepath: str) -> str:
         use_docling = os.getenv('USE_DOCLING', 'true').lower() == 'true'
         
         if not use_docling:
-            logger.warning(f" USE_DOCLING=false but {ext} requires Docling! Enabling...")
+            logger.warning(f"⚠️ USE_DOCLING=false nhưng {ext} yêu cầu Docling! Đang bật...")
         
         # Force Docling for PDF/DOCX
-        logger.info(f" Using Docling for {ext}: {Path(filepath).name}")
+        logger.info(f"📄 Sử dụng Docling cho {ext}: {Path(filepath).name}")
         extractor = DoclingExtractor()
         text = extractor.extract(filepath)
         
@@ -471,7 +540,7 @@ def extract_text_from_file(filepath: str) -> str:
                 f"The file may be corrupted or empty."
             )
         
-        logger.info(f" Docling extracted {len(text)} chars from {Path(filepath).name}")
+        logger.info(f"✅ Docling đã trích xuất {len(text)} ký tự từ {Path(filepath).name}")
         return text
     
     # ⚡ Other formats: Use legacy extractors
@@ -503,7 +572,7 @@ def extract_text_from_file(filepath: str) -> str:
         return _extract_pptx(filepath)
     
     else:
-        logger.warning(f"⚠️ Unsupported file type: {ext}")
+        logger.warning(f"⚠️ Loại file không được hỗ trợ: {ext}")
         return ""
 
 
@@ -513,7 +582,7 @@ def _extract_markdown(filepath: str) -> str:
         with open(filepath, 'r', encoding='utf-8') as f:
             return f.read()
     except Exception as e:
-        logger.error(f"❌ Markdown extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất Markdown: {e}")
         return ""
 
 
@@ -527,7 +596,7 @@ def _extract_html(filepath: str) -> str:
                 script.decompose()
             return soup.get_text(separator='\n', strip=True)
     except Exception as e:
-        logger.error(f"❌ HTML extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất HTML: {e}")
         return ""
 
 
@@ -539,7 +608,7 @@ def _extract_json(filepath: str) -> str:
             data = json.load(f)
             return json.dumps(data, indent=2, ensure_ascii=False)
     except Exception as e:
-        logger.error(f"❌ JSON extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất JSON: {e}")
         return ""
 
 
@@ -551,7 +620,7 @@ def _extract_xml(filepath: str) -> str:
             soup = BeautifulSoup(f.read(), 'xml')
             return soup.get_text(separator='\n', strip=True)
     except Exception as e:
-        logger.error(f"❌ XML extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất XML: {e}")
         return ""
 
 
@@ -565,10 +634,10 @@ def _extract_text(filepath: str) -> str:
             with open(filepath, 'r', encoding='latin-1') as f:
                 return f.read()
         except Exception as e:
-            logger.error(f"❌ Text file extraction error: {e}")
+            logger.error(f"❌ Lỗi trích xuất file văn bản: {e}")
             return ""
     except Exception as e:
-        logger.error(f"❌ Text file extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất file văn bản: {e}")
         return ""
 
 
@@ -590,7 +659,7 @@ def _extract_excel(filepath: str) -> str:
                                                 max_tokens=300, overlap=50))
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ Excel extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất Excel: {e}")
         return ""
 
 
@@ -607,7 +676,7 @@ def _extract_csv(filepath: str) -> str:
         return "\n\n".join(_split_table_text(header, rows, "", enc,
                                             max_tokens=300, overlap=50))
     except Exception as e:
-        logger.error(f"❌ CSV extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất CSV: {e}")
         return ""
 
 
@@ -626,7 +695,7 @@ def _extract_pptx(filepath: str) -> str:
                 text_parts.append(f"=== Slide {idx} ===\n" + "\n".join(slide_text))
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ PPTX extraction error: {e}")
+        logger.error(f"❌ Lỗi trích xuất PPTX: {e}")
         return ""
 
 
@@ -664,21 +733,21 @@ def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> Lis
         except:
             config = ChunkConfig()
     
-    logger.info(f"📄 Processing: {filepath}")
+    logger.info(f"📄 Đang xử lý: {filepath}")
     
     text = extract_text_from_file(filepath)
     
     if not text.strip():
-        logger.warning(f"⚠️ Warning: No text extracted from {filepath}")
+        logger.warning(f"⚠️ Cảnh báo: Không trích xuất được văn bản từ {filepath}")
         return []
     
-    logger.info(f" Extracted {len(text)} characters")
+    logger.info(f"✅ Đã trích xuất {len(text)} ký tự")
     
 
     chunker = Chunker(config)
     chunks = chunker.chunk_text(text, filepath)
     
-    logger.info(f" Created {len(chunks)} chunks")
+    logger.info(f"✅ Đã tạo {len(chunks)} chunks")
     return chunks
 
 

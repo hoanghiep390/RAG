@@ -50,16 +50,16 @@ class KnowledgeGraph:
         """
         # Validate entities exist
         if not self.has_node(source_entity):
-            logger.warning(f"⚠️ Source entity not found: {source_entity}")
+            logger.warning(f"⚠️ Không tìm thấy source entity: {source_entity}")
             return False
         
         if not self.has_node(target_entity):
-            logger.warning(f"⚠️ Target entity not found: {target_entity}")
+            logger.warning(f"⚠️ Không tìm thấy target entity: {target_entity}")
             return False
         
         # Check self-loop
         if source_entity == target_entity:
-            logger.warning(f"⚠️ Self-loop not allowed: {source_entity}")
+            logger.warning(f"⚠️ Không cho phép vòng lặp tự thân: {source_entity}")
             return False
         
         if self.G.has_edge(source_entity, target_entity):
@@ -184,7 +184,7 @@ def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict,
     
     stats = kg.get_statistics()
     logger.info(
-        f"✅ Graph built: {stats['num_entities']} entities, "
+        f"✅ Đã xây dựng đồ thị: {stats['num_entities']} entities, "
         f"{stats['num_relationships']} relationships"
     )
     

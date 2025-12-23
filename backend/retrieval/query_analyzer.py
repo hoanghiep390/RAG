@@ -1,7 +1,6 @@
 # backend/retrieval/query_analyzer.py
 """
 Phân tích câu hỏi để quyết định retrieval
-✅ ENHANCED: Semantic entity recognition with DB lookup
 """
 import re
 from typing import Dict, List, Literal, Optional

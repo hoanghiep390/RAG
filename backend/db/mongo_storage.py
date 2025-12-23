@@ -6,7 +6,7 @@ from pathlib import Path
 from backend.config import get_mongodb
 import logging
 
-# ✅ Import EntityValidator
+#  Import EntityValidator
 from backend.db.entity_validator import EntityValidator
 
 logger = logging.getLogger(__name__)
@@ -26,9 +26,9 @@ class MongoStorage:
             self.graph_edges = self.db['graph_edges']
             
             self._create_indexes()
-            logger.info(f" MongoStorage initialized for user: {user_id}")
+            logger.info(f"🔧 MongoStorage đã khởi tạo cho user: {user_id}")
         except Exception as e:
-            logger.error(f" Failed to initialize MongoStorage: {e}")
+            logger.error(f"❌ Không thể khởi tạo MongoStorage: {e}")
             raise
     
     def _create_indexes(self):
@@ -50,11 +50,11 @@ class MongoStorage:
             self.graph_edges.create_index([('user_id', 1), ('source', 1), ('target', 1)])
             self.graph_edges.create_index([('user_id', 1), ('doc_id', 1)])  
             
-            logger.debug(" MongoDB indexes created (with doc_id for graph)")
+            logger.debug("✅ Đã tạo MongoDB indexes (với doc_id cho graph)")
         except Exception as e:
-            logger.warning(f" Index creation warning: {e}")
+            logger.warning(f"⚠️ Cảnh báo tạo index: {e}")
     
-    # ========== SAVE METHODS (Keep existing) ==========
+    #  SAVE METHODS 
     
     def save_document(self, doc_id: str, filename: str, filepath: str, metadata: Dict = None) -> str:
         """Save document metadata"""
@@ -69,10 +69,10 @@ class MongoStorage:
                 'metadata': metadata or {}
             }
             result = self.documents.insert_one(doc)
-            logger.info(f" Saved document: {filename}")
+            logger.info(f"✅ Đã lưu document: {filename}")
             return str(result.inserted_id)
         except Exception as e:
-            logger.error(f" Failed to save document {filename}: {e}")
+            logger.error(f"❌ Không thể lưu document {filename}: {e}")
             raise
     
     def update_document_status(self, doc_id: str, status: str, stats: Dict = None):
@@ -86,10 +86,10 @@ class MongoStorage:
                 {'$set': update_data}
             )
             if result.modified_count > 0:
-                logger.info(f"Updated document status: {doc_id} -> {status}")
+                logger.info(f"✅ Đã cập nhật trạng thái document: {doc_id} → {status}")
             return result.modified_count
         except Exception as e:
-            logger.error(f" Failed to update document status: {e}")
+            logger.error(f"❌ Không thể cập nhật trạng thái document: {e}")
             raise
     
     def get_document(self, doc_id: str):
@@ -97,7 +97,7 @@ class MongoStorage:
         try:
             return self.documents.find_one({'user_id': self.user_id, 'doc_id': doc_id})
         except Exception as e:
-            logger.error(f" Failed to get document {doc_id}: {e}")
+            logger.error(f"❌ Không thể lấy document {doc_id}: {e}")
             return None
     
     def list_documents(self):
@@ -105,7 +105,7 @@ class MongoStorage:
         try:
             return list(self.documents.find({'user_id': self.user_id}).sort('uploaded_at', -1))
         except Exception as e:
-            logger.error(f" Failed to list documents: {e}")
+            logger.error(f"❌ Không thể liệt kê documents: {e}")
             return []
     
     def save_chunks_bulk(self, doc_id: str, chunks: List[Dict]):
@@ -130,10 +130,10 @@ class MongoStorage:
                 for c in chunks
             ]
             result = self.chunks.insert_many(chunk_docs, ordered=False)
-            logger.info(f" Saved {len(result.inserted_ids)} chunks")
+            logger.info(f"✅ Đã lưu {len(result.inserted_ids)} chunks")
             return len(result.inserted_ids)
         except Exception as e:
-            logger.error(f" Failed to save chunks: {e}")
+            logger.error(f"❌ Không thể lưu chunks: {e}")
             return 0
     
     def save_entities_bulk(self, doc_id: str, entities_dict: Dict, enable_linking: bool = True, strict_mode: bool = False):
@@ -150,20 +150,20 @@ class MongoStorage:
             return 0
         
         try:
-            # ✅ ENHANCED: Use new entity linking module
+            #  Use  entity linking module
             from backend.db.entity_linking import link_entities_batch, get_linking_statistics
             
             entity_docs = []
             
-            # ✅ OPTIMIZATION: Load existing entities once
+            # Load existing entities once
             existing_entities = []
             if enable_linking:
                 existing_entities = list(self.entities.find(
                     {'user_id': self.user_id},
                     {'entity_name': 1}
-                ).limit(1000))  # Limit for performance
+                ).limit(1000))  
             
-            # ✅ ENHANCED: Batch entity linking with multi-level matching
+            #  Batch entity linking with multi-level matching
             canonical_mapping, match_info = link_entities_batch(
                 entities_dict,
                 existing_entities,
@@ -191,12 +191,12 @@ class MongoStorage:
             if entity_docs:
                 result = self.entities.insert_many(entity_docs, ordered=False)
                 
-                # ✅ ENHANCED: Log detailed statistics
+                # Log detailed statistics
                 stats = get_linking_statistics(match_info)
                 linked_count = stats['exact'] + stats['high_similarity'] + stats['medium_similarity'] + stats['acronym']
                 
                 logger.info(
-                    f"✅ Saved {len(result.inserted_ids)} entities "
+                    f" Saved {len(result.inserted_ids)} entities "
                     f"({linked_count} linked: {stats['exact']} exact, "
                     f"{stats['high_similarity']} high-sim, "
                     f"{stats['medium_similarity']} med-sim, "
@@ -205,7 +205,7 @@ class MongoStorage:
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f"❌ Failed to save entities: {e}")
+            logger.error(f"❌ Không thể lưu entities: {e}")
             return 0
     
     def save_relationships_bulk(self, doc_id: str, relationships_dict: Dict):
@@ -223,12 +223,12 @@ class MongoStorage:
             
             if invalid_rels:
                 logger.warning(
-                    f"⚠️ Filtered {len(invalid_rels)} invalid relationships "
-                    f"(entities not found)"
+                    f"⚠️ Đã lọc {len(invalid_rels)} relationships không hợp lệ "
+                    f"(entities không tìm thấy)"
                 )
             
             if not valid_rels:
-                logger.warning("⚠️ No valid relationships to save")
+                logger.warning("⚠️ Không có relationships hợp lệ để lưu")
                 return 0
             
             # Build relationship documents from valid relationships
@@ -249,11 +249,11 @@ class MongoStorage:
             
             if rel_docs:
                 result = self.relationships.insert_many(rel_docs, ordered=False)
-                logger.info(f"✅ Saved {len(result.inserted_ids)} relationships")
+                logger.info(f"✅ Đã lưu {len(result.inserted_ids)} relationships")
                 return len(result.inserted_ids)
             return 0
         except Exception as e:
-            logger.error(f"❌ Failed to save relationships: {e}")
+            logger.error(f"❌ Không thể lưu relationships: {e}")
             return 0
 
     
@@ -268,7 +268,7 @@ class MongoStorage:
             doc_id: Document ID (REQUIRED for deletion tracking)
         """
         if not doc_id:
-            logger.error("❌ doc_id is required for save_graph_bulk!")
+            logger.error("❌ doc_id là bắt buộc cho save_graph_bulk!")
             return {'nodes': 0, 'edges': 0}
         
         nodes_saved = 0
@@ -294,9 +294,9 @@ class MongoStorage:
                         )
                         nodes_saved += 1
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to save node {node.get('id')}: {e}")
+                        logger.warning(f"⚠️ Không thể lưu node {node.get('id')}: {e}")
             
-            # Save edges with doc_id - LightRAG style (only keywords + description)
+            # Save edges with doc_id (only keywords + description)
             if graph_data.get('links'):
                 for link in graph_data['links']:
                     try:
@@ -320,13 +320,13 @@ class MongoStorage:
                         )
                         edges_saved += 1
                     except Exception as e:
-                        logger.warning(f"⚠️ Failed to save edge {link.get('source')}->{link.get('target')}: {e}")
+                        logger.warning(f"⚠️ Không thể lưu edge {link.get('source')}→{link.get('target')}: {e}")
             
-            logger.info(f"✅ Saved graph: {nodes_saved} nodes, {edges_saved} edges (doc_id={doc_id})")
+            logger.info(f"✅ Đã lưu graph: {nodes_saved} nodes, {edges_saved} edges (doc_id={doc_id})")
             return {'nodes': nodes_saved, 'edges': edges_saved}
         
         except Exception as e:
-            logger.error(f"❌ Failed to save graph: {e}")
+            logger.error(f"❌ Không thể lưu graph: {e}")
             return {'nodes': nodes_saved, 'edges': edges_saved}
 
     
@@ -346,22 +346,21 @@ class MongoStorage:
             if relationships:
                 self.save_relationships_bulk(doc_id, relationships)
             
-            # ✅ CHANGE: Rebuild graph from entities + relationships
-            # Graph nodes/edges are now cache, not source of truth
+            #  Rebuild graph from entities + relationships
             if entities and relationships:
-                logger.info(f"🔄 Rebuilding graph cache for doc: {doc_id}")
+                logger.info(f"🔄 Đang rebuild graph cache cho doc: {doc_id}")
                 self.sync_graph_cache(doc_id)
             elif graph:
                 # Fallback: use provided graph if no entities/relationships
-                logger.warning(f"⚠️ Using provided graph (no entities/relationships)")
+                logger.warning(f"⚠️ Sử dụng graph được cung cấp (không có entities/relationships)")
                 self.save_graph_bulk(graph, doc_id=doc_id)
             
             self.update_document_status(doc_id, 'completed', stats)
             
-            logger.info(f"✅ Complete save for document: {filename}")
+            logger.info(f"✅ Đã lưu hoàn chỉnh cho document: {filename}")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to save document completely: {e}")
+            logger.error(f"❌ Không thể lưu document hoàn chỉnh: {e}")
             self.update_document_status(doc_id, 'failed', {'error': str(e)})
             return False
     
@@ -393,7 +392,7 @@ class MongoStorage:
             # Get document info
             doc = self.get_document(doc_id)
             if not doc:
-                logger.warning(f"⚠️ Document {doc_id} not found")
+                logger.warning(f"⚠️ Không tìm thấy document {doc_id}")
                 stats['errors'].append(f"Document {doc_id} not found")
                 return stats
             
@@ -422,7 +421,7 @@ class MongoStorage:
                 'doc_id': doc_id  
             }))
             
-            logger.info(f"🔍 Found {len(nodes_with_doc)} nodes with doc_id={doc_id}")
+            logger.info(f"🔍 Đã tìm thấy {len(nodes_with_doc)} nodes với doc_id={doc_id}")
             
             for node in nodes_with_doc:
                 doc_ids = node.get('doc_id', [])
@@ -441,7 +440,7 @@ class MongoStorage:
                         'node_id': node['node_id']
                     })
                     stats['graph_nodes_deleted'] += 1
-                    logger.debug(f" Deleted node: {node['node_id']}")
+                    logger.debug(f"🗑️ Đã xóa node: {node['node_id']}")
                 else:
                     #  Other docs exist → UPDATE
                     self.graph_nodes.update_one(
@@ -449,7 +448,7 @@ class MongoStorage:
                         {'$set': {'doc_id': remaining_docs}}
                     )
                     stats['graph_nodes_updated'] += 1
-                    logger.debug(f"📝 Updated node: {node['node_id']} (removed {doc_id})")
+                    logger.debug(f"✅ Đã cập nhật node: {node['node_id']} (đã xóa {doc_id})")
             
             #  DELETE GRAPH EDGES WITH DOC_ID 
             
@@ -459,7 +458,7 @@ class MongoStorage:
                 'doc_id': doc_id  
             }))
             
-            logger.info(f"🔍 Found {len(edges_with_doc)} edges with doc_id={doc_id}")
+            logger.info(f"🔍 Đã tìm thấy {len(edges_with_doc)} edges với doc_id={doc_id}")
             
             for edge in edges_with_doc:
                 doc_ids = edge.get('doc_id', [])
@@ -472,16 +471,16 @@ class MongoStorage:
                 remaining_docs = [d for d in doc_ids if d != doc_id]
                 
                 if not remaining_docs:
-                    # ✅ No other docs → DELETE
+                    #  No other docs → DELETE
                     self.graph_edges.delete_one({
                         'user_id': self.user_id,
                         'source': edge['source'],
                         'target': edge['target']
                     })
                     stats['graph_edges_deleted'] += 1
-                    logger.debug(f"🗑️ Deleted edge: {edge['source']} → {edge['target']}")
+                    logger.debug(f"🗑️ Đã xóa edge: {edge['source']} → {edge['target']}")
                 else:
-                    # ✅ Other docs exist → UPDATE
+                    #  Other docs exist → UPDATE
                     self.graph_edges.update_one(
                         {
                             'user_id': self.user_id,
@@ -491,7 +490,7 @@ class MongoStorage:
                         {'$set': {'doc_id': remaining_docs}}
                     )
                     stats['graph_edges_updated'] += 1
-                    logger.debug(f"📝 Updated edge: {edge['source']} → {edge['target']} (removed {doc_id})")
+                    logger.debug(f"✅ Đã cập nhật edge: {edge['source']} → {edge['target']} (đã xóa {doc_id})")
             
             # 3. Delete physical file
             if doc.get('filepath'):
@@ -500,18 +499,18 @@ class MongoStorage:
                     try:
                         filepath.unlink()
                         stats['files_deleted'].append(str(filepath))
-                        logger.info(f"✅ Deleted file: {filepath}")
+                        logger.info(f"🗑️ Đã xóa file: {filepath}")
                     except Exception as e:
                         error_msg = f"Failed to delete file {filepath}: {e}"
                         logger.warning(f"⚠️ {error_msg}")
                         stats['errors'].append(error_msg)
                 else:
-                    logger.warning(f"⚠️ File not found: {filepath}")
+                    logger.warning(f"⚠️ Không tìm thấy file: {filepath}")
                     stats['errors'].append(f"File not found: {filepath.name}")
             
-            logger.info(f"✅ Cascade delete completed for {doc_id}:")
-            logger.info(f"   📊 Nodes: {stats['graph_nodes_deleted']} deleted, {stats['graph_nodes_updated']} updated")
-            logger.info(f"   🔗 Edges: {stats['graph_edges_deleted']} deleted, {stats['graph_edges_updated']} updated")
+            logger.info(f"✅ Đã xóa cascade cho {doc_id}:")
+            logger.info(f"  Nodes: {stats['graph_nodes_deleted']} đã xóa, {stats['graph_nodes_updated']} đã cập nhật")
+            logger.info(f"  Edges: {stats['graph_edges_deleted']} đã xóa, {stats['graph_edges_updated']} đã cập nhật")
             
             return stats
         
@@ -550,13 +549,13 @@ class MongoStorage:
             if user_dir.exists():
                 shutil.rmtree(user_dir)
                 stats['files_deleted'].append(str(user_dir))
-                logger.info(f"✅ Deleted user directory: {user_dir}")
+                logger.info(f"🗑️ Đã xóa thư mục user: {user_dir}")
             
-            logger.info(f"✅ User cascade delete completed: {stats}")
+            logger.info(f"✅ Đã xóa cascade user: {stats}")
             return stats
         
         except Exception as e:
-            logger.error(f"❌ Failed to cascade delete user {target_user}: {e}")
+            logger.error(f"❌ Không thể xóa cascade user {target_user}: {e}")
             return stats
     
     def get_graph(self) -> Dict:
@@ -590,11 +589,11 @@ class MongoStorage:
                 ]
             }
             
-            logger.info(f"✅ Retrieved graph: {len(graph['nodes'])} nodes, {len(graph['links'])} edges")
+            logger.info(f"✅ Đã lấy graph: {len(graph['nodes'])} nodes, {len(graph['links'])} edges")
             return graph
         
         except Exception as e:
-            logger.error(f"❌ Failed to get graph: {e}")
+            logger.error(f"❌ Không thể lấy graph: {e}")
             return {'nodes': [], 'links': []}
 
     
@@ -711,14 +710,14 @@ class MongoStorage:
 
             
             logger.info(
-                f"✅ Synced graph cache for {doc_id}: "
+                f"✅ Đã đồng bộ graph cache cho {doc_id}: "
                 f"{stats['nodes']} nodes, {stats['edges']} edges"
             )
             
             return stats
             
         except Exception as e:
-            logger.error(f"❌ Failed to sync graph cache: {e}")
+            logger.error(f"❌ Không thể đồng bộ graph cache: {e}")
             return stats
     
     def rebuild_graph_from_entities(self, user_id: str = None) -> Dict:
@@ -741,7 +740,7 @@ class MongoStorage:
         }
         
         try:
-            logger.info(f"🔄 Rebuilding graph for user: {target_user}")
+            logger.info(f"🔄 Đang rebuild graph cho user: {target_user}")
             
             # 1. Clear existing graph
             delete_nodes = self.graph_nodes.delete_many({'user_id': target_user})
@@ -751,7 +750,7 @@ class MongoStorage:
             stats['edges_deleted'] = delete_edges.deleted_count
             
             logger.info(
-                f"🗑️ Cleared: {stats['nodes_deleted']} nodes, "
+                f"✅ Đã xóa: {stats['nodes_deleted']} nodes, "
                 f"{stats['edges_deleted']} edges"
             )
             
@@ -770,14 +769,14 @@ class MongoStorage:
                 stats['edges_created'] += doc_stats['edges']
             
             logger.info(
-                f"✅ Rebuilt graph: {stats['nodes_created']} nodes, "
+                f"✅ Đã rebuild graph: {stats['nodes_created']} nodes, "
                 f"{stats['edges_created']} edges"
             )
             
             return stats
             
         except Exception as e:
-            logger.error(f"❌ Failed to rebuild graph: {e}")
+            logger.error(f"❌ Không thể rebuild graph: {e}")
             return stats
     
     def get_user_statistics(self) -> Dict:
@@ -793,7 +792,7 @@ class MongoStorage:
             }
             return stats
         except Exception as e:
-            logger.error(f"❌ Failed to get statistics: {e}")
+            logger.error(f"❌ Không thể lấy thống kê: {e}")
             return {
                 'total_documents': 0,
                 'total_chunks': 0,
@@ -809,5 +808,5 @@ class MongoStorage:
             self.db.command('ping')
             return True
         except Exception as e:
-            logger.error(f"❌ MongoDB health check failed: {e}")
+            logger.error(f" MongoDB health check failed: {e}")
             return False

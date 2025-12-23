@@ -1,7 +1,7 @@
 # backend/db/entity_linking.py
 """
-🔗 Enhanced Entity Linking
-Multi-level fuzzy matching for better entity deduplication
+🔗 Liên kết Entity Nâng cao
+Khớp mờ nhiều cấp độ để loại bỏ trùng lặp entity tốt hơn
 """
 
 import re
@@ -14,47 +14,47 @@ logger = logging.getLogger(__name__)
 
 def normalize_entity_name(name: str) -> str:
     """
-    Normalize entity name for comparison
-    - Remove extra spaces
-    - Lowercase
-    - Remove special characters (for acronym matching)
+    Chuẩn hóa tên entity để so sánh
+    - Loại bỏ khoảng trắng thừa
+    - Chuyển thành chữ thường
+    - Loại bỏ ký tự đặc biệt (cho khớp từ viết tắt)
     """
-    # Basic normalization
+    # Chuẩn hóa cơ bản
     normalized = name.strip().lower()
     return normalized
 
 
 def extract_acronym(name: str) -> str:
     """
-    Extract acronym from entity name
-    Examples:
+    Trích xuất từ viết tắt từ tên entity
+    Ví dụ:
         "OpenAI Inc." → "openaiinc"
         "GPT-4" → "gpt4"
         "United States" → "us"
     """
-    # Remove all non-alphanumeric characters
+    # Loại bỏ tất cả ký tự không phải chữ-số
     clean = re.sub(r'[^a-zA-Z0-9]', '', name).lower()
     return clean
 
 
 def is_acronym_match(name1: str, name2: str) -> bool:
     """
-    Check if one name is acronym/abbreviation of another
+    Kiểm tra nếu một tên là từ viết tắt/rút gọn của tên kia
     
-    Examples:
+    Ví dụ:
         "GPT4" vs "GPT-4" → True
         "OpenAI Inc" vs "OpenAI" → True
-        "US" vs "United States" → False (too short, risky)
+        "US" vs "United States" → False (quá ngắn, rủi ro)
     """
     acronym1 = extract_acronym(name1)
     acronym2 = extract_acronym(name2)
     
-    # Exact match after removing special chars
+    # Khớp chính xác sau khi loại bỏ ký tự đặc biệt
     if acronym1 == acronym2:
         return True
     
-    # Check if one is substring of another (for abbreviations)
-    # But only if both are reasonably long to avoid false positives
+    # Kiểm tra nếu một tên là chuỗi con của tên kia (cho rút gọn)
+    # Nhưng chỉ nếu cả hai đủ dài để tránh dương tính giả
     if len(acronym1) >= 4 and len(acronym2) >= 4:
         if acronym1 in acronym2 or acronym2 in acronym1:
             return True
@@ -64,8 +64,8 @@ def is_acronym_match(name1: str, name2: str) -> bool:
 
 def calculate_similarity(name1: str, name2: str) -> float:
     """
-    Calculate similarity between two entity names
-    Uses SequenceMatcher ratio
+    Tính độ tương đồng giữa hai tên entity
+    Sử dụng SequenceMatcher ratio
     """
     normalized1 = normalize_entity_name(name1)
     normalized2 = normalize_entity_name(name2)
@@ -80,22 +80,22 @@ def fuzzy_match_entity(
     min_length: int = 3
 ) -> Optional[Tuple[str, float, str]]:
     """
-    Multi-level fuzzy matching for entity linking
+    Khớp mờ nhiều cấp độ cho liên kết entity
     
-    Matching levels:
-    1. Exact match (case-insensitive)
-    2. High similarity (>0.9) - for strict mode
-    3. Medium similarity (>0.8) - for normal mode  
-    4. Acronym/abbreviation matching
+    Các cấp độ khớp:
+    1. Khớp chính xác (không phân biệt hoa thường)
+    2. Độ tương đồng cao (>0.9) - cho chế độ nghiêm ngặt
+    3. Độ tương đồng trung bình (>0.8) - cho chế độ bình thường  
+    4. Khớp từ viết tắt/rút gọn
     
     Args:
-        entity_name: Entity name to match
-        existing_entities: List of existing entity dicts with 'entity_name' field
-        strict_mode: Use stricter threshold (0.9 vs 0.8)
-        min_length: Minimum entity name length to consider (avoid matching short names)
+        entity_name: Tên entity cần khớp
+        existing_entities: Danh sách entity hiện có với trường 'entity_name'
+        strict_mode: Sử dụng ngưỡng nghiêm ngặt hơn (0.9 vs 0.8)
+        min_length: Độ dài tối thiểu của tên entity (tránh khớp tên ngắn)
     
     Returns:
-        Tuple of (canonical_name, similarity_score, match_type) or None
+        Tuple của (canonical_name, similarity_score, match_type) hoặc None
         match_type: 'exact', 'high_similarity', 'medium_similarity', 'acronym'
     """
     if not entity_name or len(entity_name) < min_length:
@@ -103,13 +103,13 @@ def fuzzy_match_entity(
     
     entity_lower = normalize_entity_name(entity_name)
     
-    # Level 1: Exact match (case-insensitive)
+    # Cấp 1: Khớp chính xác (không phân biệt hoa thường)
     for existing in existing_entities:
         existing_name = existing['entity_name']
         if entity_lower == normalize_entity_name(existing_name):
             return (existing_name, 1.0, 'exact')
     
-    # Level 2-3: Similarity matching
+    # Cấp 2-3: Khớp theo độ tương đồng
     threshold = 0.9 if strict_mode else 0.8
     best_match = None
     best_score = threshold
@@ -126,13 +126,13 @@ def fuzzy_match_entity(
         match_type = 'high_similarity' if best_score >= 0.9 else 'medium_similarity'
         return (best_match, best_score, match_type)
     
-    # Level 4: Acronym matching
-    # Only for entities with reasonable length
+    # Cấp 4: Khớp từ viết tắt
+    # Chỉ cho entities có độ dài hợp lý
     if len(entity_name) >= 4:
         for existing in existing_entities:
             existing_name = existing['entity_name']
             if len(existing_name) >= 4 and is_acronym_match(entity_name, existing_name):
-                # Calculate similarity for logging
+                # Tính độ tương đồng để ghi log
                 score = calculate_similarity(entity_name, existing_name)
                 return (existing_name, score, 'acronym')
     
@@ -145,17 +145,17 @@ def link_entities_batch(
     strict_mode: bool = False
 ) -> Tuple[Dict[str, str], Dict[str, Tuple[float, str]]]:
     """
-    Batch entity linking
+    Liên kết entity theo batch
     
     Args:
-        entities_dict: Dict of {entity_name: [entity_dicts]}
-        existing_entities: List of existing entities from DB
-        strict_mode: Use stricter matching threshold
+        entities_dict: Dict của {entity_name: [entity_dicts]}
+        existing_entities: Danh sách entities hiện có từ DB
+        strict_mode: Sử dụng ngưỡng khớp nghiêm ngặt hơn
     
     Returns:
-        Tuple of:
-        - canonical_mapping: Dict of {original_name: canonical_name}
-        - match_info: Dict of {original_name: (similarity_score, match_type)}
+        Tuple của:
+        - canonical_mapping: Dict của {original_name: canonical_name}
+        - match_info: Dict của {original_name: (similarity_score, match_type)}
     """
     canonical_mapping = {}
     match_info = {}
@@ -177,7 +177,7 @@ def link_entities_batch(
                 f"(score: {score:.2f}, type: {match_type})"
             )
         else:
-            # No match, use original name
+            # Không khớp, sử dụng tên gốc
             canonical_mapping[entity_name] = entity_name
     
     return canonical_mapping, match_info
@@ -185,10 +185,10 @@ def link_entities_batch(
 
 def get_linking_statistics(match_info: Dict[str, Tuple[float, str]]) -> Dict:
     """
-    Get statistics about entity linking
+    Lấy thống kê về liên kết entity
     
     Returns:
-        Dict with counts by match type
+        Dict với số lượng theo loại khớp
     """
     stats = {
         'total': len(match_info),

@@ -16,7 +16,7 @@ class ScoredChunk:
     content: str
     score: float  
     doc_id: str
-    filename: str
+    filename: str 
     metadata: Dict[str, Any]
     
     def __repr__(self):
@@ -101,7 +101,7 @@ class VectorRetriever:
             return scored_chunks[:top_k]
         
         except Exception as e:
-            logger.error(f"Vector search failed: {e}")
+            logger.error(f"❌ Tìm kiếm vector thất bại: {e}")
             return []
     
     def search_by_embedding(
@@ -125,7 +125,7 @@ class VectorRetriever:
             return self._convert_to_scored_chunks(raw_results)[:top_k]
         
         except Exception as e:
-            logger.error(f"Embedding search failed: {e}")
+            logger.error(f"❌ Tìm kiếm embedding thất bại: {e}")
             return []
     
     def _convert_to_scored_chunks(self, raw_results: List[Dict]) -> List[ScoredChunk]:

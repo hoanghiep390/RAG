@@ -184,7 +184,9 @@ class DocumentPipeline:
 
         except Exception as e:
             import traceback
-            print(f"Pipeline error: {e}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"❌ Lỗi pipeline: {e}")
             traceback.print_exc()
             result['error'] = str(e)
             result['success'] = False

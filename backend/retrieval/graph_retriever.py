@@ -35,7 +35,7 @@ class GraphRetriever:
         """Lazy load graph"""
         if self._graph_cache is None:
             self._graph_cache = self.storage.get_graph()
-            logger.info(f"📊 Loaded: {len(self._graph_cache.get('nodes', []))} nodes, "
+            logger.info(f"📊 Đã tải: {len(self._graph_cache.get('nodes', []))} nodes, "
                        f"{len(self._graph_cache.get('links', []))} edges")
         return self._graph_cache
     
@@ -64,7 +64,7 @@ class GraphRetriever:
             graph = self._load_graph()
             
             if not graph or not graph.get('nodes'):
-                logger.warning("⚠️ Empty graph")
+                logger.warning("⚠️ Đồ thị rỗng")
                 return []
             
             node_map = {n['id']: n for n in graph['nodes']}
@@ -76,7 +76,7 @@ class GraphRetriever:
             matched = self._find_entities(entity_names, node_map)
             
             if not matched:
-                logger.info(f"❌ No entities found: {entity_names}")
+                logger.info(f"❌ Không tìm thấy entities: {entity_names}")
                 return []
             
             contexts = []
@@ -105,7 +105,7 @@ class GraphRetriever:
             return contexts
         
         except Exception as e:
-            logger.error(f"❌ Graph search failed: {e}")
+            logger.error(f"❌ Tìm kiếm đồ thị thất bại: {e}")
             return []
     
     def _find_entities(self, query_entities: List[str], node_map: Dict) -> List[str]:
@@ -164,7 +164,7 @@ class GraphRetriever:
                 filter_lower = [k.lower() for k in filter_keywords]
                 matches = sum(1 for k in keyword_list if any(f in k or k in f for f in filter_lower))
                 if matches > 0:
-                    score *= (1.0 + 0.2 * matches)  # 20% boost per match
+                    score *= (1.0 + 0.2 * matches)  
         
         return score
     
@@ -293,7 +293,7 @@ class GraphRetriever:
             return {'nodes': subgraph_nodes, 'links': subgraph_links}
         
         except Exception as e:
-            logger.error(f"❌ Subgraph failed: {e}")
+            logger.error(f"❌ Subgraph thất bại: {e}")
             return {'nodes': [], 'links': []}
     
     def format_context_text(self, contexts: List[GraphContext]) -> str:

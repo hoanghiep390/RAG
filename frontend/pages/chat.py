@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from backend.db.vector_db import VectorDatabase
 from backend.db.mongo_storage import MongoStorage
 from backend.db.conversation_storage import ConversationStorage
+from backend.db.feedback_storage import FeedbackStorage
 from backend.retrieval.hybrid_retriever import EnhancedHybridRetriever
 from backend.retrieval.conversation_manager import ConversationManager
 from backend.utils.llm_utils import call_llm_async
@@ -111,6 +112,35 @@ st.markdown("""
         margin: 1rem 0;
         border-left: 4px solid #3b82f6;
     }
+    
+    /* Feedback Styles */
+    .feedback-container {
+        background: #1a1a1a;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0 1rem 2rem;
+        border-left: 3px solid #f59e0b;
+    }
+    .star-rating {
+        font-size: 1.5rem;
+        cursor: pointer;
+        user-select: none;
+    }
+    .star-rating span {
+        color: #4b5563;
+        transition: color 0.2s;
+    }
+    .star-rating span:hover,
+    .star-rating span.selected {
+        color: #fbbf24;
+    }
+    .feedback-submitted {
+        background: #065f46;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        margin: 0.5rem 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -125,12 +155,12 @@ def init_storage(data_user_id: str, conv_user_id: str):
         conv_user_id: User ID for conversation history (unique per user)
     """
     try:
-        # ✅ Data from admin
         vector_db = VectorDatabase(data_user_id)
         mongo_storage = MongoStorage(data_user_id)
         
-        # ✅ Conversations are personal
         conv_storage = ConversationStorage(conv_user_id)
+        
+        feedback_storage = FeedbackStorage(conv_user_id)
         
         retriever = EnhancedHybridRetriever(vector_db, mongo_storage)
         
@@ -141,6 +171,7 @@ def init_storage(data_user_id: str, conv_user_id: str):
             'vector_db': vector_db,
             'mongo_storage': mongo_storage,
             'conv_storage': conv_storage,
+            'feedback_storage': feedback_storage,
             'retriever': retriever,
             'stats': {
                 'vectors': vec_stats['active_vectors'],
@@ -152,7 +183,6 @@ def init_storage(data_user_id: str, conv_user_id: str):
         st.error(f"❌ Failed to initialize: {e}")
         return None
 
-# ✅ Load admin's data for retrieval, but user's own conversations
 storage = init_storage(DATA_USER_ID, user_id)
 
 if not storage:
@@ -161,6 +191,7 @@ if not storage:
 
 retriever = storage['retriever']
 conv_storage = storage['conv_storage']
+feedback_storage = storage['feedback_storage']
 stats = storage['stats']
 
 # ================= Check Data =================
@@ -442,6 +473,82 @@ for message in st.session_state.messages:
                                 st.markdown(f"- **{rel_type}** → {target} [{category}] (strength: {strength:.2f})")
                         
                         st.markdown("---")
+        
+        # ✅ FEEDBACK UI - Show after each assistant message
+        msg_index = st.session_state.messages.index(message)
+        
+        # Initialize feedback state
+        if 'feedbacks' not in st.session_state:
+            st.session_state.feedbacks = {}
+        
+        feedback_key = f"{current_conversation_id}_{msg_index}"
+        
+        existing_feedback = feedback_storage.get_feedback(current_conversation_id, msg_index)
+        
+        if existing_feedback:
+            # Show  feedback
+            st.markdown(f"""
+            <div class="feedback-submitted">
+                ✅ Đã gửi feedback - Rating: {'⭐' * existing_feedback['rating']} ({existing_feedback['rating']}/5)
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            with st.expander("💬 Đánh giá câu trả lời này", expanded=False):
+                st.markdown("**Mức độ hài lòng:**")
+                
+                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 3])
+                rating = 0
+                
+                with col1:
+                    if st.button("⭐", key=f"star1_{feedback_key}"):
+                        st.session_state.feedbacks[feedback_key] = {'rating': 1}
+                with col2:
+                    if st.button("⭐⭐", key=f"star2_{feedback_key}"):
+                        st.session_state.feedbacks[feedback_key] = {'rating': 2}
+                with col3:
+                    if st.button("⭐⭐⭐", key=f"star3_{feedback_key}"):
+                        st.session_state.feedbacks[feedback_key] = {'rating': 3}
+                with col4:
+                    if st.button("⭐⭐⭐⭐", key=f"star4_{feedback_key}"):
+                        st.session_state.feedbacks[feedback_key] = {'rating': 4}
+                with col5:
+                    if st.button("⭐⭐⭐⭐⭐", key=f"star5_{feedback_key}"):
+                        st.session_state.feedbacks[feedback_key] = {'rating': 5}
+                
+                current_rating = st.session_state.feedbacks.get(feedback_key, {}).get('rating', 0)
+                
+                if current_rating > 0:
+                    st.success(f"Đã chọn: {'⭐' * current_rating} ({current_rating}/5)")
+                
+                feedback_text = st.text_area(
+                    "Nhận xét (tùy chọn):",
+                    key=f"feedback_text_{feedback_key}",
+                    placeholder="Chia sẻ ý kiến của bạn về câu trả lời...",
+                    height=80
+                )
+                
+                # Submit button
+                if st.button("📤 Gửi đánh giá", key=f"submit_{feedback_key}", type="primary"):
+                    if current_rating > 0:
+                        # Save feedback
+                        success = feedback_storage.save_feedback(
+                            conversation_id=current_conversation_id,
+                            message_index=msg_index,
+                            rating=current_rating,
+                            feedback_text=feedback_text
+                        )
+                        
+                        if success:
+                            st.success("✅ Cảm ơn bạn đã đánh giá!")
+                            # Clear feedback state
+                            if feedback_key in st.session_state.feedbacks:
+                                del st.session_state.feedbacks[feedback_key]
+                            st.rerun()
+                        else:
+                            st.error("❌ Không thể lưu feedback. Vui lòng thử lại.")
+                    else:
+                        st.warning("⚠️ Vui lòng chọn số sao trước khi gửi!")
+
 
 # ================= Chat Input =================
 st.markdown("---")
@@ -550,7 +657,7 @@ Question: {user_query}
                 st.session_state.conv_manager.add_message('user', original_query, save_to_db=True)
                 st.session_state.conv_manager.add_message('assistant', response, save_to_db=True)
             
-            # Save to UI with full context - ✅ OPTIMIZED: Reduced from 5 to 3 items
+            # Save to UI with full context 
             assistant_message = {
                 'role': 'assistant',
                 'content': response,
@@ -562,17 +669,17 @@ Question: {user_query}
                         'score': chunk.score,
                         'chunk_id': chunk.chunk_id
                     }
-                    for chunk in context.global_chunks[:3]  # ✅ OPTIMIZED: Reduced from 5 to 3
+                    for chunk in context.global_chunks[:3]  
                 ],
                 'retrieved_entities': [
                     {
                         'name': entity.entity_name,
                         'type': entity.entity_type,
                         'description': entity.description,
-                        'relationships': entity.relationships[:3],  # ✅ OPTIMIZED: Reduced from 5 to 3
+                        'relationships': entity.relationships[:3],  
                         'score': entity.score
                     }
-                    for entity in context.local_entities[:3]  # ✅ OPTIMIZED: Reduced from 5 to 3
+                    for entity in context.local_entities[:3]  
                 ]
             }
             st.session_state.messages.append(assistant_message)
