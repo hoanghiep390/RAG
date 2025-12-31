@@ -43,14 +43,14 @@ class UserManager:
             self._create_default_admin_json()
     
     def _ensure_json_file(self):
-        """Ensure JSON file exists"""
+        """Đảm bảo file JSON tồn tại"""
         self.json_file.parent.mkdir(parents=True, exist_ok=True)
         if not self.json_file.exists():
             with open(self.json_file, 'w', encoding='utf-8') as f:
                 json.dump({}, f, indent=2)
     
     def _create_default_admin_json(self):
-        """Create default admin in JSON file"""
+        """Tạo admin mặc định trong file JSON"""
         users = self._load_from_json()
         if 'admin' not in users:
             users['admin'] = {
@@ -63,7 +63,7 @@ class UserManager:
             self._save_to_json(users)
     
     def _load_from_json(self):
-        """Load users from JSON file"""
+        """Tải users từ file JSON"""
         try:
             with open(self.json_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
@@ -71,7 +71,7 @@ class UserManager:
             return {}
     
     def _save_to_json(self, users_dict):
-        """Save users to JSON file"""
+        """Lưu users vào file JSON"""
         try:
             with open(self.json_file, 'w', encoding='utf-8') as f:
                 json.dump(users_dict, f, indent=2, ensure_ascii=False)
@@ -79,8 +79,8 @@ class UserManager:
             logger.error(f"❌ Lỗi lưu vào JSON: {e}")
     
     def load_users(self):
-        """Compatibility: trả về dict như JSON format"""
-        # Use JSON fallback if MongoDB not available
+        """Tương thích: trả về dict như định dạng JSON"""
+        # Dùng JSON dự phòng nếu MongoDB không khả dụng
         if self.use_json_fallback:
             return self._load_from_json()
         
@@ -103,8 +103,8 @@ class UserManager:
         return users
     
     def save_users(self, users_dict):
-        """Compatibility: lưu dict vào MongoDB hoặc JSON"""
-        # Use JSON fallback if MongoDB not available
+        """Tương thích: lưu dict vào MongoDB hoặc JSON"""
+        # Dùng JSON dự phòng nếu MongoDB không khả dụng
         if self.use_json_fallback:
             self._save_to_json(users_dict)
             return

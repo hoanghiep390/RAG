@@ -6,26 +6,25 @@ import logging
 logger = logging.getLogger(__name__)
 
 class KnowledgeGraph:
-    """NetworkX wrapper for knowledge graph - LightRAG style"""
+    """Wrapper NetworkX cho knowledge graph"""
     
     def __init__(self):
         self.G = nx.DiGraph()
     
     def add_entity(self, entity_name: str, entity_type: str, description: str, 
                    source_id: str, **kwargs):
-        """Add or merge entity node"""
+        """Thêm hoặc gộp entity node"""
         if self.G.has_node(entity_name):
             node = self.G.nodes[entity_name]
             
-            # Merge descriptions
+            # Gộp descriptions
             if description and description not in node.get('description', ''):
                 existing_desc = node.get('description', '')
                 node['description'] = f"{existing_desc}; {description}".strip('; ')
             
-            # Merge sources
+            # Gộp sources
             node['sources'] = node.get('sources', set()) | {source_id}
-        else:
-            # New node
+            # Node mới
             self.G.add_node(
                 entity_name, 
                 type=entity_type, 
@@ -38,17 +37,17 @@ class KnowledgeGraph:
                         keywords: str = '', description: str = '',
                         strength: float = 1.0, chunk_id: str = None, **kwargs):
         """
-        Add or merge relationship edge - LightRAG style
+        Thêm hoặc gộp relationship edge - kiểu LightRAG
         
-        Args:
-            source_entity: Source entity name
-            target_entity: Target entity name
-            keywords: Comma-separated keywords
-            description: Relationship description
-            strength: Relationship strength (default: 1.0)
-            chunk_id: Source chunk ID
+        Tham số:
+            source_entity: Tên entity nguồn
+            target_entity: Tên entity đích
+            keywords: Các keywords phân cách bằng dấu phẩy
+            description: Mô tả relationship
+            strength: Độ mạnh relationship (mặc định: 1.0)
+            chunk_id: ID chunk nguồn
         """
-        # Validate entities exist
+        # Xác thực entities tồn tại
         if not self.has_node(source_entity):
             logger.warning(f"⚠️ Không tìm thấy source entity: {source_entity}")
             return False
@@ -57,21 +56,20 @@ class KnowledgeGraph:
             logger.warning(f"⚠️ Không tìm thấy target entity: {target_entity}")
             return False
         
-        # Check self-loop
+        # Kiểm tra vòng lặp tự thân
         if source_entity == target_entity:
             logger.warning(f"⚠️ Không cho phép vòng lặp tự thân: {source_entity}")
             return False
         
-        if self.G.has_edge(source_entity, target_entity):
-            # Merge existing edge
+            # Gộp edge hiện có
             edge = self.G.edges[source_entity, target_entity]
             
-            # Merge descriptions
+            # Gộp descriptions
             if description and description not in edge.get('description', ''):
                 existing_desc = edge.get('description', '')
                 edge['description'] = f"{existing_desc}; {description}".strip('; ')
             
-            # Merge keywords
+            # Gộp keywords
             if keywords:
                 existing_keywords = edge.get('keywords', '')
                 if existing_keywords:
@@ -80,14 +78,13 @@ class KnowledgeGraph:
                 else:
                     edge['keywords'] = keywords
             
-            # Accumulate strength
+            # Tích lũy strength
             edge['strength'] = edge.get('strength', 0) + strength
             
-            # Merge chunks
+            # Gộp chunks
             if chunk_id:
                 edge['chunks'] = edge.get('chunks', set()) | {chunk_id}
-        else:
-            # New edge
+            # Edge mới
             self.G.add_edge(
                 source_entity, target_entity,
                 keywords=keywords,
@@ -96,7 +93,7 @@ class KnowledgeGraph:
                 chunks={chunk_id} if chunk_id else set(),
                 **kwargs
             )
-        
+            
         return True
     
     def get_node(self, name: str):
@@ -112,10 +109,10 @@ class KnowledgeGraph:
         return self.G.has_edge(src, tgt)
     
     def to_dict(self):
-        """Convert to JSON-serializable dict"""
+        """Chuyển sang dict có thể serialize JSON"""
         data = nx.node_link_data(self.G, edges="links")
         
-        # Convert sets to lists
+        # Chuyển sets sang lists
         for node in data.get('nodes', []):
             for field in ['sources']:
                 if field in node and isinstance(node[field], set):
@@ -129,7 +126,7 @@ class KnowledgeGraph:
         return data
     
     def get_statistics(self):
-        """Get graph statistics"""
+        """Lấy thống kê đồ thị"""
         types = {}
         for _, d in self.G.nodes(data=True):
             t = d.get('type', 'unknown')
@@ -147,20 +144,20 @@ class KnowledgeGraph:
 def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict, 
                          global_config: Dict = None, **kwargs) -> KnowledgeGraph:
     """
-    Build knowledge graph - LightRAG style
+    Xây dựng knowledge graph - kiểu LightRAG
     
-    Args:
-        entities_dict: Dict of {entity_name: [entity_dicts]}
-        relationships_dict: Dict of {(src, tgt): [relationship_dicts]}
-        global_config: Optional config dict
-        **kwargs: Additional arguments (ignored)
+    Tham số:
+        entities_dict: Dict của {entity_name: [entity_dicts]}
+        relationships_dict: Dict của {(src, tgt): [relationship_dicts]}
+        global_config: Config dict tùy chọn
+        **kwargs: Tham số bổ sung (bỏ qua)
     
-    Returns:
-        KnowledgeGraph instance
+    Trả về:
+        Instance KnowledgeGraph
     """
     kg = KnowledgeGraph()
     
-    # Add entities
+    # Thêm entities
     for entity_name, nodes in entities_dict.items():
         for node in nodes:
             kg.add_entity(
@@ -170,7 +167,7 @@ def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict,
                 source_id=node.get('source_id', node.get('chunk_id', ''))
             )
     
-    # Add relationships
+    # Thêm relationships
     for (src, tgt), edges in relationships_dict.items():
         for edge in edges:
             kg.add_relationship(

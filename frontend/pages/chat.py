@@ -15,8 +15,9 @@ from backend.db.conversation_storage import ConversationStorage
 from backend.db.feedback_storage import FeedbackStorage
 from backend.retrieval.hybrid_retriever import EnhancedHybridRetriever
 from backend.retrieval.conversation_manager import ConversationManager
-from backend.utils.llm_utils import call_llm_async
+from backend.utils.llm_utils import call_llm_async, call_llm_stream
 import asyncio
+
 
 # ================= Auth Check =================
 if not st.session_state.get('authenticated', False):
@@ -474,7 +475,7 @@ for message in st.session_state.messages:
                         
                         st.markdown("---")
         
-        # ✅ FEEDBACK UI - Show after each assistant message
+        #  FEEDBACK 
         msg_index = st.session_state.messages.index(message)
         
         # Initialize feedback state
@@ -593,10 +594,22 @@ if user_query:
             
             system_prompt = """You are a helpful AI assistant with access to document context and knowledge graph.
 
-Instructions:
-1. **Relationship queries**: Use LOCAL CONTEXT (Knowledge Graph) to explain entity relationships with specific relationship types and categories
-2. **Document queries**: Use GLOBAL CONTEXT (Documents) and cite sources with [1], [2], etc.
-3. **General**: Consider conversation history, be concise, and explain the basis of your answer"""
+CRITICAL INSTRUCTIONS:
+1. **IDENTIFY THE MAIN ENTITY FIRST**: Carefully identify the main entity/person being asked about in the question
+2. **FOCUS ONLY ON THAT ENTITY**: Answer ONLY about that specific entity. DO NOT answer about other entities even if they appear in the context
+3. **Use Correct Context**:
+   - For relationship queries: Use LOCAL CONTEXT (Knowledge Graph) to explain relationships of the entity mentioned in the question
+   - For document queries: Use GLOBAL CONTEXT (Documents) and cite sources with [1], [2], etc.
+4. **Verify Before Answering**: Double-check that your answer is about the entity mentioned in the question, not about other entities
+5. **Be Precise**: If the question asks about "Person A", do NOT answer about "Person B" even if Person B appears in the context
+
+Example:
+- Question: "vũ hoàng hiệp có quan hệ với những ai"
+- Main entity: Vũ Hoàng Hiệp
+- Correct: Answer about Vũ Hoàng Hiệp's relationships
+- Wrong: Answer about other people's relationships
+
+REMEMBER: Always answer about the entity mentioned in the question, not other entities in the context!"""
 
             if use_history:
                 history_context = st.session_state.conv_manager.get_context_for_llm()
@@ -609,48 +622,49 @@ Question: {user_query}
 """
             messages_for_llm.append({"role": "user", "content": user_prompt})
             
-            # Call LLM
+            # Prepare prompt for streaming
+            if use_history and len(messages_for_llm) > 1:
+                full_prompt = "\n\n".join([
+                    f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+                    for m in messages_for_llm[:-1]
+                ]) + f"\n\nUser: {user_prompt}"
+            else:
+                full_prompt = user_prompt
+            
+            # Stream LLM response
+            response_placeholder = st.empty()
+            response_container = [""]  # Use list to avoid nonlocal binding issues
+            
             try:
-                if use_history and len(messages_for_llm) > 1:
-                    full_prompt = "\n\n".join([
-                        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
-                        for m in messages_for_llm[:-1]
-                    ]) + f"\n\nUser: {user_prompt}"
-                    
-                    response = asyncio.run(call_llm_async(
+                # Create async generator for streaming
+                async def stream_response():
+                    async for chunk in call_llm_stream(
                         prompt=full_prompt,
                         system_prompt=system_prompt,
                         temperature=temperature,
                         max_tokens=2000
-                    ))
-                else:
-                    response = asyncio.run(call_llm_async(
-                        prompt=user_prompt,
-                        system_prompt=system_prompt,
-                        temperature=temperature,
-                        max_tokens=2000
-                    ))
-            except:
-                from backend.utils.llm_utils import call_llm
-                if use_history and len(messages_for_llm) > 1:
-                    full_prompt = "\n\n".join([
-                        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
-                        for m in messages_for_llm[:-1]
-                    ]) + f"\n\nUser: {user_prompt}"
-                    
-                    response = call_llm(
-                        prompt=full_prompt,
-                        system_prompt=system_prompt,
-                        temperature=temperature,
-                        max_tokens=2000
-                    )
-                else:
-                    response = call_llm(
-                        prompt=user_prompt,
-                        system_prompt=system_prompt,
-                        temperature=temperature,
-                        max_tokens=2000
-                    )
+                    ):
+                        yield chunk
+                
+                # Display streaming response
+                async def collect_response():
+                    async for chunk in stream_response():
+                        response_container[0] += chunk
+                        # Update display with markdown formatting
+                        response_placeholder.markdown(f"""
+                        <div class="chat-message assistant-message">
+                            <strong>🤖 Assistant:</strong><br>{response_container[0]}
+                        </div>
+                        """, unsafe_allow_html=True)
+                
+                # Run streaming
+                asyncio.run(collect_response())
+                response = response_container[0]
+                
+            except Exception as e:
+                st.error(f"❌ LLM call failed: {e}")
+                raise
+            
             
             # Save to MongoDB
             if use_history:

@@ -1,6 +1,6 @@
 # backend/retrieval/conversation_manager.py
 """
-💬 Conversation Manager 
+Quản lý Hội thoại
 """
 from typing import List, Dict, Optional
 from dataclasses import dataclass
@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Message:
-    """Simple message structure"""
+    """Cấu trúc message đơn giản"""
     role: str  # 'user' or 'assistant'
     content: str
     message_id: Optional[str] = None
@@ -46,7 +46,7 @@ class ConversationManager:
         self.conversation_id = conversation_id
     
     def set_conversation(self, conversation_id: str, conv_storage):
-        """Switch to different conversation"""
+        """Chuyển sang hội thoại khác"""
         self.conversation_id = conversation_id
         self.conv_storage = conv_storage
         
@@ -196,16 +196,16 @@ Rewritten Query:"""
         }
 
 
-# Utility Functions
+# Hàm Tiện Ích
 def create_conversation_manager(
     max_history: int = 5,
     conv_storage=None,
     conversation_id: Optional[str] = None
 ) -> ConversationManager:
     """
-    Factory function
+    Hàm factory
     
-    Usage:
+    Cách dùng:
         conv_manager = create_conversation_manager(
             max_history=5,
             conv_storage=storage,
@@ -220,7 +220,7 @@ def create_conversation_manager(
 
 
 def format_history_for_prompt(history: List[Message], max_turns: int = 3) -> str:
-    """Format history thành text cho system prompt"""
+    """Format lịch sử thành text cho system prompt"""
     if not history:
         return ""
     

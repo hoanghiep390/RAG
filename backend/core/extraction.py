@@ -1,7 +1,7 @@
 # backend/core/extraction.py 
 """
-🚀 Entity & Relationship Extraction - LightRAG Style
-Simplified single-stage extraction following LightRAG approach
+Trích xuất Entity & Relationship - Phong cách LightRAG
+Trích xuất đơn giản một giai đoạn theo cách tiếp cận LightRAG
 """
 
 import asyncio
@@ -35,17 +35,17 @@ ENTITY_TYPES = [
 #  Helper Functions
 
 def sanitize_text(text: str) -> str:
-    """Sanitize and normalize extracted text"""
+    """Làm sạch và chuẩn hóa văn bản đã trích xuất"""
     if not text:
         return ""
     
-    # Remove quotes
+    # Xóa dấu ngoặc kép
     text = text.strip().strip('"').strip("'")
     
-    # Remove special characters that shouldn't be in entity names
+    # Xóa ký tự đặc biệt không nên có trong tên entity
     text = re.sub(r'[<>|/\\]', '', text)
     
-    # Normalize whitespace
+    # Chuẩn hóa khoảng trắng
     text = ' '.join(text.split())
     
     return text.strip()
@@ -55,14 +55,14 @@ def sanitize_text(text: str) -> str:
 
 def create_extraction_prompt(text: str, entity_types: List[str] = None) -> str:
     """
-    Create LightRAG-style extraction prompt
+    Tạo prompt trích xuất kiểu LightRAG
     
-    Args:
-        text: Text to extract from
-        entity_types: List of entity types (default: ENTITY_TYPES)
+    Tham số:
+        text: Văn bản cần trích xuất
+        entity_types: Danh sách loại entity (mặc định: ENTITY_TYPES)
     
-    Returns:
-        Formatted prompt string
+    Trả về:
+        Chuỗi prompt đã định dạng
     """
     if entity_types is None:
         entity_types = ENTITY_TYPES
@@ -147,14 +147,14 @@ relation{TUPLE_DELIMITER}Noah Carter{TUPLE_DELIMITER}World Athletics Championshi
 
 def create_continue_extraction_prompt(text: str, previous_result: str) -> str:
     """
-    Create continue extraction prompt for gleaning (LightRAG-style)
+    Tạo prompt tiếp tục trích xuất cho gleaning (kiểu LightRAG)
     
-    Args:
-        text: Original text
-        previous_result: Previous extraction result
+    Tham số:
+        text: Văn bản gốc
+        previous_result: Kết quả trích xuất trước đó
     
-    Returns:
-        Continue extraction prompt
+    Trả về:
+        Prompt tiếp tục trích xuất
     """
     prompt = f"""---Task---
 Based on the last extraction task, identify and extract any **missed or incorrectly formatted** entities and relationships from the input text.
@@ -188,19 +188,19 @@ Based on the last extraction task, identify and extract any **missed or incorrec
 
 def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
     """
-    Parse LightRAG-style extraction result
+    Phân tích kết quả trích xuất kiểu LightRAG
     
-    Args:
-        result: LLM output string
-        chunk_id: Chunk identifier
+    Tham số:
+        result: Chuỗi output của LLM
+        chunk_id: Mã nhận diện chunk
     
-    Returns:
+    Trả về:
         (entities_dict, relationships_dict)
     """
     entities = defaultdict(list)
     relationships = defaultdict(list)
     
-    # Split by newlines
+    # Chia theo dòng mới
     lines = result.strip().split('\n')
     
     for line in lines:
@@ -208,11 +208,11 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
         if not line:
             continue
         
-        # Skip completion delimiter
+        # Bỏ qua dấu phân cách hoàn thành
         if COMPLETION_DELIMITER in line:
             continue
         
-        # Split by tuple delimiter
+        # Chia theo dấu phân cách tuple
         parts = line.split(TUPLE_DELIMITER)
         
         if len(parts) < 4:
@@ -220,18 +220,18 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
         
         record_type = parts[0].strip().lower()
         
-        # Parse entity
+        # Phân tích entity
         if 'entity' in record_type and len(parts) >= 4:
             entity_name = sanitize_text(parts[1])
             entity_type = sanitize_text(parts[2]).lower()
             entity_description = sanitize_text(parts[3])
             
-            # Validate
+            # Xác thực
             if not entity_name or not entity_description:
                 logger.debug(f"⚠️ Bỏ qua entity không hợp lệ: {parts}")
                 continue
             
-            # Validate entity type
+            # Xác thực loại entity
             if entity_type not in ENTITY_TYPES:
                 entity_type = 'other'
             
@@ -243,14 +243,14 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
                 'chunk_id': chunk_id
             })
         
-        # Parse relationship
+        # Phân tích relationship
         elif 'relation' in record_type and len(parts) >= 5:
             source = sanitize_text(parts[1])
             target = sanitize_text(parts[2])
             keywords = sanitize_text(parts[3])
             description = sanitize_text(parts[4])
             
-            # Validate
+            # Xác thực
             if not source or not target or source == target:
                 logger.debug(f"⚠️ Bỏ qua relationship không hợp lệ: {parts}")
                 continue

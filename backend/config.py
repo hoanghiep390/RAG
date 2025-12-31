@@ -1,6 +1,6 @@
 # backend/config.py - ENHANCED VERSION
 """
-MongoDB Configuration & Connection Manager + Centralized Config
+Cấu hình MongoDB & Quản lý Kết nối + Cấu hình Tập trung
 """
 import os
 from pymongo import MongoClient
@@ -11,9 +11,9 @@ import logging
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-# ================= Centralized Configuration =================
+# Cấu hình Tập trung
 class Config:
-    """Centralized configuration for all components"""
+    """Cấu hình tập trung cho tất cả các thành phần"""
     
     # ========== MongoDB ==========
     MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
@@ -61,7 +61,7 @@ class Config:
     
     @classmethod
     def get_user_upload_dir(cls, user_id: str):
-        """Get user upload directory"""
+        """Lấy thư mục upload của người dùng"""
         from pathlib import Path
         path = Path(cls.DATA_DIR) / user_id / "uploads"
         path.mkdir(parents=True, exist_ok=True)
@@ -69,7 +69,7 @@ class Config:
     
     @classmethod
     def get_user_vector_dir(cls, user_id: str):
-        """Get user vector directory"""
+        """Lấy thư mục vector của người dùng"""
         from pathlib import Path
         path = Path(cls.DATA_DIR) / user_id / "vectors"
         path.mkdir(parents=True, exist_ok=True)
@@ -77,21 +77,21 @@ class Config:
     
     @classmethod
     def validate(cls):
-        """Validate configuration"""
+        """Xác thực cấu hình"""
         errors = []
         
-        # Check API keys
+        # Kiểm tra API keys
         if cls.LLM_PROVIDER == 'openai' and not os.getenv('OPENAI_API_KEY'):
             errors.append("OPENAI_API_KEY not set but LLM_PROVIDER is 'openai'")
         
         if cls.LLM_PROVIDER == 'groq' and not os.getenv('GROQ_API_KEY'):
             errors.append("GROQ_API_KEY not set but LLM_PROVIDER is 'groq'")
         
-        # Check embedding dimension
+        # Kiểm tra kích thước embedding
         if cls.EMBEDDING_MODEL == 'all-MiniLM-L6-v2' and cls.EMBEDDING_DIM != 384:
             logger.warning(f"⚠️ EMBEDDING_DIM là {cls.EMBEDDING_DIM} nhưng all-MiniLM-L6-v2 tạo vectors 384-chiều")
         
-        # Check HNSW params
+        # Kiểm tra tham số HNSW
         if cls.USE_HNSW and cls.HNSW_M < 4:
             errors.append(f"HNSW_M ({cls.HNSW_M}) is too low, should be >= 4")
         
@@ -99,9 +99,9 @@ class Config:
             raise ValueError(f"Configuration errors:\n" + "\n".join(f"- {e}" for e in errors))
         
         logger.info("✅ Đã xác thực cấu hình thành công")
-# ================= MongoDB Connection Manager =================
+# Quản lý Kết nối MongoDB
 class MongoDBConfig:
-    """MongoDB configuration and connection manager"""
+    """Cấu hình và quản lý kết nối MongoDB"""
     
     def __init__(self):
         self.uri = Config.MONGODB_URI
@@ -110,10 +110,10 @@ class MongoDBConfig:
         self.db = None
         
     def connect(self):
-        """Establish MongoDB connection"""
+        """Thiết lập kết nối MongoDB"""
         try:
             self.client = MongoClient(self.uri)
-            # Test connection
+            # Kiểm tra kết nối
             self.client.admin.command('ping')
             self.db = self.client[self.db_name]
             logger.info(f"✅ Đã kết nối MongoDB: {self.db_name}")
@@ -123,19 +123,19 @@ class MongoDBConfig:
             return False
     
     def get_database(self):
-        """Get database instance"""
+        """Lấy instance database"""
         if self.db is None:
             self.connect()
         return self.db
     
     def close(self):
-        """Close MongoDB connection"""
+        """Đóng kết nối MongoDB"""
         if self.client:
             self.client.close()
             logger.info("✅ Đã đóng kết nối MongoDB")
     
     def health_check(self):
-        """Check MongoDB health"""
+        """Kiểm tra sức khỏe MongoDB"""
         try:
             if self.client:
                 self.client.admin.command('ping')
@@ -145,25 +145,25 @@ class MongoDBConfig:
             logger.error(f"❌ Kiểm tra sức khỏe MongoDB thất bại: {e}")
             return False
 
-# Global instance
+# Instance toàn cục
 _mongo_config = None
 
 def get_mongodb():
-    """Get MongoDB database instance (Singleton)"""
+    """Lấy instance MongoDB database (Singleton)"""
     global _mongo_config
     if _mongo_config is None:
         _mongo_config = MongoDBConfig()
     return _mongo_config.get_database()
 
 def close_mongodb():
-    """Close MongoDB connection"""
+    """Đóng kết nối MongoDB"""
     global _mongo_config
     if _mongo_config:
         _mongo_config.close()
         _mongo_config = None
 
 def get_mongodb_client():
-    """Get MongoDB client instance"""
+    """Lấy instance MongoDB client"""
     global _mongo_config
     if _mongo_config is None:
         _mongo_config = MongoDBConfig()
@@ -171,9 +171,9 @@ def get_mongodb_client():
         _mongo_config.connect()
     return _mongo_config.client
 
-# ================= Initialization =================
+# Khởi tạo
 def initialize_config():
-    """Initialize and validate configuration"""
+    """Khởi tạo và xác thực cấu hình"""
     try:
         Config.validate()
         Config.print_config()
@@ -189,7 +189,7 @@ def initialize_config():
         logger.error(f"❌ Khởi tạo cấu hình thất bại: {e}")
         return False
 
-# ================= Export =================
+# Xuất
 __all__ = [
     'Config',
     'MongoDBConfig',

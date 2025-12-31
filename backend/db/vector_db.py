@@ -124,7 +124,7 @@ except ImportError as e:
 
 
 class VectorDatabase:
-    """Enhanced FAISS wrapper with robust save/load"""
+    """Wrapper FAISS nâng cao với lưu/tải mạnh mẽ"""
     
     def __init__(self, user_id: str, dim: int = None, use_hnsw: bool = None, auto_save: bool = True):
         from backend.config import Config

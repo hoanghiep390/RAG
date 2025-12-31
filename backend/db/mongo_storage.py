@@ -12,7 +12,7 @@ from backend.db.entity_validator import EntityValidator
 logger = logging.getLogger(__name__)
 
 class MongoStorage:
-    """ Proper graph deletion with doc_id tracking"""
+    """Xóa đồ thị đúng cách với theo dõi doc_id"""
     
     def __init__(self, user_id: str):
         self.user_id = user_id
@@ -32,7 +32,7 @@ class MongoStorage:
             raise
     
     def _create_indexes(self):
-        """Create indexes including doc_id for graph collections"""
+        """Tạo indexes bao gồm doc_id cho các collections graph"""
         try:
             # Existing indexes
             self.documents.create_index([('user_id', 1), ('doc_id', 1)], unique=True)
@@ -57,7 +57,7 @@ class MongoStorage:
     #  SAVE METHODS 
     
     def save_document(self, doc_id: str, filename: str, filepath: str, metadata: Dict = None) -> str:
-        """Save document metadata"""
+        """Lưu metadata của tài liệu"""
         try:
             doc = {
                 'user_id': self.user_id,
@@ -76,7 +76,7 @@ class MongoStorage:
             raise
     
     def update_document_status(self, doc_id: str, status: str, stats: Dict = None):
-        """Update document status"""
+        """Cập nhật trạng thái tài liệu"""
         try:
             update_data = {'status': status, 'updated_at': datetime.now()}
             if stats:
@@ -93,7 +93,7 @@ class MongoStorage:
             raise
     
     def get_document(self, doc_id: str):
-        """Get document by ID"""
+        """Lấy tài liệu theo ID"""
         try:
             return self.documents.find_one({'user_id': self.user_id, 'doc_id': doc_id})
         except Exception as e:
@@ -101,7 +101,7 @@ class MongoStorage:
             return None
     
     def list_documents(self):
-        """List all documents for user"""
+        """Liệt kê tất cả tài liệu của user"""
         try:
             return list(self.documents.find({'user_id': self.user_id}).sort('uploaded_at', -1))
         except Exception as e:
@@ -109,7 +109,7 @@ class MongoStorage:
             return []
     
     def save_chunks_bulk(self, doc_id: str, chunks: List[Dict]):
-        """Bulk save chunks"""
+        """Lưu chunks hàng loạt"""
         if not chunks:
             return 0
         
@@ -332,10 +332,11 @@ class MongoStorage:
     
     def save_document_complete(self, doc_id: str, filename: str, filepath: str,
                                chunks: List[Dict], entities: Dict = None,
-                               relationships: Dict = None, graph: Dict = None, stats: Dict = None):
+                               relationships: Dict = None, graph: Dict = None, stats: Dict = None, 
+                               metadata: Dict = None): 
         """Complete save with doc_id tracking and graph rebuild"""
         try:
-            self.save_document(doc_id, filename, filepath)
+            self.save_document(doc_id, filename, filepath, metadata=metadata)  
             
             if chunks:
                 self.save_chunks_bulk(doc_id, chunks)

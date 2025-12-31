@@ -24,8 +24,8 @@ class FeedbackStorage:
     
     def __init__(self, user_id: str):
         """
-        Args:
-            user_id: User ID for data isolation
+        Tham số:
+            user_id: User ID cho cô lập dữ liệu
         """
         self.user_id = user_id
         try:
@@ -39,7 +39,7 @@ class FeedbackStorage:
             raise
     
     def _create_indexes(self):
-        """Create indexes for performance"""
+        """Tạo indexes cho hiệu suất"""
         try:
             # Unique index for (user_id, conversation_id, message_index)
             self.feedbacks.create_index([

@@ -1,6 +1,6 @@
 # backend/core/embedding.py
 """
-Embedding generation with Config integration 
+Tạo embedding với tích hợp Config
 """
 from sentence_transformers import SentenceTransformer
 from typing import List, Dict
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _model = None
 
 def get_model():
-    """Get or initialize embedding model (singleton)"""
+    """Lấy hoặc khởi tạo mô hình embedding (singleton)"""
     global _model
     if _model is None:
         from backend.config import Config
@@ -39,7 +39,7 @@ def get_model():
     return _model
 
 def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict]:
-    """Generate embeddings for chunks"""
+    """Tạo embeddings cho các chunks"""
     if not chunks:
         logger.warning("⚠️ Không có chunks để tạo embedding")
         return []
@@ -89,7 +89,7 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
         return []
 
 def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> List[Dict]:
-    """Generate embeddings for entities"""
+    """Tạo embeddings cho các entities"""
     from backend.config import Config
     batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE
     
@@ -148,14 +148,14 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
 
 
 def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int = None) -> List[Dict]:
-    """Generate embeddings for relationships (global retrieval)
+    """Tạo embeddings cho relationships (truy vấn toàn cục)
     
-    Args:
-        relationships_dict: Dict of (source, target) -> list of relationships
-        batch_size: Batch size for encoding
+    Tham số:
+        relationships_dict: Dict của (source, target) -> danh sách relationships
+        batch_size: Kích thước batch cho encoding
     
-    Returns:
-        List of relationship embedding dicts with entity_type='RELATIONSHIP'
+    Trả về:
+        Danh sách relationship embedding dicts với entity_type='RELATIONSHIP'
     """
     from backend.config import Config
     batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE
@@ -164,7 +164,7 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
     
     for (source, target), rels in relationships_dict.items():
         for rel in rels:
-            # Create rich text for relationship
+            # Tạo văn bản phong phú cho relationship
             rel_text = (
                 f"{source} -> {target}: "
                 f"{rel.get('description', '')} "
@@ -218,9 +218,9 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
         logger.error(f"❌ Không thể tạo relationship embeddings: {e}")
         return []
 
-# Remaining functions unchanged...
+# Các hàm còn lại...
 def generate_text_embedding(text: str) -> np.ndarray:
-    """Generate embedding for a single text (for queries)"""
+    """Tạo embedding cho một văn bản (cho queries)"""
     try:
         model = get_model()
         embedding = model.encode([text], normalize_embeddings=True)[0]
@@ -230,7 +230,7 @@ def generate_text_embedding(text: str) -> np.ndarray:
         return None
 
 def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
-    """Batch encode multiple texts"""
+    """Encode nhiều văn bản theo batch"""
     batch_size = batch_size or Config.EMBEDDING_BATCH_SIZE  
     
     if not texts:
@@ -251,7 +251,7 @@ def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
         logger.error(f"❌ Mã hóa batch thất bại: {e}")
         return np.array([])
 def get_embedding_dimension() -> int:
-    """Get actual embedding dimension from loaded model"""
+    """Lấy kích thước embedding thực tế từ mô hình đã tải"""
     try:
         model = get_model()
         test_emb = model.encode(["test"], normalize_embeddings=True)

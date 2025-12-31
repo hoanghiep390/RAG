@@ -1,6 +1,6 @@
 # backend/retrieval/vector_retriever.py
 """
- Vector Retriever 
+Bộ Trích xuất Vector
 """
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
@@ -22,20 +22,20 @@ class ScoredChunk:
     def __repr__(self):
         return f"ScoredChunk(score={self.score:.3f}, doc={self.filename})"
 
-#  Main Retriever 
+# Bộ Retriever Chính 
 class VectorRetriever:
-    """Simple vector search wrapper"""
+    """Wrapper tìm kiếm vector đơn giản"""
     
     def __init__(self, vector_db):
         """
-        Args:
-            vector_db: VectorDatabase instance from backend.db.vector_db
+        Tham số:
+            vector_db: Instance VectorDatabase từ backend.db.vector_db
         """
         self.vector_db = vector_db
         self.embed_model = None
     
     def _get_embed_model(self):
-        """Lazy load embedding model"""
+        """Tải mô hình embedding lazy"""
         if self.embed_model is None:
             from backend.core.embedding import get_model
             self.embed_model = get_model()
@@ -49,16 +49,16 @@ class VectorRetriever:
         min_score: float = 0.0
     ) -> List[ScoredChunk]:
         """
-        Vector search - Main entry point
+        Tìm kiếm vector - Điểm vào chính
         
-        Args:
-            query: User query text
-            top_k: Number of results to return
-            doc_ids: Filter by specific documents (optional)
-            min_score: Minimum similarity score (0-1)
+        Tham số:
+            query: Văn bản query của người dùng
+            top_k: Số kết quả trả về
+            doc_ids: Lọc theo tài liệu cụ thể (tùy chọn)
+            min_score: Điểm tương đồng tối thiểu (0-1)
         
-        Returns:
-            List of ScoredChunk, sorted by score descending
+        Trả về:
+            Danh sách ScoredChunk, sắp xếp theo điểm giảm dần
         """
         try:
             model = self._get_embed_model()
@@ -111,9 +111,9 @@ class VectorRetriever:
         **kwargs
     ) -> List[ScoredChunk]:
         """
-        Search by pre-computed embedding
+        Tìm kiếm bằng embedding đã tính sẵn
         
-        Useful when you already have the embedding and want to avoid re-encoding.
+        Hữu ích khi bạn đã có embedding và muốn tránh encode lại.
         """
         try:
             raw_results = self.vector_db.search(
@@ -129,7 +129,7 @@ class VectorRetriever:
             return []
     
     def _convert_to_scored_chunks(self, raw_results: List[Dict]) -> List[ScoredChunk]:
-        """Convert raw vector DB results to ScoredChunk"""
+        """Chuyển kết quả thô từ vector DB sang ScoredChunk"""
         chunks = []
         for r in raw_results:
             chunk = ScoredChunk(
@@ -150,10 +150,10 @@ class VectorRetriever:
         return chunks
     
     def get_statistics(self) -> Dict:
-        """Get vector DB statistics"""
+        """Lấy thống kê vector DB"""
         return self.vector_db.get_statistics()
 
-# Convenience Function 
+# Hàm Tiện Ích 
 def search_vectors(
     query: str,
     vector_db,
@@ -161,9 +161,9 @@ def search_vectors(
     **kwargs
 ) -> List[ScoredChunk]:
     """
-    Quick search function - Singleton pattern
+    Hàm tìm kiếm nhanh - Mẫu Singleton
     
-    Usage:
+    Cách dùng:
         from backend.db.vector_db import VectorDatabase
         from backend.retrieval.vector_retriever import search_vectors
         

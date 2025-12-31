@@ -53,8 +53,7 @@ def is_acronym_match(name1: str, name2: str) -> bool:
     if acronym1 == acronym2:
         return True
     
-    # Kiểm tra nếu một tên là chuỗi con của tên kia (cho rút gọn)
-    # Nhưng chỉ nếu cả hai đủ dài để tránh dương tính giả
+    
     if len(acronym1) >= 4 and len(acronym2) >= 4:
         if acronym1 in acronym2 or acronym2 in acronym1:
             return True

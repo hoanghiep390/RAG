@@ -1,7 +1,7 @@
 # backend/db/entity_validator.py
 """
-🔍 Entity Validator - Foreign Key Constraint Validation
-Ensures data integrity for relationships
+Bộ Kiểm Tra Entity - Xác thực ràng buộc khóa ngoại
+Đảm bảo tính toàn vẹn dữ liệu cho relationships
 """
 
 from typing import Dict, List, Tuple, Set, Optional
@@ -16,23 +16,23 @@ class EntityValidator:
     Validator để đảm bảo foreign key constraints
     
     Features:
-    - Validate relationships có entities tồn tại
+    - xác nhận relationships có entities tồn tại
     - Cache entities để tăng performance
     - Cleanup orphaned relationships
     """
     
     def __init__(self, mongo_storage):
         """
-        Args:
-            mongo_storage: MongoStorage instance
+        Tham số:
+            mongo_storage 
         """
         self.storage = mongo_storage
         self.user_id = mongo_storage.user_id
-        self._entity_cache = {}  # {entity_name: True/False}
+        self._entity_cache = {}  
         self._cache_loaded = False
     
     def _load_entity_cache(self, force_reload: bool = False):
-        """Load all entities vào cache"""
+        """Tải tất cả entities vào cache"""
         if self._cache_loaded and not force_reload:
             return
         
@@ -58,14 +58,14 @@ class EntityValidator:
     
     def entity_exists(self, entity_name: str, use_cache: bool = True) -> bool:
         """
-        Check if entity exists
+        Kiểm tra nếu entity tồn tại
         
-        Args:
-            entity_name: Entity name to check
-            use_cache: Use cache (faster) or query DB (accurate)
+        Tham số:
+            entity_name: Tên entity cần kiểm tra
+            use_cache: Dùng cache (nhanh hơn) hoặc query DB (chính xác hơn)
         
-        Returns:
-            True if entity exists
+        Trả về:
+            True nếu entity tồn tại
         """
         if not entity_name:
             return False
@@ -94,14 +94,14 @@ class EntityValidator:
         use_cache: bool = True
     ) -> Tuple[bool, Optional[str]]:
         """
-        Validate một relationship
+        Xác thực một relationship
         
-        Args:
-            source_id: Source entity name
-            target_id: Target entity name
-            use_cache: Use cache for validation
+        Tham số:
+            source_id: Tên entity nguồn
+            target_id: Tên entity đích
+            use_cache: Dùng cache cho validation
         
-        Returns:
+        Trả về:
             (is_valid, error_message)
         """
         # Check source exists
@@ -124,13 +124,13 @@ class EntityValidator:
         use_cache: bool = True
     ) -> Tuple[Dict, List[Dict]]:
         """
-        Validate batch relationships
+        Xác thực batch relationships
         
-        Args:
-            relationships_dict: Dict of {(source, target): [relationship_dicts]}
-            use_cache: Use cache for validation
+        Tham số:
+            relationships_dict: Dict của {(source, target): [relationship_dicts]}
+            use_cache: Dùng cache cho validation
         
-        Returns:
+        Trả về:
             (valid_relationships_dict, invalid_relationships_list)
         """
         if not relationships_dict:
@@ -168,8 +168,8 @@ class EntityValidator:
         """
         Tìm relationships không có entities
         
-        Returns:
-            List of orphaned relationship documents
+        Trả về:
+            Danh sách orphaned relationship documents
         """
         try:
             # Get all entity names
@@ -199,13 +199,13 @@ class EntityValidator:
     
     def cleanup_orphaned_relationships(self, dry_run: bool = True) -> Dict:
         """
-        Cleanup orphaned relationships
+        Dọn dẹp orphaned relationships
         
-        Args:
-            dry_run: If True, only report what would be deleted
+        Tham số:
+            dry_run: Nếu True, chỉ báo cáo những gì sẽ bị xóa
         
-        Returns:
-            Stats dict
+        Trả về:
+            Dict thống kê
         """
         stats = {
             'orphaned_count': 0,

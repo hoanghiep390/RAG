@@ -150,13 +150,13 @@ try:
 except Exception as e:
     init_errors.append(f"FAISS init failed: {str(e)}")
 
-# ✅ FIXED: Pass vector_db and mongo_storage to pipeline
+
 if mongo_storage and vector_db:
     try:
         pipeline = DocumentPipeline(
             user_id=user_id,
-            vector_db=vector_db,           # ✅ NEW: Pass VectorDB
-            mongo_storage=mongo_storage    # ✅ NEW: Pass MongoDB
+            vector_db=vector_db,           
+            mongo_storage=mongo_storage  
         )
     except Exception as e:
         init_errors.append(f"Pipeline init failed: {str(e)}")
@@ -289,7 +289,7 @@ if uploaded_files:
                     file_progress.progress(pct / 100)
                 
                 try:
-                    # ✅ Process with auto_save=True (default)
+                    #  Process with auto_save=True (default)
                     result = pipeline.process_file(
                         file,
                         chunk_config=ChunkConfig(
@@ -299,12 +299,11 @@ if uploaded_files:
                         enable_extraction=enable_extraction,
                         enable_graph=enable_graph,
                         enable_embedding=enable_embedding,
-                        auto_save=True,  # ✅ Auto-save to MongoDB + VectorDB
+                        auto_save=True,  
                         progress_callback=progress_callback
                     )
                     
                     if result['success']:
-                        # ✅ No manual save needed - already done in pipeline!
                         
                         file_status.text("✅ Complete!")
                         file_progress.progress(1.0)
@@ -315,9 +314,9 @@ if uploaded_files:
                         st.json({
                             'Chunks': result['stats'].get('chunks_count', 0),
                             'Entities': result['stats'].get('entities_count', 0),
-                            'Relationships': result['stats'].get('relationships_count', 0),  # ✅ Changed from Graph Nodes
+                            'Relationships': result['stats'].get('relationships_count', 0), 
                             'Embeddings': result['stats'].get('embeddings_count', 0),
-                            'Vectors Added': result.get('vectors_added', 0)  # ✅ NEW
+                            'Vectors Added': result.get('vectors_added', 0)  
                         })
                         
                         # Show warning if any
@@ -432,7 +431,7 @@ try:
                 'Status': doc.get('status', 'unknown'),
                 'Chunks': stats.get('chunks_count', 0),
                 'Entities': stats.get('entities_count', 0),
-                'Relationships': stats.get('relationships_count', 0),  # ✅ Changed from Graph Nodes
+                'Relationships': stats.get('relationships_count', 0),
                 'Embeddings': stats.get('embeddings_count', 0),
                 'Uploaded': doc['uploaded_at'].strftime("%m/%d %H:%M")
             })

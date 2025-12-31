@@ -161,11 +161,9 @@ st.markdown("---")
 # ================= FEEDBACK ANALYTICS =================
 st.subheader("💬 User Feedback Analytics")
 
-# Get all users for feedback aggregation
 all_user_ids = [uid for uid in user_stats.keys()]
 
 if all_user_ids:
-    # Aggregate feedback stats
     total_feedbacks = 0
     all_ratings = []
     rating_dist = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -191,10 +189,9 @@ if all_user_ids:
         except:
             continue
     
-    # Calculate overall average
+
     avg_rating = sum(all_ratings) / len(all_ratings) if all_ratings else 0
     
-    # Display stats
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total Feedbacks", total_feedbacks)
@@ -203,8 +200,7 @@ if all_user_ids:
     with col3:
         satisfaction = (avg_rating / 5.0) * 100
         st.metric("Satisfaction", f"{satisfaction:.1f}%")
-    
-    # Rating Distribution Chart
+  
     st.markdown("**📊 Rating Distribution**")
     ratings = list(rating_dist.keys())
     counts = [rating_dist[r] for r in ratings]

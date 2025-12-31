@@ -1,7 +1,6 @@
 # backend/utils/llm_utils.py
 """
-LLM utilities xử lý API calls
-
+Tiện ích LLM xử lý API calls
 """
 
 import os
@@ -54,44 +53,50 @@ async def call_openai_async(
         raise
 
 
-def call_openai_sync(
+async def call_openai_stream(
     prompt: str,
     system_prompt: Optional[str] = None,
     model: str = "gpt-4o-mini",
     temperature: float = 0.3,
     max_tokens: int = 2000,
     **kwargs
-) -> str:
-    """Sync OpenAI call - No file operations"""
+):
+    """Stream OpenAI response token by token"""
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise ValueError("OPENAI_API_KEY not found")
 
-        client = OpenAI(api_key=api_key)
+        client = AsyncOpenAI(api_key=api_key)
 
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            stream=True,
             **kwargs
         )
 
-        return response.choices[0].message.content
+        async for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
 
     except ImportError:
         raise ImportError("openai package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi OpenAI API: {str(e)}")
+        logger.error(f"❌ Lỗi OpenAI streaming: {str(e)}")
         raise
+
+
+
 
 async def call_groq_async(
     prompt: str,
@@ -133,43 +138,46 @@ async def call_groq_async(
         raise
 
 
-def call_groq_sync(
+async def call_groq_stream(
     prompt: str,
     system_prompt: Optional[str] = None,
-    model: str = "llama-3.1-70b-versatile",
+    model: str = "llama-3.3-70b-versatile",
     temperature: float = 0.3,
     max_tokens: int = 2000,
     **kwargs
-) -> str:
-    """Sync Groq call - No file operations"""
+):
+    """Stream Groq response token by token"""
     try:
-        from groq import Groq
+        from groq import AsyncGroq
 
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not found")
 
-        client = Groq(api_key=api_key)
+        client = AsyncGroq(api_key=api_key)
 
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        response = client.chat.completions.create(
+        stream = await client.chat.completions.create(
             model=model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            stream=True,
             **kwargs
         )
 
-        return response.choices[0].message.content
+        async for chunk in stream:
+            if chunk.choices[0].delta.content is not None:
+                yield chunk.choices[0].delta.content
 
     except ImportError:
         raise ImportError("groq package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi Groq API: {str(e)}")
+        logger.error(f"❌ Lỗi Groq streaming: {str(e)}")
         raise
 
 
@@ -203,7 +211,7 @@ async def call_llm_async(
         raise ValueError(f"Unsupported provider: {provider}")
 
 
-def call_llm(
+async def call_llm_stream(
     prompt: str,
     system_prompt: Optional[str] = None,
     model: Optional[str] = None,
@@ -211,8 +219,8 @@ def call_llm(
     max_tokens: int = 2000,
     provider: Optional[str] = None,
     **kwargs
-) -> str:
-    """ Universal sync LLM call - No file operations"""
+):
+    """Universal streaming LLM call - yields tokens as they arrive"""
     provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
     
@@ -225,11 +233,15 @@ def call_llm(
             raise ValueError("LLM_MODEL not set in .env")
     
     if provider == "openai":
-        return call_openai_sync(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
+        async for chunk in call_openai_stream(prompt, system_prompt, model, temperature, max_tokens, **kwargs):
+            yield chunk
     elif provider == "groq":
-        return call_groq_sync(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
+        async for chunk in call_groq_stream(prompt, system_prompt, model, temperature, max_tokens, **kwargs):
+            yield chunk
     else:
         raise ValueError(f"Unsupported provider: {provider}")
+
+
 
 
 async def call_llm_batch(
@@ -273,7 +285,7 @@ async def call_llm_with_retry(
 
 
 # ============================================
-#  DEFAULT MODEL FALLBACK
+# MÔ HÌNH MẶC ĐỊNH DỰ PHÒNG
 # ============================================
 
 DEFAULT_MODEL = os.getenv("LLM_MODEL")

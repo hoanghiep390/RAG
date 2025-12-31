@@ -1,6 +1,6 @@
 # backend/retrieval/hybrid_retriever.py
 """
-🚀 ENHANCED HYBRID RETRIEVAL 
+TRUY XUẤT HỐN HỢP NÂNG CAO
 """
 
 from typing import List, Dict, Optional, Any, Tuple
@@ -12,6 +12,7 @@ import numpy as np
 from backend.retrieval.query_analyzer import QueryAnalyzer, QueryAnalysis
 from backend.retrieval.vector_retriever import VectorRetriever, ScoredChunk
 from backend.retrieval.graph_retriever import GraphRetriever, GraphContext
+from backend.retrieval.retrieval_cache import RetrievalCache
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetrievalMode:
-    """Retrieval configuration"""
+    """Cấu hình truy xuất"""
     use_global: bool = True      
     use_local: bool = True       
     use_multi_hop: bool = False  
@@ -29,7 +30,7 @@ class RetrievalMode:
 #  QUERY EXPANSION 
 
 class QueryExpander:
-    """Expand query with synonyms and related terms"""
+    """Mở rộng query với từ đồng nghĩa và thuật ngữ liên quan"""
     
     def __init__(self):
         # Common expansions (can be replaced with word2vec/bert)
@@ -62,8 +63,8 @@ async def global_retrieval(
     top_k: int = 10
 ) -> List[ScoredChunk]:
     """
-    Global retrieval: Vector search across all documents
-    Similar to LightRAG's global search
+    Truy xuất toàn cục: Tìm kiếm vector trên tất cả tài liệu
+    Tương tự như tìm kiếm toàn cục của LightRAG
     """
     try:
         chunks = await asyncio.to_thread(
@@ -89,8 +90,8 @@ async def local_retrieval(
     max_neighbors: int = 10
 ) -> List[GraphContext]:
     """
-    Local retrieval: Graph traversal from entities
-    Similar to LightRAG's local search
+    Truy xuất cục bộ: Duyệt đồ thị từ các entities
+    Tương tự như tìm kiếm cục bộ của LightRAG
     """
     try:
         contexts = await asyncio.to_thread(
@@ -284,8 +285,8 @@ class EnhancedRetrievalContext:
 
 class EnhancedHybridRetriever:
     """
-    Enhanced retriever with LightRAG-inspired features
-    Drop-in replacement for HybridRetriever
+    Bộ truy xuất nâng cao với các tính năng lấy cảm hứng từ LightRAG
+    Thay thế trực tiếp cho HybridRetriever
     """
     
     def __init__(self, vector_db, mongo_storage):
@@ -295,6 +296,10 @@ class EnhancedHybridRetriever:
         self.graph_retriever = GraphRetriever(mongo_storage)
         self.query_expander = QueryExpander()
         self.reranker = ResultReranker()
+        
+        # ✅ NEW: Retrieval cache for speed
+        self.cache = RetrievalCache(max_size=100, ttl=300)  # 5 minutes TTL
+
     
     def retrieve(
         self,
@@ -318,6 +323,13 @@ class EnhancedHybridRetriever:
         """
         import time
         start = time.time()
+        
+        # ✅ NEW: Check cache first
+        cache_mode = force_mode or 'auto'
+        cached_result = self.cache.get(query, cache_mode, top_k)
+        if cached_result is not None:
+            logger.info(f"⚡ Cache hit! Returning cached result")
+            return cached_result
         
         # Handle force_mode for backward compatibility
         if force_mode is not None and mode is None:
@@ -373,7 +385,7 @@ class EnhancedHybridRetriever:
         
         elapsed = time.time() - start
         
-        return EnhancedRetrievalContext(
+        result = EnhancedRetrievalContext(
             query=query,
             intent=analysis.intent,
             retrieval_mode='enhanced_hybrid',
@@ -390,6 +402,12 @@ class EnhancedHybridRetriever:
                 'intent': analysis.intent
             }
         )
+        
+        # ✅ NEW: Store in cache
+        self.cache.set(query, cache_mode, top_k, result)
+        
+        return result
+
     
     async def _parallel_retrieval(
         self,

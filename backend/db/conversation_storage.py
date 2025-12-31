@@ -32,9 +32,9 @@ class ConversationStorage:
             self.messages = self.db['messages']
             
             self._create_indexes()
-            logger.info(f"✅ ConversationStorage initialized for user: {user_id}")
+            logger.info(f" ConversationStorage initialized for user: {user_id}")
         except Exception as e:
-            logger.error(f"❌ Failed to initialize ConversationStorage: {e}")
+            logger.error(f" Failed to initialize ConversationStorage: {e}")
             raise
     
     def _create_indexes(self):

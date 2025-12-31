@@ -47,12 +47,12 @@ STOP_WORDS = {
 }
 
 class QueryAnalyzer:
-    """Enhanced query analyzer with semantic entity recognition"""
+    """Bộ phân tích query nâng cao với nhận diện entity ngữ nghĩa"""
     
     def __init__(self, mongo_storage=None):
         """
-        Args:
-            mongo_storage: MongoStorage instance for entity lookup (optional)
+        Tham số:
+            mongo_storage: Instance MongoStorage cho tra cứu entity (tùy chọn)
         """
         self.stop_words = STOP_WORDS['en'] | STOP_WORDS['vi']
         self.mongo_storage = mongo_storage
@@ -98,13 +98,13 @@ class QueryAnalyzer:
     
     def _extract_entities_semantic(self, query: str) -> List[str]:
         """
-        ✅ ENHANCED: Semantic entity extraction using DB lookup
-        ✅ OPTIMIZED: Cache already loaded at init, no need to reload
+        NÂNG CAO: Trích xuất entity ngữ nghĩa sử dụng tra cứu DB
+        TỐI ƯU: Cache đã tải sẵn khi init, không cần tải lại
         
-        Matching strategy:
-        1. Exact match (case-insensitive)
-        2. Fuzzy match (similarity > 0.90, reduced from 0.85)
-        3. Regex patterns (fallback)
+        Chiến lược khớp:
+        1. Khớp chính xác (không phân biệt hoa thường)
+        2. Khớp mờ (similarity > 0.90, giảm từ 0.85)
+        3. Regex patterns (dự phòng)
         """
         entities = []
         

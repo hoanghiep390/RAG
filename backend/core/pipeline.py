@@ -14,10 +14,10 @@ class DocumentPipeline:
     
     def __init__(self, user_id: str = "default", vector_db=None, mongo_storage=None):
         """
-        Args:
-            user_id: User ID for data isolation
-            vector_db: VectorDatabase instance (optional, for auto-save)
-            mongo_storage: MongoStorage instance (optional, for auto-save)
+        Tham số:
+            user_id: ID người dùng cho cô lập dữ liệu
+            vector_db: Instance VectorDatabase (tùy chọn, cho tự động lưu)
+            mongo_storage: Instance MongoStorage (tùy chọn, cho tự động lưu)
         """
         self.user_id = user_id
         self.upload_dir = Path("backend/data") / user_id / "uploads"
@@ -38,19 +38,19 @@ class DocumentPipeline:
         progress_callback: Callable = None
     ) -> Dict[str, Any]:
         """
-        Process 1 file and optionally auto-save to databases
+        Xử lý 1 file và tùy chọn tự động lưu vào databases
         
-        Args:
-            uploaded_file: Streamlit UploadedFile object
-            chunk_config: Chunking configuration
-            enable_extraction: Extract entities/relationships
-            enable_graph: Build knowledge graph
-            enable_embedding: Generate embeddings
-            auto_save: Auto-save to MongoDB + VectorDB 
-            progress_callback: Progress callback function
+        Tham số:
+            uploaded_file: Đối tượng Streamlit UploadedFile
+            chunk_config: Cấu hình chunking
+            enable_extraction: Trích xuất entities/relationships
+            enable_graph: Xây dựng knowledge graph
+            enable_embedding: Tạo embeddings
+            auto_save: Tự động lưu vào MongoDB + VectorDB
+            progress_callback: Hàm callback tiến độ
                     
-        Returns:
-            Result dict with success status and stats
+        Trả về:
+            Dict kết quả với trạng thái thành công và thống kê
         """
         
         def update(msg: str, pct: float):
@@ -64,7 +64,7 @@ class DocumentPipeline:
         }
         
         try:
-            # 1. Save file (5%)
+            # 1. Lưu file (5%)
             update("Saving file...", 5)
             filepath = save_uploaded_file(uploaded_file, self.user_id)
             result['filepath'] = str(filepath)
@@ -72,13 +72,14 @@ class DocumentPipeline:
             # 2. Chunk (20%)
             update("Chunking...", 20)
             config = chunk_config or ChunkConfig()
-            chunks = process_document_to_chunks(filepath, config)
+            chunks, doc_metadata = process_document_to_chunks(filepath, config)  
 
             if not chunks:
                 result['error'] = 'No chunks generated from document'
                 return result
 
             result['chunks'] = chunks
+            result['metadata'] = doc_metadata  
             result['stats'] = {
                 'chunks_count': len(chunks),
                 'entities_count': 0,
@@ -88,7 +89,7 @@ class DocumentPipeline:
                 'embeddings_count': 0
             }
 
-            # 3. Extract entities & relations (40%)
+            # 3. Trích xuất entities & relations (40%)
             if enable_extraction:
                 update("Extracting entities & relations...", 40)
                 entities, relationships = extract_entities_relations(chunks, {})
@@ -100,7 +101,7 @@ class DocumentPipeline:
                 result['entities'] = {}
                 result['relationships'] = {}
 
-            # 4. Build knowledge graph (60%)
+            # 4. Xây dựng knowledge graph (60%)
             if enable_graph and result['entities']:
                 update("Building knowledge graph...", 60)
                 kg = build_knowledge_graph(result['entities'], result['relationships'])
@@ -108,7 +109,7 @@ class DocumentPipeline:
                 result['stats']['graph_nodes'] = kg.G.number_of_nodes()
                 result['stats']['graph_edges'] = kg.G.number_of_edges()
 
-            # 5. Generate embeddings (75%)
+            # 5. Tạo embeddings (75%)
             if enable_embedding:
                 update("Generating embeddings...", 75)
                 
@@ -129,11 +130,11 @@ class DocumentPipeline:
                 result['embeddings'] = embeddings
                 result['stats']['embeddings_count'] = len(embeddings)
             
-            #  6. AUTO-SAVE to databases (85-95%)
+            # 6. TỰ ĐỘNG LƯU vào databases (85-95%)
             if auto_save and self.mongo_storage and self.vector_db:
                 doc_id = result['doc_id']
                 
-                # 6a. Save to MongoDB (85%)
+                # 6a. Lưu vào MongoDB (85%)
                 update("Saving to MongoDB...", 85)
                 try:
                     mongo_success = self.mongo_storage.save_document_complete(
@@ -144,7 +145,8 @@ class DocumentPipeline:
                         entities=result.get('entities'),
                         relationships=result.get('relationships'),
                         graph=result.get('graph'),
-                        stats=result['stats']
+                        stats=result['stats'],
+                        metadata=result.get('metadata', {})  # Lưu metadata vào MongoDB
                     )
                     
                     if not mongo_success:
@@ -157,7 +159,7 @@ class DocumentPipeline:
                     result['success'] = False
                     return result
                 
-                # 6b. Save embeddings to VectorDB (90%)
+                # 6b. Lưu embeddings vào VectorDB (90%)
                 update("Saving embeddings to VectorDB...", 90)
                 try:
                     if result.get('embeddings'):

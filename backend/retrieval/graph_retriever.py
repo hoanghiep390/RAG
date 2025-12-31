@@ -1,7 +1,7 @@
 # backend/retrieval/graph_retriever.py 
 """
-🕸️ Graph Retriever - LightRAG Style
-Simplified to work with keywords instead of relationship_type/category
+Bộ Trích xuất Đồ thị - Kiểu LightRAG
+Giản lược để làm việc với keywords thay vì relationship_type/category
 """
 from typing import List, Dict, Set, Optional
 from dataclasses import dataclass
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class GraphContext:
-    """Entity context with relationship info"""
+    """Context của entity với thông tin relationship"""
     entity_name: str
     entity_type: str
     description: str
@@ -25,14 +25,14 @@ class GraphContext:
         return f"GraphContext({self.entity_name}, score={self.score:.3f}, neighbors={len(self.neighbors)})"
 
 class GraphRetriever:
-    """Graph search with keyword-based scoring"""
+    """Tìm kiếm đồ thị với chấm điểm dựa trên keywords"""
     
     def __init__(self, mongo_storage):
         self.storage = mongo_storage
         self._graph_cache = None
     
     def _load_graph(self) -> Dict:
-        """Lazy load graph"""
+        """Tải đồ thị lazy"""
         if self._graph_cache is None:
             self._graph_cache = self.storage.get_graph()
             logger.info(f"📊 Đã tải: {len(self._graph_cache.get('nodes', []))} nodes, "
@@ -48,14 +48,14 @@ class GraphRetriever:
         filter_keywords: Optional[List[str]] = None
     ) -> List[GraphContext]:
         """
-        Graph search with keyword filtering
+        Tìm kiếm đồ thị với lọc keywords
         
-        Args:
-            entity_names: Starting entities
-            k_hops: Traversal depth (1-2)
-            max_neighbors: Max neighbors per entity
-            min_strength: Min edge strength
-            filter_keywords: Filter by keywords (e.g., ['development', 'management'])
+        Tham số:
+            entity_names: Các entities bắt đầu
+            k_hops: Độ sâu duyệt (1-2)
+            max_neighbors: Số láng giềng tối đa mỗi entity
+            min_strength: Độ mạnh edge tối thiểu
+            filter_keywords: Lọc theo keywords (ví dụ: ['development', 'management'])
         """
         if not entity_names:
             return []
