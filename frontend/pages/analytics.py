@@ -17,7 +17,7 @@ if not st.session_state.get('authenticated') or st.session_state.get('role') != 
     if st.button("Back"): st.switch_page("pages/chat.py")
     st.stop()
 
-st.set_page_config(page_title="Analytics", page_icon="📊", layout="wide") 
+st.set_page_config(page_title="Analytics", layout="wide") 
 
 #  CSS
 st.markdown("""

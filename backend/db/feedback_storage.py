@@ -1,6 +1,6 @@
 # backend/db/feedback_storage.py
 """
-💬 Feedback Storage - Lưu đánh giá và feedback từ user
+ Feedback Storage - Lưu đánh giá và feedback từ user
 """
 from typing import List, Dict, Optional
 from datetime import datetime
@@ -33,9 +33,9 @@ class FeedbackStorage:
             self.feedbacks = self.db['feedbacks']
             
             self._create_indexes()
-            logger.info(f"✅ FeedbackStorage đã khởi tạo cho user: {user_id}")
+            logger.info(f" FeedbackStorage đã khởi tạo cho user: {user_id}")
         except Exception as e:
-            logger.error(f"❌ Không thể khởi tạo FeedbackStorage: {e}")
+            logger.error(f" Không thể khởi tạo FeedbackStorage: {e}")
             raise
     
     def _create_indexes(self):
@@ -51,9 +51,9 @@ class FeedbackStorage:
             # Index for user queries
             self.feedbacks.create_index([('user_id', 1), ('created_at', -1)])
             
-            logger.debug("✅ Feedback indexes created")
+            logger.debug(" Feedback indexes created")
         except Exception as e:
-            logger.warning(f"⚠️ Index creation warning: {e}")
+            logger.warning(f" Index creation warning: {e}")
     
     def save_feedback(
         self,
@@ -77,7 +77,7 @@ class FeedbackStorage:
         try:
             # Validate rating
             if not (1 <= rating <= 5):
-                logger.error(f"❌ Rating không hợp lệ: {rating}")
+                logger.error(f" Rating không hợp lệ: {rating}")
                 return False
             
             feedback = {
@@ -101,13 +101,13 @@ class FeedbackStorage:
             )
             
             logger.info(
-                f"✅ Đã lưu feedback: conv={conversation_id[:8]}..., "
+                f" Đã lưu feedback: conv={conversation_id[:8]}..., "
                 f"msg={message_index}, rating={rating}"
             )
             return True
         
         except Exception as e:
-            logger.error(f"❌ Không thể lưu feedback: {e}")
+            logger.error(f" Không thể lưu feedback: {e}")
             return False
     
     def get_feedback(
@@ -133,7 +133,7 @@ class FeedbackStorage:
             })
             return feedback
         except Exception as e:
-            logger.error(f"❌ Không thể lấy feedback: {e}")
+            logger.error(f" Không thể lấy feedback: {e}")
             return None
     
     def list_user_feedbacks(
@@ -160,7 +160,7 @@ class FeedbackStorage:
             )
             return feedbacks
         except Exception as e:
-            logger.error(f"❌ Không thể liệt kê feedbacks: {e}")
+            logger.error(f" Không thể liệt kê feedbacks: {e}")
             return []
     
     def get_statistics(self) -> Dict:
@@ -208,7 +208,7 @@ class FeedbackStorage:
             }
         
         except Exception as e:
-            logger.error(f"❌ Không thể lấy thống kê: {e}")
+            logger.error(f" Không thể lấy thống kê: {e}")
             return {
                 'total_feedbacks': 0,
                 'average_rating': 0.0,
@@ -238,12 +238,12 @@ class FeedbackStorage:
             })
             
             if result.deleted_count > 0:
-                logger.info(f"✅ Đã xóa feedback: conv={conversation_id[:8]}..., msg={message_index}")
+                logger.info(f" Đã xóa feedback: conv={conversation_id[:8]}..., msg={message_index}")
                 return True
             return False
         
         except Exception as e:
-            logger.error(f"❌ Không thể xóa feedback: {e}")
+            logger.error(f" Không thể xóa feedback: {e}")
             return False
 
 

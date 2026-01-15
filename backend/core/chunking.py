@@ -47,7 +47,7 @@ class DoclingExtractor:
             return
         
         if not DOCLING_AVAILABLE:
-            raise ImportError("❌ Docling chưa được cài đặt!")
+            raise ImportError(" Docling chưa được cài đặt!")
         
         try:
             self.converter = DocumentConverter()
@@ -66,9 +66,9 @@ class DoclingExtractor:
                     allowed_formats=[InputFormat.PDF, InputFormat.DOCX],
                     pipeline_options=pipeline_options
                 )
-                logger.info(f"✅ Đã khởi tạo Docling ( thiết bị={device}, ocr={do_ocr})")
+                logger.info(f" Đã khởi tạo Docling ( thiết bị={device}, ocr={do_ocr})")
             except Exception as e:
-                logger.error(f"❌ Khởi tạo Docling thất bại: {e}")
+                logger.error(f" Khởi tạo Docling thất bại: {e}")
                 raise RuntimeError(f"Failed to initialize Docling: {e}")
         
         self._initialized = True
@@ -76,7 +76,7 @@ class DoclingExtractor:
     def extract(self, filepath: str) -> Tuple[str, dict]:
         """Trích xuất văn bản và metadata từ file"""
         try:
-            logger.info(f"📄 Docling đang trích xuất: {Path(filepath).name}")
+            logger.info(f" Docling đang trích xuất: {Path(filepath).name}")
             result = self.converter.convert(filepath)
             metadata = self._extract_metadata(result)
             
@@ -90,16 +90,16 @@ class DoclingExtractor:
                     text = func()
                     if text and text.strip():
                         metadata['export_method'] = method
-                        logger.info(f"✅ Xuất {method}: {len(text)} ký tự, {len(text.split())} từ")
+                        logger.info(f" Xuất {method}: {len(text)} ký tự, {len(text.split())} từ")
                         return text, metadata
                 except Exception as e:
                     if method == "custom":
                         raise
-                    logger.warning(f"⚠️ Xuất {method} thất bại: {e}")
+                    logger.warning(f" Xuất {method} thất bại: {e}")
             
             return "", metadata
         except Exception as e:
-            logger.error(f"❌ Trích xuất Docling thất bại cho {Path(filepath).name}: {e}")
+            logger.error(f" Trích xuất Docling thất bại cho {Path(filepath).name}: {e}")
             raise RuntimeError(f"Docling extraction failed: {e}")
     
     def _extract_metadata(self, result) -> dict:
@@ -137,9 +137,9 @@ class DoclingExtractor:
                         metadata[k] = str(v)
             
             if metadata:
-                logger.info(f"📋 Đã trích xuất {len(metadata)} trường metadata: {list(metadata.keys())}")
+                logger.info(f" Đã trích xuất {len(metadata)} trường metadata: {list(metadata.keys())}")
         except Exception as e:
-            logger.warning(f"⚠️ Không thể trích xuất metadata: {e}")
+            logger.warning(f" Không thể trích xuất metadata: {e}")
         
         return metadata
     
@@ -201,9 +201,9 @@ class DoclingExtractor:
                             try:
                                 df = element.export_to_dataframe()
                                 lines.append(df.to_markdown(index=False))
-                                logger.debug(f"✅ Bảng đã xuất dạng markdown ({len(df)} dòng)")
+                                logger.debug(f" Bảng đã xuất dạng markdown ({len(df)} dòng)")
                             except Exception as e:
-                                logger.warning(f"⚠️ Xuất bảng thất bại: {e}, sử dụng văn bản thô")
+                                logger.warning(f" Xuất bảng thất bại: {e}, sử dụng văn bản thô")
                                 lines.append(f"```\n{text}\n```")
                         else:
                             lines.append(f"```\n{text}\n```")
@@ -211,7 +211,7 @@ class DoclingExtractor:
                     elif label in element_map:
                         lines.append(element_map[label](text))
                     else:
-                        logger.warning(f"⚠️ Loại phần tử không xác định '{label}', giữ nguyên dạng văn bản")
+                        logger.warning(f" Loại phần tử không xác định '{label}', giữ nguyên dạng văn bản")
                         lines.append(text)
                     
                     lines.append("")  # Add spacing
@@ -222,16 +222,16 @@ class DoclingExtractor:
             # Fallback methods
             for attr in ['text', 'to_dict']:
                 if hasattr(result.document, attr):
-                    logger.warning(f"⚠️ Sử dụng document.{attr} dự phòng")
+                    logger.warning(f" Sử dụng document.{attr} dự phòng")
                     if attr == 'text':
                         return result.document.text
                     else:
                         return str(result.document.to_dict().get('text', ''))
             
-            logger.error("❌ Tất cả phương thức xuất đều thất bại")
+            logger.error(" Tất cả phương thức xuất đều thất bại")
             return ""
         except Exception as e:
-            logger.error(f"❌ Xuất tùy chỉnh thất bại: {e}")
+            logger.error(f" Xuất tùy chỉnh thất bại: {e}")
             raise RuntimeError(f"Cannot extract text from document: {e}")
 
 
@@ -383,7 +383,7 @@ class Chunker:
         """Chia văn bản theo token, xử lý bảng và theo dõi cấu trúc heading"""
         input_chars = len(text)
         input_tokens = self.count_tokens(text)
-        logger.info(f"📊 Input: {input_chars} ký tự, {len(text.split())} từ, {input_tokens} tokens")
+        logger.info(f" Input: {input_chars} ký tự, {len(text.split())} từ, {input_tokens} tokens")
         
         lines = text.split('\n')
         chunks, buf, buf_tokens, order = [], [], 0, 0
@@ -404,15 +404,15 @@ class Chunker:
                 # Handle tiny chunks
                 if len(p.strip()) < 5:
                     tiny_chunks_count += 1
-                    logger.debug(f"🔹 Tiny chunk ({len(p)} chars): '{p[:30]}...'")
+                    logger.debug(f" Tiny chunk ({len(p)} chars): '{p[:30]}...'")
                     if chunks:
                         chunks[-1]['content'] += "\n" + p
                         chunks[-1]['tokens'] = self.count_tokens(chunks[-1]['content'])
                         merged_chunks_count += 1
-                        logger.debug(f"✅ Merged tiny chunk vào chunk trước ({chunks[-1]['tokens']} tokens)")
+                        logger.debug(f" Merged tiny chunk vào chunk trước ({chunks[-1]['tokens']} tokens)")
                         continue
                     else:
-                        logger.debug(f"⚠️ Giữ tiny chunk cho chunk tiếp theo")
+                        logger.debug(f" Giữ tiny chunk cho chunk tiếp theo")
                         return [p]
                 
                 result.append({
@@ -449,16 +449,16 @@ class Chunker:
         output_chars = sum(len(c['content']) for c in chunks)
         output_tokens = sum(c['tokens'] for c in chunks)
         
-        logger.info(f"📊 Output: {len(chunks)} chunks, {output_chars} ký tự, {output_tokens} tokens")
-        logger.info(f"🔄 Retention: {output_chars}/{input_chars} chars ({output_chars/max(input_chars,1)*100:.1f}%), "
+        logger.info(f" Output: {len(chunks)} chunks, {output_chars} ký tự, {output_tokens} tokens")
+        logger.info(f" Retention: {output_chars}/{input_chars} chars ({output_chars/max(input_chars,1)*100:.1f}%), "
                    f"{output_tokens}/{input_tokens} tokens ({output_tokens/max(input_tokens,1)*100:.1f}%)")
         
         if tiny_chunks_count > 0:
-            logger.info(f"🔹 Tiny chunks: {tiny_chunks_count} phát hiện, {merged_chunks_count} đã merge")
+            logger.info(f" Tiny chunks: {tiny_chunks_count} phát hiện, {merged_chunks_count} đã merge")
         
         retention_rate = output_chars / max(input_chars, 1)
         if retention_rate < 0.95:
-            logger.warning(f"⚠️ Mất {(1-retention_rate)*100:.1f}% nội dung trong quá trình chunking!")
+            logger.warning(f" Mất {(1-retention_rate)*100:.1f}% nội dung trong quá trình chunking!")
 
         return chunks
 
@@ -474,7 +474,7 @@ def _read_file(filepath: str, encoding: str = 'utf-8') -> str:
             return _read_file(filepath, 'latin-1')
         raise
     except Exception as e:
-        logger.error(f"❌ Lỗi đọc file: {e}")
+        logger.error(f" Lỗi đọc file: {e}")
         return ""
 
 
@@ -491,7 +491,7 @@ def _extract_html(filepath: str) -> str:
             script.decompose()
         return soup.get_text(separator='\n', strip=True)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất HTML: {e}")
+        logger.error(f" Lỗi trích xuất HTML: {e}")
         return ""
 
 
@@ -502,7 +502,7 @@ def _extract_json(filepath: str) -> str:
             data = json.load(f)
             return json.dumps(data, indent=2, ensure_ascii=False)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất JSON: {e}")
+        logger.error(f" Lỗi trích xuất JSON: {e}")
         return ""
 
 
@@ -513,7 +513,7 @@ def _extract_xml(filepath: str) -> str:
         soup = BeautifulSoup(xml, 'xml')
         return soup.get_text(separator='\n', strip=True)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất XML: {e}")
+        logger.error(f" Lỗi trích xuất XML: {e}")
         return ""
 
 
@@ -537,7 +537,7 @@ def _extract_excel(filepath: str) -> str:
             text_parts.extend(_split_table_text(header, rows, sheet_prefix, enc, max_tokens=300, overlap=50))
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất Excel: {e}")
+        logger.error(f" Lỗi trích xuất Excel: {e}")
         return ""
 
 
@@ -552,7 +552,7 @@ def _extract_csv(filepath: str) -> str:
         rows = [" | ".join(map(str, row)) for row in df.values]
         return "\n\n".join(_split_table_text(header, rows, "", enc, max_tokens=300, overlap=50))
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất CSV: {e}")
+        logger.error(f" Lỗi trích xuất CSV: {e}")
         return ""
 
 
@@ -569,7 +569,7 @@ def _extract_pdf_pypdf2(filepath: str) -> str:
                     text_parts.append(f"=== Page {page_num} ===\n{text}")
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất PDF bằng PyPDF2: {e}")
+        logger.error(f" Lỗi trích xuất PDF bằng PyPDF2: {e}")
         return ""
 
 
@@ -585,7 +585,7 @@ def _extract_pdf_pdfplumber(filepath: str) -> str:
                     text_parts.append(f"=== Page {page_num} ===\n{text}")
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất PDF bằng pdfplumber: {e}")
+        logger.error(f" Lỗi trích xuất PDF bằng pdfplumber: {e}")
         return ""
 
 
@@ -601,7 +601,7 @@ def _extract_pptx(filepath: str) -> str:
                 text_parts.append(f"=== Slide {idx} ===\n" + "\n".join(slide_text))
         return "\n\n".join(text_parts)
     except Exception as e:
-        logger.error(f"❌ Lỗi trích xuất PPTX: {e}")
+        logger.error(f" Lỗi trích xuất PPTX: {e}")
         return ""
 
 
@@ -623,41 +623,41 @@ def extract_text_from_file(filepath: str) -> Tuple[str, dict]:
         # Try Docling first
         if DOCLING_AVAILABLE:
             try:
-                logger.info(f"📄 Đang thử Docling cho {ext}: {Path(filepath).name}")
+                logger.info(f" Đang thử Docling cho {ext}: {Path(filepath).name}")
                 extractor = DoclingExtractor()
                 text, metadata = extractor.extract(filepath)
                 
                 if text and text.strip():
-                    logger.info(f"✅ Docling đã trích xuất {len(text)} ký tự từ {Path(filepath).name}")
+                    logger.info(f" Docling đã trích xuất {len(text)} ký tự từ {Path(filepath).name}")
                     metadata['extraction_method'] = 'docling'
                     return text, metadata
                 else:
-                    logger.warning(f"⚠️ Docling trả về văn bản rỗng, thử fallback...")
+                    logger.warning(f" Docling trả về văn bản rỗng, thử fallback...")
             except Exception as e:
-                logger.warning(f"⚠️ Docling thất bại: {e}, đang thử fallback...")
+                logger.warning(f" Docling thất bại: {e}, đang thử fallback...")
         
         # Dự phòng chỉ cho PDF
         if ext == '.pdf':
             # Try PyPDF2
-            logger.info(f"📄 Đang thử PyPDF2 cho PDF: {Path(filepath).name}")
+            logger.info(f" Đang thử PyPDF2 cho PDF: {Path(filepath).name}")
             text = _extract_pdf_pypdf2(filepath)
             if text and text.strip():
-                logger.info(f"✅ PyPDF2 đã trích xuất {len(text)} ký tự")
+                logger.info(f" PyPDF2 đã trích xuất {len(text)} ký tự")
                 metadata['extraction_method'] = 'pypdf2'
                 return text, metadata
             
             # Try pdfplumber
-            logger.info(f"📄 Đang thử pdfplumber cho PDF: {Path(filepath).name}")
+            logger.info(f" Đang thử pdfplumber cho PDF: {Path(filepath).name}")
             text = _extract_pdf_pdfplumber(filepath)
             if text and text.strip():
-                logger.info(f"✅ pdfplumber đã trích xuất {len(text)} ký tự")
+                logger.info(f" pdfplumber đã trích xuất {len(text)} ký tự")
                 metadata['extraction_method'] = 'pdfplumber'
                 return text, metadata
             
-            raise RuntimeError(f"❌ Tất cả phương pháp trích xuất PDF đều thất bại cho {Path(filepath).name}")
+            raise RuntimeError(f" Tất cả phương pháp trích xuất PDF đều thất bại cho {Path(filepath).name}")
         
         # Với DOCX/DOC, Docling là bắt buộc
-        raise RuntimeError(f"❌ Docling là bắt buộc cho {ext} nhưng đã thất bại!")
+        raise RuntimeError(f" Docling là bắt buộc cho {ext} nhưng đã thất bại!")
     
     # Định dạng khác: Dùng các hàm trích xuất cũ
     extractors = {
@@ -682,7 +682,7 @@ def extract_text_from_file(filepath: str) -> Tuple[str, dict]:
     if ext in extractors:
         return extractors[ext](filepath), metadata
     
-    logger.warning(f"⚠️ Loại file không được hỗ trợ: {ext}")
+    logger.warning(f" Loại file không được hỗ trợ: {ext}")
     return "", metadata
 
 
@@ -706,13 +706,13 @@ def process_document_to_chunks(filepath: str, config: ChunkConfig = None) -> Tup
         except:
             config = ChunkConfig()
     
-    logger.info(f"📄 Đang xử lý: {filepath}")
+    logger.info(f" Đang xử lý: {filepath}")
     
     # Extract text
     text, metadata = extract_text_from_file(filepath)
     
     if not text.strip():
-        logger.warning(f"⚠️ Cảnh báo: Không trích xuất được văn bản từ {filepath}")
+        logger.warning(f" Cảnh báo: Không trích xuất được văn bản từ {filepath}")
         return [], metadata
     
     logger.info(f" Đã trích xuất {len(text)} ký tự")

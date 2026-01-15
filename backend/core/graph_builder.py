@@ -49,16 +49,16 @@ class KnowledgeGraph:
         """
         # Xác thực entities tồn tại
         if not self.has_node(source_entity):
-            logger.warning(f"⚠️ Không tìm thấy source entity: {source_entity}")
+            logger.warning(f" Không tìm thấy source entity: {source_entity}")
             return False
         
         if not self.has_node(target_entity):
-            logger.warning(f"⚠️ Không tìm thấy target entity: {target_entity}")
+            logger.warning(f" Không tìm thấy target entity: {target_entity}")
             return False
         
         # Kiểm tra vòng lặp tự thân
         if source_entity == target_entity:
-            logger.warning(f"⚠️ Không cho phép vòng lặp tự thân: {source_entity}")
+            logger.warning(f" Không cho phép vòng lặp tự thân: {source_entity}")
             return False
         
             # Gộp edge hiện có
@@ -181,7 +181,7 @@ def build_knowledge_graph(entities_dict: Dict, relationships_dict: Dict,
     
     stats = kg.get_statistics()
     logger.info(
-        f"✅ Đã xây dựng đồ thị: {stats['num_entities']} entities, "
+        f" Đã xây dựng đồ thị: {stats['num_entities']} entities, "
         f"{stats['num_relationships']} relationships"
     )
     

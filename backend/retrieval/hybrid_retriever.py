@@ -73,11 +73,11 @@ async def global_retrieval(
             top_k=top_k
         )
         
-        logger.info(f"🌐 Truy xuất toàn cục: {len(chunks)} chunks")
+        logger.info(f" Truy xuất toàn cục: {len(chunks)} chunks")
         return chunks
     
     except Exception as e:
-        logger.error(f"❌ Truy xuất toàn cục thất bại: {e}")
+        logger.error(f" Truy xuất toàn cục thất bại: {e}")
         return []
 
 
@@ -101,11 +101,11 @@ async def local_retrieval(
             max_neighbors=max_neighbors
         )
         
-        logger.info(f"📍 Truy xuất cục bộ: {len(contexts)} entities")
+        logger.info(f" Truy xuất cục bộ: {len(contexts)} entities")
         return contexts
     
     except Exception as e:
-        logger.error(f"❌ Truy xuất cục bộ thất bại: {e}")
+        logger.error(f" Truy xuất cục bộ thất bại: {e}")
         return []
 
 
@@ -179,11 +179,11 @@ def multi_hop_traversal(
             
             all_paths.extend(paths[:max_paths])
         
-        logger.info(f"🔀 Multi-hop: đã tìm thấy {len(all_paths)} đường đi")
+        logger.info(f" Multi-hop: đã tìm thấy {len(all_paths)} đường đi")
         return all_paths[:max_paths]
     
     except Exception as e:
-        logger.error(f"❌ Duyệt multi-hop thất bại: {e}")
+        logger.error(f" Duyệt multi-hop thất bại: {e}")
         return []
 
 
@@ -290,14 +290,14 @@ class EnhancedHybridRetriever:
     """
     
     def __init__(self, vector_db, mongo_storage):
-        # ✅ ENHANCED: Pass mongo_storage to QueryAnalyzer for semantic entity recognition
+        #  ENHANCED: Pass mongo_storage to QueryAnalyzer for semantic entity recognition
         self.query_analyzer = QueryAnalyzer(mongo_storage=mongo_storage)
         self.vector_retriever = VectorRetriever(vector_db)
         self.graph_retriever = GraphRetriever(mongo_storage)
         self.query_expander = QueryExpander()
         self.reranker = ResultReranker()
         
-        # ✅ NEW: Retrieval cache for speed
+        #  NEW: Retrieval cache for speed
         self.cache = RetrievalCache(max_size=100, ttl=300)  # 5 minutes TTL
 
     
@@ -324,11 +324,11 @@ class EnhancedHybridRetriever:
         import time
         start = time.time()
         
-        # ✅ NEW: Check cache first
+        #  NEW: Check cache first
         cache_mode = force_mode or 'auto'
         cached_result = self.cache.get(query, cache_mode, top_k)
         if cached_result is not None:
-            logger.info(f"⚡ Cache hit! Returning cached result")
+            logger.info(f" Cache hit! Returning cached result")
             return cached_result
         
         # Handle force_mode for backward compatibility
@@ -346,7 +346,7 @@ class EnhancedHybridRetriever:
         
         # Analyze query
         analysis = self.query_analyzer.analyze(query)
-        logger.info(f"📊 Ý định: {analysis.intent}, Entities: {analysis.entities}")
+        logger.info(f" Ý định: {analysis.intent}, Entities: {analysis.entities}")
         
         # Query expansion (optimized: only when explicitly enabled)
         queries = [query]
@@ -354,7 +354,7 @@ class EnhancedHybridRetriever:
             from backend.config import Config
             if Config.ENABLE_QUERY_EXPANSION:
                 queries = self.query_expander.expand(query)
-                logger.info(f"🔍 Đã mở rộng thành {len(queries)} queries")
+                logger.info(f" Đã mở rộng thành {len(queries)} queries")
         
         # Execute retrieval
         try:
@@ -403,7 +403,7 @@ class EnhancedHybridRetriever:
             }
         )
         
-        # ✅ NEW: Store in cache
+        #  NEW: Store in cache
         self.cache.set(query, cache_mode, top_k, result)
         
         return result
@@ -416,7 +416,7 @@ class EnhancedHybridRetriever:
         mode: RetrievalMode,
         top_k: int
     ) -> Tuple[List[ScoredChunk], List[GraphContext], List[Dict]]:
-        """Execute parallel retrieval - ✅ OPTIMIZED: Early returns for speed"""
+        """Execute parallel retrieval -  OPTIMIZED: Early returns for speed"""
         
         tasks = []
         
@@ -427,7 +427,7 @@ class EnhancedHybridRetriever:
                     global_retrieval(q, self.vector_retriever, top_k)
                 )
         
-        # Local retrieval - ✅ OPTIMIZED: Skip if no entities
+        # Local retrieval -  OPTIMIZED: Skip if no entities
         if mode.use_local and entities:
             tasks.append(
                 local_retrieval(entities, self.graph_retriever, k_hops=2, max_neighbors=top_k)
@@ -456,7 +456,7 @@ class EnhancedHybridRetriever:
                 local_entities = r
                 break
         
-        # Multi-hop reasoning - ✅ OPTIMIZED: Skip if no entities (saves time)
+        # Multi-hop reasoning -  OPTIMIZED: Skip if no entities (saves time)
         paths = []
         if mode.use_multi_hop and entities and len(entities) > 0:
             paths = await asyncio.to_thread(
@@ -482,17 +482,17 @@ class EnhancedHybridRetriever:
         
         # Header
         lines.append("=" * 80)
-        lines.append(f"📋 ENHANCED RETRIEVAL CONTEXT (DUAL-LEVEL)")
+        lines.append(f" ENHANCED RETRIEVAL CONTEXT (DUAL-LEVEL)")
         lines.append(f"Query: {query}")
         lines.append(f"Intent: {analysis.intent} | Entities: {', '.join(analysis.entities[:5])}")
         lines.append("=" * 80)
         lines.append("")
         
-        # Global context (documents) - ✅ OPTIMIZED: Reduced from 5 to 3 chunks, 400 to 200 chars
+        # Global context (documents) -  OPTIMIZED: Reduced from 5 to 3 chunks, 400 to 200 chars
         if global_chunks:
             from backend.config import Config
             max_chunks = Config.MAX_CONTEXT_CHUNKS
-            lines.append("## 🌐 GLOBAL CONTEXT (Documents)")
+            lines.append("##  GLOBAL CONTEXT (Documents)")
             lines.append("")
             
             for i, chunk in enumerate(global_chunks[:max_chunks], 1):
@@ -500,21 +500,21 @@ class EnhancedHybridRetriever:
                 lines.append(f"{chunk.content[:200]}...")
                 lines.append("")
         
-        # Local context (graph) - ✅ OPTIMIZED: Reduced from 5 to 3 entities
+        # Local context (graph) -  OPTIMIZED: Reduced from 5 to 3 entities
         if local_entities:
             from backend.config import Config
             max_chunks = Config.MAX_CONTEXT_CHUNKS
-            lines.append("## 📍 LOCAL CONTEXT (Knowledge Graph)")
+            lines.append("##  LOCAL CONTEXT (Knowledge Graph)")
             lines.append("")
             
             for i, entity in enumerate(local_entities[:max_chunks], 1):
                 lines.append(f"[{i}] **{entity.entity_name}** ({entity.entity_type})")
                 
                 if entity.description:
-                    lines.append(f"    📝 {entity.description[:150]}")
+                    lines.append(f"     {entity.description[:150]}")
                 
                 if entity.relationships:
-                    lines.append(f"    🔗 Relationships:")
+                    lines.append(f"     Relationships:")
                     for rel in entity.relationships[:3]:
                         rel_type = rel.get('relationship_type', rel.get('keywords', 'RELATED_TO'))
                         category = rel.get('category', rel.get('keywords', ''))
@@ -527,7 +527,7 @@ class EnhancedHybridRetriever:
         
         # Multi-hop reasoning paths
         if paths:
-            lines.append("## 🔀 REASONING PATHS (Multi-hop)")
+            lines.append("##  REASONING PATHS (Multi-hop)")
             lines.append("")
             
             for i, path_info in enumerate(paths[:3], 1):
@@ -537,7 +537,7 @@ class EnhancedHybridRetriever:
         
         # Instructions
         lines.append("=" * 80)
-        lines.append("## 📖 INSTRUCTIONS")
+        lines.append("##  INSTRUCTIONS")
         lines.append("")
         lines.append("1. **Global Context**: Use document chunks for detailed information")
         lines.append("2. **Local Context**: Use graph for entity relationships")

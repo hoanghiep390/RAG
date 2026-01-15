@@ -10,7 +10,7 @@ import logging
 from backend.config import Config
 
 logger = logging.getLogger(__name__)
-
+    
 _model = None
 
 def get_model():
@@ -22,7 +22,7 @@ def get_model():
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
         model_name = Config.EMBEDDING_MODEL
         
-        logger.info(f"📦 Đang tải mô hình embedding: {model_name} trên {device}")
+        logger.info(f" Đang tải mô hình embedding: {model_name} trên {device}")
         _model = SentenceTransformer(model_name, device=device)
         
         test_emb = _model.encode(["test"])
@@ -30,18 +30,18 @@ def get_model():
         
         if actual_dim != Config.EMBEDDING_DIM:
             logger.warning(
-                f"⚠️ Không khớp kích thước mô hình! "
+                f" Không khớp kích thước mô hình! "
                 f"Config: {Config.EMBEDDING_DIM}, Thực tế: {actual_dim}"
             )
         
-        logger.info(f"✅ Đã tải mô hình embedding: {model_name} ({actual_dim}-chiều)")
+        logger.info(f" Đã tải mô hình embedding: {model_name} ({actual_dim}-chiều)")
     
     return _model
 
 def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict]:
     """Tạo embeddings cho các chunks"""
     if not chunks:
-        logger.warning("⚠️ Không có chunks để tạo embedding")
+        logger.warning(" Không có chunks để tạo embedding")
         return []
     
     from backend.config import Config
@@ -51,7 +51,7 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
         model = get_model()
         texts = [c['content'] for c in chunks]
         
-        logger.info(f"📊 Đang tạo embeddings cho {len(texts)} chunks (batch={batch_size})...")
+        logger.info(f" Đang tạo embeddings cho {len(texts)} chunks (batch={batch_size})...")
         
         try:
             embeddings = model.encode(
@@ -81,11 +81,11 @@ def generate_embeddings(chunks: List[Dict], batch_size: int = None) -> List[Dict
                 'entity_type': 'CHUNK'
             })
         
-        logger.info(f"✅ Đã tạo {len(result)} embeddings")
+        logger.info(f" Đã tạo {len(result)} embeddings")
         return result
     
     except Exception as e:
-        logger.error(f"❌ Không thể tạo embeddings: {e}")
+        logger.error(f" Không thể tạo embeddings: {e}")
         return []
 
 def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> List[Dict]:
@@ -112,11 +112,11 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
             })
     
     if not texts:
-        logger.warning("⚠️ Không có entities để tạo embedding")
+        logger.warning(" Không có entities để tạo embedding")
         return []
     
     try:
-        logger.info(f"📊 Đang tạo embeddings cho {len(texts)} entities (batch={batch_size})...")
+        logger.info(f" Đang tạo embeddings cho {len(texts)} entities (batch={batch_size})...")
         
         model = get_model()
         
@@ -139,11 +139,11 @@ def generate_entity_embeddings(entities_dict: Dict, batch_size: int = None) -> L
             for text, emb, meta in zip(texts, embeddings, metadata)
         ]
         
-        logger.info(f"✅ Đã tạo {len(result)} entity embeddings")
+        logger.info(f" Đã tạo {len(result)} entity embeddings")
         return result
     
     except Exception as e:
-        logger.error(f"❌ Không thể tạo entity embeddings: {e}")
+        logger.error(f" Không thể tạo entity embeddings: {e}")
         return []
 
 
@@ -184,11 +184,11 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
             })
     
     if not texts:
-        logger.warning("⚠️ Không có relationships để tạo embedding")
+        logger.warning(" Không có relationships để tạo embedding")
         return []
     
     try:
-        logger.info(f"🔗 Đang tạo embeddings cho {len(texts)} relationships (batch={batch_size})...")
+        logger.info(f" Đang tạo embeddings cho {len(texts)} relationships (batch={batch_size})...")
         
         model = get_model()
         
@@ -211,11 +211,11 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
             for text, emb, meta in zip(texts, embeddings, metadata)
         ]
         
-        logger.info(f"✅ Đã tạo {len(result)} relationship embeddings")
+        logger.info(f" Đã tạo {len(result)} relationship embeddings")
         return result
     
     except Exception as e:
-        logger.error(f"❌ Không thể tạo relationship embeddings: {e}")
+        logger.error(f" Không thể tạo relationship embeddings: {e}")
         return []
 
 # Các hàm còn lại...
@@ -226,7 +226,7 @@ def generate_text_embedding(text: str) -> np.ndarray:
         embedding = model.encode([text], normalize_embeddings=True)[0]
         return embedding
     except Exception as e:
-        logger.error(f"❌ Không thể tạo text embedding: {e}")
+        logger.error(f" Không thể tạo text embedding: {e}")
         return None
 
 def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
@@ -248,7 +248,7 @@ def batch_encode_texts(texts: List[str], batch_size: int = None) -> np.ndarray:
         return embeddings
         
     except Exception as e:
-        logger.error(f"❌ Mã hóa batch thất bại: {e}")
+        logger.error(f" Mã hóa batch thất bại: {e}")
         return np.array([])
 def get_embedding_dimension() -> int:
     """Lấy kích thước embedding thực tế từ mô hình đã tải"""
@@ -257,5 +257,5 @@ def get_embedding_dimension() -> int:
         test_emb = model.encode(["test"], normalize_embeddings=True)
         return test_emb.shape[1]
     except Exception as e:
-        logger.warning(f"⚠️ Sử dụng kích thước từ config: {e}")
+        logger.warning(f" Sử dụng kích thước từ config: {e}")
         return Config.EMBEDDING_DIM

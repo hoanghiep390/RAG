@@ -20,7 +20,7 @@ if st.session_state.get('role') != 'admin':
 
 user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'Admin')
-st.set_page_config(page_title="LightRAG | Graph", page_icon="🕸️", layout="wide")
+st.set_page_config(page_title="LightRAG | Graph", layout="wide")
 
 # CSS
 st.markdown("""

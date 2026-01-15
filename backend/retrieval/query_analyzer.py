@@ -59,12 +59,12 @@ class QueryAnalyzer:
         self._entity_cache = None
         self._cache_loaded = False
         
-        # ✅ OPTIMIZED: Load cache once at initialization instead of per-query
+        #  OPTIMIZED: Load cache once at initialization instead of per-query
         if mongo_storage:
             self._load_entity_cache()
     
     def _load_entity_cache(self):
-        """✅ OPTIMIZED: Load entities once at init, reduced from 500 to 300 for speed"""
+        """ OPTIMIZED: Load entities once at init, reduced from 500 to 300 for speed"""
         if self._cache_loaded or not self.mongo_storage:
             return
         
@@ -88,12 +88,12 @@ class QueryAnalyzer:
             if self._entity_cache:
                 import logging
                 logger = logging.getLogger(__name__)
-                logger.info(f"✅ Loaded {len(self._entity_cache)} entities for query analysis")
+                logger.info(f" Loaded {len(self._entity_cache)} entities for query analysis")
         
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"❌ Failed to load entity cache: {e}")
+            logger.error(f" Failed to load entity cache: {e}")
             self._entity_cache = {}
     
     def _extract_entities_semantic(self, query: str) -> List[str]:
@@ -108,7 +108,7 @@ class QueryAnalyzer:
         """
         entities = []
         
-        # ✅ OPTIMIZED: No need to load cache here, already loaded at init
+        #  OPTIMIZED: No need to load cache here, already loaded at init
         if not self._entity_cache:
             # Fallback to regex if no cache
             return self._extract_entities_regex(query)
@@ -121,7 +121,7 @@ class QueryAnalyzer:
                 entities.append(entity_name)
         
         # Level 2: Fuzzy match for multi-word entities
-        # ✅ OPTIMIZED: Reduced from 5 to 3 words (1-3 word phrases only)
+        #  OPTIMIZED: Reduced from 5 to 3 words (1-3 word phrases only)
         # Split query into n-grams (1-3 words)
         query_tokens = query.split()
         for i in range(len(query_tokens)):
@@ -138,7 +138,7 @@ class QueryAnalyzer:
                     if len(entity_lower) < 4:
                         continue
                     
-                    # ✅ OPTIMIZED: Increased threshold from 0.85 to 0.90 for fewer comparisons
+                    #  OPTIMIZED: Increased threshold from 0.85 to 0.90 for fewer comparisons
                     score = SequenceMatcher(None, phrase, entity_lower).ratio()
                     if score > 0.90:
                         entities.append(entity_name)
@@ -172,7 +172,7 @@ class QueryAnalyzer:
     
         intent = self._detect_intent(query_lower)
         
-        # ✅ ENHANCED: Use semantic entity extraction
+        #  ENHANCED: Use semantic entity extraction
         entities = self._extract_entities_semantic(query)
         
         keywords = self._extract_keywords(query_lower)

@@ -50,10 +50,10 @@ class EntityValidator:
             }
             
             self._cache_loaded = True
-            logger.info(f"✅ Loaded {len(self._entity_cache)} entities into cache")
+            logger.info(f" Loaded {len(self._entity_cache)} entities into cache")
             
         except Exception as e:
-            logger.error(f"❌ Failed to load entity cache: {e}")
+            logger.error(f" Failed to load entity cache: {e}")
             self._entity_cache = {}
     
     def entity_exists(self, entity_name: str, use_cache: bool = True) -> bool:
@@ -84,7 +84,7 @@ class EntityValidator:
             })
             return result is not None
         except Exception as e:
-            logger.error(f"❌ Failed to check entity existence: {e}")
+            logger.error(f" Failed to check entity existence: {e}")
             return False
     
     def validate_relationship(
@@ -155,10 +155,10 @@ class EntityValidator:
                     invalid_rel['validation_error'] = error
                     invalid_rels.append(invalid_rel)
                 
-                logger.warning(f"⚠️ Invalid relationship: {source} → {target} ({error})")
+                logger.warning(f" Invalid relationship: {source} → {target} ({error})")
         
         logger.info(
-            f"✅ Validation: {len(valid_rels)} valid, "
+            f" Validation: {len(valid_rels)} valid, "
             f"{len(invalid_rels)} invalid relationships"
         )
         
@@ -190,11 +190,11 @@ class EntityValidator:
                 if source not in valid_entities or target not in valid_entities:
                     orphaned.append(rel)
             
-            logger.info(f"🔍 Found {len(orphaned)} orphaned relationships")
+            logger.info(f" Found {len(orphaned)} orphaned relationships")
             return orphaned
             
         except Exception as e:
-            logger.error(f"❌ Failed to find orphaned relationships: {e}")
+            logger.error(f" Failed to find orphaned relationships: {e}")
             return []
     
     def cleanup_orphaned_relationships(self, dry_run: bool = True) -> Dict:
@@ -218,11 +218,11 @@ class EntityValidator:
             stats['orphaned_count'] = len(orphaned)
             
             if not orphaned:
-                logger.info("✅ No orphaned relationships found")
+                logger.info(" No orphaned relationships found")
                 return stats
             
             if dry_run:
-                logger.info(f"🔍 DRY RUN: Would delete {len(orphaned)} relationships")
+                logger.info(f" DRY RUN: Would delete {len(orphaned)} relationships")
                 return stats
             
             # Delete orphaned relationships
@@ -234,11 +234,11 @@ class EntityValidator:
             
             stats['deleted_count'] = result.deleted_count
             
-            logger.info(f"✅ Deleted {stats['deleted_count']} orphaned relationships")
+            logger.info(f" Deleted {stats['deleted_count']} orphaned relationships")
             
         except Exception as e:
             error_msg = f"Failed to cleanup orphaned relationships: {e}"
-            logger.error(f"❌ {error_msg}")
+            logger.error(f" {error_msg}")
             stats['errors'].append(error_msg)
         
         return stats
@@ -282,7 +282,7 @@ class EntityValidator:
                 invalid_links.append(invalid_link)
         
         if invalid_links:
-            logger.warning(f"⚠️ {len(invalid_links)} invalid graph edges filtered")
+            logger.warning(f" {len(invalid_links)} invalid graph edges filtered")
         
         valid_graph = {
             'nodes': graph_data.get('nodes', []),

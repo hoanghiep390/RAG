@@ -35,7 +35,7 @@ class GraphRetriever:
         """Tải đồ thị lazy"""
         if self._graph_cache is None:
             self._graph_cache = self.storage.get_graph()
-            logger.info(f"📊 Đã tải: {len(self._graph_cache.get('nodes', []))} nodes, "
+            logger.info(f" Đã tải: {len(self._graph_cache.get('nodes', []))} nodes, "
                        f"{len(self._graph_cache.get('links', []))} edges")
         return self._graph_cache
     
@@ -64,7 +64,7 @@ class GraphRetriever:
             graph = self._load_graph()
             
             if not graph or not graph.get('nodes'):
-                logger.warning("⚠️ Đồ thị rỗng")
+                logger.warning(" Đồ thị rỗng")
                 return []
             
             node_map = {n['id']: n for n in graph['nodes']}
@@ -76,7 +76,7 @@ class GraphRetriever:
             matched = self._find_entities(entity_names, node_map)
             
             if not matched:
-                logger.info(f"❌ Không tìm thấy entities: {entity_names}")
+                logger.info(f" Không tìm thấy entities: {entity_names}")
                 return []
             
             contexts = []
@@ -105,7 +105,7 @@ class GraphRetriever:
             return contexts
         
         except Exception as e:
-            logger.error(f"❌ Tìm kiếm đồ thị thất bại: {e}")
+            logger.error(f" Tìm kiếm đồ thị thất bại: {e}")
             return []
     
     def _find_entities(self, query_entities: List[str], node_map: Dict) -> List[str]:
@@ -293,7 +293,7 @@ class GraphRetriever:
             return {'nodes': subgraph_nodes, 'links': subgraph_links}
         
         except Exception as e:
-            logger.error(f"❌ Subgraph thất bại: {e}")
+            logger.error(f" Subgraph thất bại: {e}")
             return {'nodes': [], 'links': []}
     
     def format_context_text(self, contexts: List[GraphContext]) -> str:
@@ -303,16 +303,16 @@ class GraphRetriever:
         if not contexts:
             return ""
         
-        lines = ["=== 🕸️ Knowledge Graph Context ===\n"]
+        lines = ["===  Knowledge Graph Context ===\n"]
         
         for i, ctx in enumerate(contexts, 1):
             lines.append(f"{i}. **{ctx.entity_name}** ({ctx.entity_type})")
             
             if ctx.description:
-                lines.append(f"   📝 {ctx.description}")
+                lines.append(f"    {ctx.description}")
             
             if ctx.relationships:
-                lines.append("   🔗 Relationships:")
+                lines.append("    Relationships:")
                 for rel in ctx.relationships[:5]:  # Top 5
                     keywords = rel.get('keywords', '')
                     target = rel['target']
@@ -329,7 +329,7 @@ class GraphRetriever:
             if ctx.neighbors:
                 extra = len(ctx.neighbors) - len(ctx.relationships)
                 if extra > 0:
-                    lines.append(f"   ➕ {extra} more connections: {', '.join(ctx.neighbors[:3])}...")
+                    lines.append(f"    {extra} more connections: {', '.join(ctx.neighbors[:3])}...")
             
             lines.append("")
         

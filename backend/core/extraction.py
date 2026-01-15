@@ -228,7 +228,7 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             
             # Xác thực
             if not entity_name or not entity_description:
-                logger.debug(f"⚠️ Bỏ qua entity không hợp lệ: {parts}")
+                logger.debug(f" Bỏ qua entity không hợp lệ: {parts}")
                 continue
             
             # Xác thực loại entity
@@ -252,7 +252,7 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             
             # Xác thực
             if not source or not target or source == target:
-                logger.debug(f"⚠️ Bỏ qua relationship không hợp lệ: {parts}")
+                logger.debug(f" Bỏ qua relationship không hợp lệ: {parts}")
                 continue
             
             relationships[(source, target)].append({
@@ -323,7 +323,7 @@ def deduplicate_entities(entities: Dict[str, List[Dict]]) -> Dict[str, List[Dict
     
     reduction = len(entities) - len(canonical)
     if reduction > 0:
-        logger.info(f"✅ Gộp entities: {len(entities)} → {len(canonical)} entities ({reduction} đã gộp)")
+        logger.info(f" Gộp entities: {len(entities)} → {len(canonical)} entities ({reduction} đã gộp)")
     
     return canonical
 
@@ -394,7 +394,7 @@ Provide only the final summarized description, no additional text."""
                     llm_merge_count += 1
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Gộp bằng LLM thất bại cho {name}: {e}, sử dụng gộp đơn giản")
+                    logger.warning(f" Gộp bằng LLM thất bại cho {name}: {e}, sử dụng gộp đơn giản")
                     merged_desc = '; '.join(unique_descriptions)[:500]
             else:
                 # Simple concatenation for few descriptions
@@ -416,7 +416,7 @@ Provide only the final summarized description, no additional text."""
     reduction = len(entities) - len(canonical)
     if reduction > 0:
         logger.info(
-            f"✅ Gộp entities: {len(entities)} → {len(canonical)} entities "
+            f" Gộp entities: {len(entities)} → {len(canonical)} entities "
             f"({reduction} đã gộp, {llm_merge_count} với LLM)"
         )
     
@@ -466,7 +466,7 @@ def validate_relationships(
             filtered_count += len(rels)
     
     if filtered_count > 0:
-        logger.info(f"✅ Xác thực: {filtered_count} relationships không hợp lệ đã bị lọc")
+        logger.info(f" Xác thực: {filtered_count} relationships không hợp lệ đã bị lọc")
     
     return valid_relationships
 
@@ -531,7 +531,7 @@ Provide only the final summarized description, no additional text."""
                     llm_merge_count += 1
                     
                 except Exception as e:
-                    logger.warning(f"⚠️ Gộp bằng LLM thất bại cho relationship ({src}, {tgt}): {e}, sử dụng gộp đơn giản")
+                    logger.warning(f" Gộp bằng LLM thất bại cho relationship ({src}, {tgt}): {e}, sử dụng gộp đơn giản")
                     merged_desc = '; '.join(unique_descriptions)[:400]
             else:
                 # Simple concatenation for few descriptions
@@ -557,7 +557,7 @@ Provide only the final summarized description, no additional text."""
     reduction = sum(len(v) for v in relationships.values()) - sum(len(v) for v in merged_relationships.values())
     if reduction > 0:
         logger.info(
-            f"✅ Gộp relationships: {sum(len(v) for v in relationships.values())} → "
+            f" Gộp relationships: {sum(len(v) for v in relationships.values())} → "
             f"{sum(len(v) for v in merged_relationships.values())} relationships "
             f"({reduction} đã gộp, {llm_merge_count} với LLM)"
         )
@@ -591,7 +591,7 @@ async def extract_from_chunk(chunk: Dict, llm_func, max_gleaning: int = 1) -> Tu
                 break
             
             # Continue extraction
-            logger.debug(f"🔄 Tiếp tục trích xuất {i+1}/{max_gleaning} cho chunk {chunk.get('chunk_id')}")
+            logger.debug(f" Tiếp tục trích xuất {i+1}/{max_gleaning} cho chunk {chunk.get('chunk_id')}")
             continue_prompt = create_continue_extraction_prompt(
                 chunk['content'], 
                 result
@@ -605,7 +605,7 @@ async def extract_from_chunk(chunk: Dict, llm_func, max_gleaning: int = 1) -> Tu
         return entities, relationships
     
     except Exception as e:
-        logger.error(f"❌ Trích xuất thất bại cho chunk {chunk.get('chunk_id')}: {e}")
+        logger.error(f" Trích xuất thất bại cho chunk {chunk.get('chunk_id')}: {e}")
         return {}, {}
 
 
@@ -680,7 +680,7 @@ def extract_entities_relations(
         (entities_dict, relationships_dict)
     """
     if not chunks:
-        logger.warning("⚠️ Không có chunks được cung cấp")
+        logger.warning(" Không có chunks được cung cấp")
         return {}, {}
     
     # Get LLM function
@@ -699,7 +699,7 @@ def extract_entities_relations(
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        logger.info(f"🚀 Trích xuất kiểu LightRAG với gleaning (chunks={len(chunks)})")
+        logger.info(f" Trích xuất kiểu LightRAG với gleaning (chunks={len(chunks)})")
         
         # Extract
         entities, relationships = loop.run_until_complete(
@@ -709,12 +709,12 @@ def extract_entities_relations(
         # Stats
         entity_count = sum(len(v) for v in entities.values())
         rel_count = sum(len(v) for v in relationships.values())
-        logger.info(f"✅ Đã trích xuất: {entity_count} entities, {rel_count} relationships")
+        logger.info(f" Đã trích xuất: {entity_count} entities, {rel_count} relationships")
         
         return entities, relationships
     
     except Exception as e:
-        logger.error(f"❌ Trích xuất thất bại: {e}")
+        logger.error(f" Trích xuất thất bại: {e}")
         import traceback
         traceback.print_exc()
         return {}, {}

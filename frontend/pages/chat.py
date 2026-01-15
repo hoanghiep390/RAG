@@ -33,7 +33,6 @@ DATA_USER_ID = 'admin_00000000'  # All users read from admin's data
 # ================= Page Config =================
 st.set_page_config(
     page_title="LightRAG | Chat",
-    page_icon="💬",
     layout="wide"
 )
 

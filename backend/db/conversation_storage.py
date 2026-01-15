@@ -1,6 +1,6 @@
 # backend/db/conversation_storage.py
 """
-💾 Conversation Storage - MongoDB persistence for chat history
+ Conversation Storage - MongoDB persistence for chat history
 Quản lý multi-conversation với message tracking
 """
 from typing import List, Dict, Optional
@@ -62,9 +62,9 @@ class ConversationStorage:
                 ('created_at', 1)
             ])
             
-            logger.debug("✅ Conversation indexes created")
+            logger.debug(" Conversation indexes created")
         except Exception as e:
-            logger.warning(f"⚠️ Index creation warning: {e}")
+            logger.warning(f" Index creation warning: {e}")
     
     # ============================================
     # CONVERSATION CRUD
@@ -97,12 +97,12 @@ class ConversationStorage:
             }
             
             self.conversations.insert_one(conversation)
-            logger.info(f"✅ Created conversation: {conversation_id}")
+            logger.info(f" Created conversation: {conversation_id}")
             
             return conversation_id
         
         except Exception as e:
-            logger.error(f"❌ Failed to create conversation: {e}")
+            logger.error(f" Failed to create conversation: {e}")
             raise
     
     def get_conversation(self, conversation_id: str) -> Optional[Dict]:
@@ -122,7 +122,7 @@ class ConversationStorage:
             })
             return conv
         except Exception as e:
-            logger.error(f"❌ Failed to get conversation {conversation_id}: {e}")
+            logger.error(f" Failed to get conversation {conversation_id}: {e}")
             return None
     
     def list_conversations(
@@ -153,7 +153,7 @@ class ConversationStorage:
             return conversations
         
         except Exception as e:
-            logger.error(f"❌ Failed to list conversations: {e}")
+            logger.error(f" Failed to list conversations: {e}")
             return []
     
     def update_conversation_title(self, conversation_id: str, title: str) -> bool:
@@ -184,7 +184,7 @@ class ConversationStorage:
             return result.modified_count > 0
         
         except Exception as e:
-            logger.error(f"❌ Failed to update conversation title: {e}")
+            logger.error(f" Failed to update conversation title: {e}")
             return False
     
     def delete_conversation(self, conversation_id: str) -> Dict:
@@ -210,7 +210,7 @@ class ConversationStorage:
             })
             
             logger.info(
-                f"✅ Deleted conversation {conversation_id}: "
+                f" Deleted conversation {conversation_id}: "
                 f"{msg_result.deleted_count} messages, "
                 f"{conv_result.deleted_count} conversation"
             )
@@ -221,7 +221,7 @@ class ConversationStorage:
             }
         
         except Exception as e:
-            logger.error(f"❌ Failed to delete conversation: {e}")
+            logger.error(f" Failed to delete conversation: {e}")
             return {'conversation_deleted': 0, 'messages_deleted': 0}
     
     # ============================================
@@ -273,12 +273,12 @@ class ConversationStorage:
                 }
             )
             
-            logger.debug(f"✅ Added message {message_id} to {conversation_id}")
+            logger.debug(f" Added message {message_id} to {conversation_id}")
             
             return message_id
         
         except Exception as e:
-            logger.error(f"❌ Failed to add message: {e}")
+            logger.error(f" Failed to add message: {e}")
             raise
     
     def get_messages(
@@ -311,7 +311,7 @@ class ConversationStorage:
             return messages
         
         except Exception as e:
-            logger.error(f"❌ Failed to get messages: {e}")
+            logger.error(f" Failed to get messages: {e}")
             return []
     
     def get_recent_messages(
@@ -344,7 +344,7 @@ class ConversationStorage:
             return messages
         
         except Exception as e:
-            logger.error(f"❌ Failed to get recent messages: {e}")
+            logger.error(f" Failed to get recent messages: {e}")
             return []
     
     def delete_message(self, message_id: str) -> bool:
@@ -361,13 +361,13 @@ class ConversationStorage:
             result = self.messages.delete_one({'message_id': message_id})
             
             if result.deleted_count > 0:
-                logger.info(f"✅ Deleted message {message_id}")
+                logger.info(f" Deleted message {message_id}")
                 return True
             
             return False
         
         except Exception as e:
-            logger.error(f"❌ Failed to delete message: {e}")
+            logger.error(f" Failed to delete message: {e}")
             return False
     
     # ============================================
@@ -419,12 +419,12 @@ class ConversationStorage:
                 }
             )
             
-            logger.info(f"✅ Saved {len(result.inserted_ids)} messages to {conversation_id}")
+            logger.info(f" Saved {len(result.inserted_ids)} messages to {conversation_id}")
             
             return len(result.inserted_ids)
         
         except Exception as e:
-            logger.error(f"❌ Failed to save messages: {e}")
+            logger.error(f" Failed to save messages: {e}")
             return 0
     
     # ============================================
@@ -469,7 +469,7 @@ class ConversationStorage:
             }
         
         except Exception as e:
-            logger.error(f"❌ Failed to get statistics: {e}")
+            logger.error(f" Failed to get statistics: {e}")
             return {
                 'total_conversations': 0,
                 'total_messages': 0,
@@ -543,13 +543,13 @@ Title (short and concise):"""
             if title and len(title) <= 100:
                 # Update title
                 self.update_conversation_title(conversation_id, title)
-                logger.info(f"✅ Auto-generated title: {title}")
+                logger.info(f" Auto-generated title: {title}")
                 return title
             
             return None
         
         except Exception as e:
-            logger.error(f"❌ Failed to auto-generate title: {e}")
+            logger.error(f" Failed to auto-generate title: {e}")
             return None
 
 

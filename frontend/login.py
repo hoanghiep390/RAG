@@ -63,7 +63,6 @@ create_default_admin()
 
 st.set_page_config(
     page_title="LightRAG | Login",
-    page_icon="🔒",
     layout="centered"
 )
 

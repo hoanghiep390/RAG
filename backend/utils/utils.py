@@ -68,18 +68,18 @@ def verify_chunk_content(chunk: dict) -> bool:
     content = chunk.get('content', '')
     
     if not content.strip():
-        logger.warning(f"⚠️ Empty chunk: {chunk.get('chunk_id')}")
+        logger.warning(f" Empty chunk: {chunk.get('chunk_id')}")
         return False
     
     if len(content) < 10:
-        logger.warning(f"⚠️ Short chunk: {chunk.get('chunk_id')} ({len(content)} chars)")
+        logger.warning(f" Short chunk: {chunk.get('chunk_id')} ({len(content)} chars)")
         return False
     
     encoding_artifacts = ['Ã', '¡', '©', 'á»', 'Ä']
     artifact_count = sum(content.count(artifact) for artifact in encoding_artifacts)
     
     if artifact_count > len(content) * 0.1:
-        logger.warning(f"⚠️ Encoding issue: {chunk.get('chunk_id')}")
+        logger.warning(f" Encoding issue: {chunk.get('chunk_id')}")
         return False
     
     return True

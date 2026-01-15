@@ -49,7 +49,7 @@ async def call_openai_async(
     except ImportError:
         raise ImportError("openai package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi OpenAI API: {str(e)}")
+        logger.error(f" Lỗi OpenAI API: {str(e)}")
         raise
 
 
@@ -92,7 +92,7 @@ async def call_openai_stream(
     except ImportError:
         raise ImportError("openai package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi OpenAI streaming: {str(e)}")
+        logger.error(f" Lỗi OpenAI streaming: {str(e)}")
         raise
 
 
@@ -134,7 +134,7 @@ async def call_groq_async(
     except ImportError:
         raise ImportError("groq package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi Groq API: {str(e)}")
+        logger.error(f" Lỗi Groq API: {str(e)}")
         raise
 
 
@@ -177,7 +177,7 @@ async def call_groq_stream(
     except ImportError:
         raise ImportError("groq package not installed")
     except Exception as e:
-        logger.error(f"❌ Lỗi Groq streaming: {str(e)}")
+        logger.error(f" Lỗi Groq streaming: {str(e)}")
         raise
 
 
@@ -259,7 +259,7 @@ async def call_llm_batch(
             try:
                 return await call_llm_async(prompt, system_prompt, model, **kwargs)
             except Exception as e:
-                logger.error(f"❌ Lỗi xử lý batch: {str(e)}")
+                logger.error(f" Lỗi xử lý batch: {str(e)}")
                 return ""
 
     tasks = [process_with_semaphore(prompt) for prompt in prompts]
@@ -280,7 +280,7 @@ async def call_llm_with_retry(
         except Exception as e:
             if attempt == max_retries - 1:
                 raise
-            logger.warning(f"⚠️ LLM call thất bại (lần thử {attempt + 1}/{max_retries}): {str(e)}")
+            logger.warning(f" LLM call thất bại (lần thử {attempt + 1}/{max_retries}): {str(e)}")
             await asyncio.sleep(2 ** attempt)
 
 

@@ -16,7 +16,7 @@ class UserManager:
         self.json_file = Path("backend/data/users.json")
         
         if self.db is None:
-            logger.warning("⚠️ Cảnh báo: MongoDB không khả dụng. Sử dụng JSON file dự phòng.")
+            logger.warning(" Cảnh báo: MongoDB không khả dụng. Sử dụng JSON file dự phòng.")
             self.use_json_fallback = True
             self._ensure_json_file()
             self._create_default_admin_json()
@@ -36,7 +36,7 @@ class UserManager:
                     'created_at': datetime.now().isoformat()
                 })
         except Exception as e:
-            logger.warning(f"⚠️ Lỗi khởi tạo UserManager: {e}. Chuyển sang JSON.")
+            logger.warning(f" Lỗi khởi tạo UserManager: {e}. Chuyển sang JSON.")
             self.use_json_fallback = True
             self.users = None
             self._ensure_json_file()
@@ -76,7 +76,7 @@ class UserManager:
             with open(self.json_file, 'w', encoding='utf-8') as f:
                 json.dump(users_dict, f, indent=2, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"❌ Lỗi lưu vào JSON: {e}")
+            logger.error(f" Lỗi lưu vào JSON: {e}")
     
     def load_users(self):
         """Tương thích: trả về dict như định dạng JSON"""
@@ -98,7 +98,7 @@ class UserManager:
                     'created_at': u['created_at']
                 }
         except Exception as e:
-            logger.error(f"❌ Lỗi tải users từ MongoDB: {e}. Sử dụng JSON dự phòng.")
+            logger.error(f" Lỗi tải users từ MongoDB: {e}. Sử dụng JSON dự phòng.")
             return self._load_from_json()
         return users
     
@@ -121,7 +121,7 @@ class UserManager:
                     upsert=True
                 )
         except Exception as e:
-            logger.error(f"❌ Lỗi lưu users vào MongoDB: {e}. Sử dụng JSON dự phòng.")
+            logger.error(f" Lỗi lưu users vào MongoDB: {e}. Sử dụng JSON dự phòng.")
             self._save_to_json(users_dict)
 
 

@@ -1,6 +1,6 @@
 # backend/db/entity_linking.py
 """
-🔗 Liên kết Entity Nâng cao
+ Liên kết Entity Nâng cao
 Khớp mờ nhiều cấp độ để loại bỏ trùng lặp entity tốt hơn
 """
 
@@ -172,7 +172,7 @@ def link_entities_batch(
             match_info[entity_name] = (score, match_type)
             
             logger.debug(
-                f"🔗 Linked '{entity_name}' → '{canonical_name}' "
+                f" Linked '{entity_name}' → '{canonical_name}' "
                 f"(score: {score:.2f}, type: {match_type})"
             )
         else:
