@@ -138,28 +138,28 @@ class GraphRetriever:
         Returns:
             Score (0.0-2.0+)
         """
-        # Base score from strength
+        # Điểm cơ sở từ strength
         score = edge.get('strength', 1.0)
         
-        # Boost based on description quality
+        # Tăng điểm dựa trên chất lượng mô tả
         description = edge.get('description', '')
         if len(description) > 50:
             score *= 1.2
         elif len(description) > 20:
             score *= 1.1
         
-        # Boost based on keywords
+        # Tăng điểm dựa trên keywords
         keywords = edge.get('keywords', '').lower()
         if keywords:
             keyword_list = [k.strip() for k in keywords.split(',')]
             
-            # More keywords = stronger relationship
+            # Nhiều keywords = mối quan hệ mạnh hơn
             if len(keyword_list) >= 3:
                 score *= 1.15
             elif len(keyword_list) >= 2:
                 score *= 1.1
             
-            # Boost if matches filter keywords
+            # Tăng điểm nếu khớp với filter keywords
             if filter_keywords:
                 filter_lower = [k.lower() for k in filter_keywords]
                 matches = sum(1 for k in keyword_list if any(f in k or k in f for f in filter_lower))
@@ -187,27 +187,27 @@ class GraphRetriever:
         neighbors = []
         relationships = []
         
-        # Score and rank edges
+        # Chấm điểm và xếp hạng edges
         scored_edges = []
         
         for edge in edges_by_source.get(entity_name, []):
             strength = edge.get('strength', 1.0)
             
-            # Apply strength filter
+            # Lọc theo strength
             if strength < min_strength:
                 continue
             
             target = edge['target']
             
             if target not in visited:
-                # Calculate importance score
+                # Tính điểm quan trọng
                 importance_score = self._calculate_edge_score(edge, filter_keywords)
                 scored_edges.append((importance_score, edge))
         
-        # Sort by importance score (descending)
+        # Sắp xếp theo điểm quan trọng (giảm dần)
         scored_edges.sort(key=lambda x: x[0], reverse=True)
         
-        # Build relationships from top-scored edges
+        # Xây dựng relationships từ edges điểm cao
         for importance_score, edge in scored_edges[:max_neighbors]:
             target = edge['target']
             keywords = edge.get('keywords', '')
@@ -224,7 +224,7 @@ class GraphRetriever:
                 'importance_score': importance_score
             })
         
-        # 2-hop expansion (with same scoring)
+        # Mở rộng 2-hop (với cùng cách chấm điểm)
         if k_hops >= 2:
             second_hop_scored = []
             for neighbor in neighbors[:max_neighbors]:

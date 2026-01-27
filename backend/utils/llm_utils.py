@@ -21,7 +21,24 @@ async def call_openai_async(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """ Async OpenAI call - No file operations"""
+    """
+    Gọi OpenAI API bất đồng bộ để tạo văn bản
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model OpenAI (mặc định: gpt-4o-mini)
+        temperature: Độ sáng tạo (0-1, thấp = ổn định hơn)
+        max_tokens: Số token tối đa trong câu trả lời
+        **kwargs: Các tham số bổ sung cho API
+        
+    Returns:
+        str: Văn bản phản hồi từ OpenAI
+        
+    Raises:
+        ImportError: Nếu chưa cài đặt package openai
+        ValueError: Nếu thiếu OPENAI_API_KEY
+    """
     try:
         from openai import AsyncOpenAI
 
@@ -61,7 +78,20 @@ async def call_openai_stream(
     max_tokens: int = 2000,
     **kwargs
 ):
-    """Stream OpenAI response token by token"""
+    """
+    Stream phản hồi từ OpenAI theo từng token (real-time)
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model OpenAI (mặc định: gpt-4o-mini)
+        temperature: Độ sáng tạo (0-1)
+        max_tokens: Số token tối đa
+        **kwargs: Các tham số bổ sung
+        
+    Yields:
+        str: Từng phần văn bản được tạo ra theo thời gian thực
+    """
     try:
         from openai import AsyncOpenAI
 
@@ -106,7 +136,24 @@ async def call_groq_async(
     max_tokens: int = 2000,
     **kwargs
 ) -> str:
-    """Async Groq call - No file operations"""
+    """
+    Gọi Groq API bất đồng bộ để tạo văn bản (nhanh hơn OpenAI)
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model Groq (mặc định: llama-3.3-70b-versatile)
+        temperature: Độ sáng tạo (0-1)
+        max_tokens: Số token tối đa trong câu trả lời
+        **kwargs: Các tham số bổ sung cho API
+        
+    Returns:
+        str: Văn bản phản hồi từ Groq
+        
+    Raises:
+        ImportError: Nếu chưa cài đặt package groq
+        ValueError: Nếu thiếu GROQ_API_KEY
+    """
     try:
         from groq import AsyncGroq
 
@@ -146,7 +193,20 @@ async def call_groq_stream(
     max_tokens: int = 2000,
     **kwargs
 ):
-    """Stream Groq response token by token"""
+    """
+    Stream phản hồi từ Groq theo từng token (real-time)
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model Groq (mặc định: llama-3.3-70b-versatile)
+        temperature: Độ sáng tạo (0-1)
+        max_tokens: Số token tối đa
+        **kwargs: Các tham số bổ sung
+        
+    Yields:
+        str: Từng phần văn bản được tạo ra theo thời gian thực
+    """
     try:
         from groq import AsyncGroq
 
@@ -181,7 +241,6 @@ async def call_groq_stream(
         raise
 
 
-
 async def call_llm_async(
     prompt: str,
     system_prompt: Optional[str] = None,
@@ -191,7 +250,24 @@ async def call_llm_async(
     provider: Optional[str] = None,
     **kwargs
 ) -> str:
-    """ Universal async LLM call - No file operations"""
+    """
+    Gọi LLM API tổng quát - tự động chọn provider (OpenAI hoặc Groq)
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model (tùy chọn, lấy từ .env nếu không có)
+        temperature: Độ sáng tạo (0-1)
+        max_tokens: Số token tối đa
+        provider: Provider LLM (openai/groq, lấy từ .env nếu không có)
+        **kwargs: Các tham số bổ sung
+        
+    Returns:
+        str: Văn bản phản hồi từ LLM
+        
+    Raises:
+        ValueError: Nếu provider không được hỗ trợ hoặc thiếu cấu hình
+    """
     provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
     
@@ -220,7 +296,21 @@ async def call_llm_stream(
     provider: Optional[str] = None,
     **kwargs
 ):
-    """Universal streaming LLM call - yields tokens as they arrive"""
+    """
+    Stream phản hồi LLM tổng quát - tự động chọn provider
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model (tùy chọn, lấy từ .env nếu không có)
+        temperature: Độ sáng tạo (0-1)
+        max_tokens: Số token tối đa
+        provider: Provider LLM (openai/groq, lấy từ .env nếu không có)
+        **kwargs: Các tham số bổ sung
+        
+    Yields:
+        str: Từng phần văn bản được tạo ra theo thời gian thực
+    """
     provider = provider or os.getenv("LLM_PROVIDER", "groq")
     model = model or os.getenv("LLM_MODEL")
     
@@ -251,10 +341,23 @@ async def call_llm_batch(
     max_concurrent: int = 5,
     **kwargs
 ) -> List[str]:
-    """ Batch processing - No file operations"""
+    """
+    Xử lý nhiều prompt cùng lúc (batch processing) với giới hạn đồng thời
+    
+    Args:
+        prompts: Danh sách các câu hỏi/yêu cầu cần xử lý
+        system_prompt: Hướng dẫn hệ thống cho AI (tùy chọn)
+        model: Tên model (tùy chọn)
+        max_concurrent: Số lượng request đồng thời tối đa (mặc định: 5)
+        **kwargs: Các tham số bổ sung
+        
+    Returns:
+        List[str]: Danh sách các phản hồi tương ứng với từng prompt
+    """
     semaphore = asyncio.Semaphore(max_concurrent)
 
     async def process_with_semaphore(prompt):
+        """Xử lý từng prompt với semaphore để giới hạn số request đồng thời"""
         async with semaphore:
             try:
                 return await call_llm_async(prompt, system_prompt, model, **kwargs)
@@ -273,7 +376,20 @@ async def call_llm_with_retry(
     max_retries: int = 3,
     **kwargs
 ) -> str:
-    """ LLM call with retry - No file operations"""
+    """
+    Gọi LLM với cơ chế retry tự động khi gặp lỗi
+    
+    Args:
+        prompt: Câu hỏi/yêu cầu từ người dùng
+        max_retries: Số lần thử lại tối đa (mặc định: 3)
+        **kwargs: Các tham số bổ sung cho call_llm_async
+        
+    Returns:
+        str: Văn bản phản hồi từ LLM
+        
+    Raises:
+        Exception: Nếu vẫn lỗi sau khi thử lại max_retries lần
+    """
     for attempt in range(max_retries):
         try:
             return await call_llm_async(prompt, **kwargs)
@@ -285,10 +401,12 @@ async def call_llm_with_retry(
 
 
 # ============================================
-# MÔ HÌNH MẶC ĐỊNH DỰ PHÒNG
+# MÔ HÌNH DỰ PHÒNG
 # ============================================
 
+# Lấy model mặc định từ biến môi trường, nếu không có thì dùng model dự phòng
 DEFAULT_MODEL = os.getenv("LLM_MODEL")
 if not DEFAULT_MODEL:
     provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    # Chọn model dự phòng dựa trên provider
     DEFAULT_MODEL = "llama-3.1-70b-versatile" if provider == "groq" else "gpt-4o-mini"

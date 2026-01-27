@@ -232,6 +232,10 @@ if all_user_ids:
     show_feedbacks = st.slider("Show feedbacks", 5, 50, 20)
     
     for fb in recent_feedbacks[:show_feedbacks]:
+        # Bỏ qua feedback nếu không có rating
+        if fb.get('rating') is None:
+            continue
+            
         rating_stars = '⭐' * fb['rating']
         username = fb.get('username', 'Unknown')
         created = fb.get('created_at', datetime.now()).strftime('%Y-%m-%d %H:%M')

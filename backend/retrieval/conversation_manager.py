@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class Message:
     """Cấu trúc message đơn giản"""
-    role: str  # 'user' or 'assistant'
+    role: str  # 'user' hoặc 'assistant'
     content: str
     message_id: Optional[str] = None
 
@@ -34,14 +34,14 @@ class ConversationManager:
     ):
         """
         Args:
-            max_history: Số lượng turns lưu (default: 5 = 10 messages)
-            conv_storage: ConversationStorage instance (optional)
-            conversation_id: Current conversation ID (optional)
+            max_history: Số lượng turns lưu (mặc định: 5 = 10 messages)
+            conv_storage: Instance ConversationStorage (tùy chọn)
+            conversation_id: ID hội thoại hiện tại (tùy chọn)
         """
         self.max_history = max_history
         self.history: List[Message] = []
         
-        # MongoDB integration
+        # Tích hợp MongoDB
         self.conv_storage = conv_storage
         self.conversation_id = conversation_id
     
@@ -50,7 +50,7 @@ class ConversationManager:
         self.conversation_id = conversation_id
         self.conv_storage = conv_storage
         
-        # Load history from MongoDB
+        # Tải lịch sử từ MongoDB
         if conv_storage:
             try:
                 messages = conv_storage.get_messages(conversation_id)
@@ -72,9 +72,9 @@ class ConversationManager:
         Thêm message vào history
         
         Args:
-            role: 'user' or 'assistant'
-            content: Message content
-            save_to_db: Auto-save to MongoDB if conv_storage available
+            role: 'user' hoặc 'assistant'
+            content: Nội dung message
+            save_to_db: Tự động lưu vào MongoDB nếu có conv_storage
         """
         message = Message(role=role, content=content)
         self.history.append(message)
@@ -83,7 +83,7 @@ class ConversationManager:
         if len(self.history) > self.max_history * 2:
             self.history = self.history[-(self.max_history * 2):]
         
-        # Auto-save to MongoDB
+        # Tự động lưu vào MongoDB
         if save_to_db and self.conv_storage and self.conversation_id:
             try:
                 message_id = self.conv_storage.add_message(

@@ -17,8 +17,14 @@ class FeedbackStorage:
     - user_id: ID của user
     - conversation_id: ID của conversation
     - message_index: Vị trí message trong conversation
-    - rating: Điểm đánh giá (1-5)
+    - rating: Điểm đánh giá (1-5) [DEPRECATED - dùng cho backward compatibility]
     - feedback_text: Nội dung feedback (optional)
+    - relevancy_score: Điểm đánh giá độ liên quan (1-5)
+    - faithfulness_score: Điểm đánh giá độ trung thực (1-5)
+    - response_time_ms: Thời gian phản hồi (milliseconds)
+    - auto_evaluated: Boolean - True nếu là đánh giá tự động
+    - relevancy_reason: Lý do đánh giá relevancy
+    - faithfulness_reason: Lý do đánh giá faithfulness
     - created_at: Thời gian tạo
     """
     
@@ -59,8 +65,14 @@ class FeedbackStorage:
         self,
         conversation_id: str,
         message_index: int,
-        rating: int,
-        feedback_text: Optional[str] = None
+        rating: Optional[int] = None,
+        feedback_text: Optional[str] = None,
+        relevancy_score: Optional[int] = None,
+        faithfulness_score: Optional[int] = None,
+        response_time_ms: Optional[float] = None,
+        auto_evaluated: bool = False,
+        relevancy_reason: Optional[str] = None,
+        faithfulness_reason: Optional[str] = None
     ) -> bool:
         """
         Lưu feedback cho một message
@@ -68,24 +80,44 @@ class FeedbackStorage:
         Args:
             conversation_id: ID của conversation
             message_index: Vị trí message (0-indexed)
-            rating: Điểm đánh giá (1-5)
+            rating: Điểm đánh giá (1-5) [DEPRECATED - dùng cho backward compatibility]
             feedback_text: Nội dung feedback (optional)
+            relevancy_score: Điểm đánh giá độ liên quan (1-5)
+            faithfulness_score: Điểm đánh giá độ trung thực (1-5)
+            response_time_ms: Thời gian phản hồi (milliseconds)
+            auto_evaluated: True nếu là đánh giá tự động
+            relevancy_reason: Lý do đánh giá relevancy
+            faithfulness_reason: Lý do đánh giá faithfulness
         
         Returns:
             True nếu thành công
         """
         try:
-            # Validate rating
-            if not (1 <= rating <= 5):
-                logger.error(f" Rating không hợp lệ: {rating}")
+            # Validate scores
+            if rating is not None and not (1 <= rating <= 5):
+                logger.error(f"❌ Rating không hợp lệ: {rating}")
+                return False
+            
+            if relevancy_score is not None and not (1 <= relevancy_score <= 5):
+                logger.error(f"❌ Relevancy score không hợp lệ: {relevancy_score}")
+                return False
+            
+            if faithfulness_score is not None and not (1 <= faithfulness_score <= 5):
+                logger.error(f"❌ Faithfulness score không hợp lệ: {faithfulness_score}")
                 return False
             
             feedback = {
                 'user_id': self.user_id,
                 'conversation_id': conversation_id,
                 'message_index': message_index,
-                'rating': rating,
+                'rating': rating,  # Backward compatibility
                 'feedback_text': feedback_text or "",
+                'relevancy_score': relevancy_score,
+                'faithfulness_score': faithfulness_score,
+                'response_time_ms': response_time_ms,
+                'auto_evaluated': auto_evaluated,
+                'relevancy_reason': relevancy_reason or "",
+                'faithfulness_reason': faithfulness_reason or "",
                 'created_at': datetime.now()
             }
             
@@ -168,7 +200,7 @@ class FeedbackStorage:
         Lấy thống kê feedbacks của user
         
         Returns:
-            Dict với stats
+            Dict với stats (bao gồm cả 3 tiêu chí mới)
         """
         try:
             total_feedbacks = self.feedbacks.count_documents({'user_id': self.user_id})
@@ -177,22 +209,35 @@ class FeedbackStorage:
                 return {
                     'total_feedbacks': 0,
                     'average_rating': 0.0,
-                    'rating_distribution': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                    'rating_distribution': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+                    'avg_relevancy': 0.0,
+                    'avg_faithfulness': 0.0,
+                    'avg_response_time': 0.0,
+                    'auto_evaluated_count': 0
                 }
             
-            # Calculate average rating
+            # Calculate averages
             pipeline = [
                 {'$match': {'user_id': self.user_id}},
                 {'$group': {
                     '_id': None,
-                    'avg_rating': {'$avg': '$rating'}
+                    'avg_rating': {'$avg': '$rating'},
+                    'avg_relevancy': {'$avg': '$relevancy_score'},
+                    'avg_faithfulness': {'$avg': '$faithfulness_score'},
+                    'avg_response_time': {'$avg': '$response_time_ms'}
                 }}
             ]
             
             result = list(self.feedbacks.aggregate(pipeline))
-            avg_rating = result[0]['avg_rating'] if result else 0.0
+            if result:
+                avg_rating = result[0].get('avg_rating', 0.0) or 0.0
+                avg_relevancy = result[0].get('avg_relevancy', 0.0) or 0.0
+                avg_faithfulness = result[0].get('avg_faithfulness', 0.0) or 0.0
+                avg_response_time = result[0].get('avg_response_time', 0.0) or 0.0
+            else:
+                avg_rating = avg_relevancy = avg_faithfulness = avg_response_time = 0.0
             
-            # Rating distribution
+            # Rating distribution (backward compatibility)
             distribution = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
             for rating in range(1, 6):
                 count = self.feedbacks.count_documents({
@@ -201,18 +246,32 @@ class FeedbackStorage:
                 })
                 distribution[rating] = count
             
+            # Count auto-evaluated feedbacks
+            auto_evaluated_count = self.feedbacks.count_documents({
+                'user_id': self.user_id,
+                'auto_evaluated': True
+            })
+            
             return {
                 'total_feedbacks': total_feedbacks,
                 'average_rating': round(avg_rating, 2),
-                'rating_distribution': distribution
+                'rating_distribution': distribution,
+                'avg_relevancy': round(avg_relevancy, 2),
+                'avg_faithfulness': round(avg_faithfulness, 2),
+                'avg_response_time': round(avg_response_time, 2),
+                'auto_evaluated_count': auto_evaluated_count
             }
         
         except Exception as e:
-            logger.error(f" Không thể lấy thống kê: {e}")
+            logger.error(f"❌ Không thể lấy thống kê: {e}")
             return {
                 'total_feedbacks': 0,
                 'average_rating': 0.0,
-                'rating_distribution': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
+                'rating_distribution': {1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+                'avg_relevancy': 0.0,
+                'avg_faithfulness': 0.0,
+                'avg_response_time': 0.0,
+                'auto_evaluated_count': 0
             }
     
     def delete_feedback(

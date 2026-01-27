@@ -16,7 +16,7 @@ class UserManager:
         self.json_file = Path("backend/data/users.json")
         
         if self.db is None:
-            logger.warning(" Cảnh báo: MongoDB không khả dụng. Sử dụng JSON file dự phòng.")
+            logger.warning(" Cảnh báo: MongoDB không khả dụng. Sử dụng file dự phòng.")
             self.use_json_fallback = True
             self._ensure_json_file()
             self._create_default_admin_json()

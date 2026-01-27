@@ -164,7 +164,7 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
     
     for (source, target), rels in relationships_dict.items():
         for rel in rels:
-            # Tạo văn bản phong phú cho relationship
+            # Tạo văn bản cho relationship
             rel_text = (
                 f"{source} -> {target}: "
                 f"{rel.get('description', '')} "
@@ -218,7 +218,7 @@ def generate_relationship_embeddings(relationships_dict: Dict, batch_size: int =
         logger.error(f" Không thể tạo relationship embeddings: {e}")
         return []
 
-# Các hàm còn lại...
+
 def generate_text_embedding(text: str) -> np.ndarray:
     """Tạo embedding cho một văn bản (cho queries)"""
     try:

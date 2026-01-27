@@ -5,6 +5,7 @@
 import streamlit as st
 import sys
 import os
+import time
 from datetime import datetime
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -15,6 +16,7 @@ from backend.db.conversation_storage import ConversationStorage
 from backend.db.feedback_storage import FeedbackStorage
 from backend.retrieval.hybrid_retriever import EnhancedHybridRetriever
 from backend.retrieval.conversation_manager import ConversationManager
+from backend.evaluation.response_evaluator import ResponseEvaluator
 from backend.utils.llm_utils import call_llm_async, call_llm_stream
 import asyncio
 
@@ -27,7 +29,7 @@ user_id = st.session_state.get('user_id', 'admin_00000000')
 username = st.session_state.get('username', 'User')
 role = st.session_state.get('role', 'user')
 
-# ✅ NEW: Users use admin's data for retrieval
+#
 DATA_USER_ID = 'admin_00000000'  # All users read from admin's data
 
 # ================= Page Config =================
@@ -141,6 +143,63 @@ st.markdown("""
         border-radius: 6px;
         margin: 0.5rem 0;
     }
+    
+    /* Evaluation Styles */
+    .evaluation-container {
+        background: #1a1a1a;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0 1rem 2rem;
+        border-left: 3px solid #8b5cf6;
+    }
+    .evaluation-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        margin: 0.3rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    .badge-relevancy {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+    .badge-faithfulness {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+    .badge-response-time {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+    .evaluation-score {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+    .evaluation-reason {
+        background: #2d2d2d;
+        padding: 0.5rem;
+        border-radius: 5px;
+        margin-top: 0.5rem;
+        font-size: 0.85rem;
+        color: #d1d5db;
+    }
+    
+    /* Loading Spinner */
+    .spinner {
+        border: 3px solid #2d2d2d;
+        border-top: 3px solid #3b82f6;
+        border-radius: 50%;
+        width: 30px;
+        height: 30px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-right: 0.5rem;
+    }
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -217,7 +276,7 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ✅ Show info for users
+# Show users info 
 if role == 'user':
     st.markdown(f"""
     <div class="info-box">
@@ -360,7 +419,7 @@ with st.sidebar:
     )
     
     top_k = st.slider("Results", 3, 15, 5)
-    temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1)
+    temperature = st.slider("Temperature", 0.5, 1.0, 0.8, 0.1)
     
     st.markdown("---")
     
@@ -474,80 +533,223 @@ for message in st.session_state.messages:
                         
                         st.markdown("---")
         
-        #  FEEDBACK 
+        #  FEEDBACK & EVALUATION 
         msg_index = st.session_state.messages.index(message)
         
-        # Initialize feedback state
+        # Initialize states
         if 'feedbacks' not in st.session_state:
             st.session_state.feedbacks = {}
+        
+        if 'evaluating' not in st.session_state:
+            st.session_state.evaluating = {}
         
         feedback_key = f"{current_conversation_id}_{msg_index}"
         
         existing_feedback = feedback_storage.get_feedback(current_conversation_id, msg_index)
         
-        if existing_feedback:
-            # Show  feedback
-            st.markdown(f"""
-            <div class="feedback-submitted">
-                ✅ Đã gửi feedback - Rating: {'⭐' * existing_feedback['rating']} ({existing_feedback['rating']}/5)
-            </div>
-            """, unsafe_allow_html=True)
-        else:
+        # Check what type of feedback exists
+        has_manual_feedback = existing_feedback and existing_feedback.get('rating') is not None
+        has_auto_evaluation = existing_feedback and existing_feedback.get('auto_evaluated')
+        
+        # Show existing feedbacks
+        if has_manual_feedback or has_auto_evaluation:
+            if has_manual_feedback:
+                st.markdown(f"""
+                <div class="feedback-submitted">
+                    ✅ Đánh giá thủ công - Rating: {'⭐' * existing_feedback['rating']} ({existing_feedback['rating']}/5)
+                </div>
+                """, unsafe_allow_html=True)
+            
+            if has_auto_evaluation:
+                rel_score = existing_feedback.get('relevancy_score', 0)
+                faith_score = existing_feedback.get('faithfulness_score', 0)
+                resp_time = existing_feedback.get('response_time_ms', 0)
+                
+                st.markdown(f"""
+                <div class="evaluation-container">
+                    <strong>📊 Đánh giá tự động:</strong><br><br>
+                    <div class="evaluation-badge badge-relevancy">
+                        🎯 Độ liên quan: <span class="evaluation-score">{rel_score}/5</span>
+                    </div>
+                    <div class="evaluation-badge badge-faithfulness">
+                        ✅ Độ trung thực: <span class="evaluation-score">{faith_score}/5</span>
+                    </div>
+                    <div class="evaluation-badge badge-response-time">
+                        ⏱️ Thời gian: <span class="evaluation-score">{resp_time:.0f}ms</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Show reasons in expander
+                rel_reason = existing_feedback.get('relevancy_reason', '')
+                faith_reason = existing_feedback.get('faithfulness_reason', '')
+                
+                if rel_reason or faith_reason:
+                    with st.expander("📝 Chi tiết đánh giá tự động", expanded=False):
+                        if rel_reason:
+                            st.markdown(f"**🎯 Lý do đánh giá độ liên quan:**")
+                            st.markdown(f'<div class="evaluation-reason">{rel_reason}</div>', unsafe_allow_html=True)
+                        if faith_reason:
+                            st.markdown(f"**✅ Lý do đánh giá độ trung thực:**")
+                            st.markdown(f'<div class="evaluation-reason">{faith_reason}</div>', unsafe_allow_html=True)
+        
+        # Show feedback options if not both completed
+        if not (has_manual_feedback and has_auto_evaluation):
             with st.expander("💬 Đánh giá câu trả lời này", expanded=False):
-                st.markdown("**Mức độ hài lòng:**")
+                # Create tabs for manual and auto evaluation
+                tab1, tab2 = st.tabs(["⭐ Đánh giá thủ công", "🤖 Đánh giá tự động"])
                 
-                col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 3])
-                rating = 0
-                
-                with col1:
-                    if st.button("⭐", key=f"star1_{feedback_key}"):
-                        st.session_state.feedbacks[feedback_key] = {'rating': 1}
-                with col2:
-                    if st.button("⭐⭐", key=f"star2_{feedback_key}"):
-                        st.session_state.feedbacks[feedback_key] = {'rating': 2}
-                with col3:
-                    if st.button("⭐⭐⭐", key=f"star3_{feedback_key}"):
-                        st.session_state.feedbacks[feedback_key] = {'rating': 3}
-                with col4:
-                    if st.button("⭐⭐⭐⭐", key=f"star4_{feedback_key}"):
-                        st.session_state.feedbacks[feedback_key] = {'rating': 4}
-                with col5:
-                    if st.button("⭐⭐⭐⭐⭐", key=f"star5_{feedback_key}"):
-                        st.session_state.feedbacks[feedback_key] = {'rating': 5}
-                
-                current_rating = st.session_state.feedbacks.get(feedback_key, {}).get('rating', 0)
-                
-                if current_rating > 0:
-                    st.success(f"Đã chọn: {'⭐' * current_rating} ({current_rating}/5)")
-                
-                feedback_text = st.text_area(
-                    "Nhận xét (tùy chọn):",
-                    key=f"feedback_text_{feedback_key}",
-                    placeholder="Chia sẻ ý kiến của bạn về câu trả lời...",
-                    height=80
-                )
-                
-                # Submit button
-                if st.button("📤 Gửi đánh giá", key=f"submit_{feedback_key}", type="primary"):
-                    if current_rating > 0:
-                        # Save feedback
-                        success = feedback_storage.save_feedback(
-                            conversation_id=current_conversation_id,
-                            message_index=msg_index,
-                            rating=current_rating,
-                            feedback_text=feedback_text
+                # TAB 1: Manual Feedback
+                with tab1:
+                    if has_manual_feedback:
+                        st.info("✅ Bạn đã đánh giá thủ công câu trả lời này rồi!")
+                    else:
+                        st.markdown("**Mức độ hài lòng:**")
+                        
+                        col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 1, 3])
+                        
+                        with col1:
+                            if st.button("⭐", key=f"star1_{feedback_key}"):
+                                st.session_state.feedbacks[feedback_key] = {'rating': 1}
+                        with col2:
+                            if st.button("⭐⭐", key=f"star2_{feedback_key}"):
+                                st.session_state.feedbacks[feedback_key] = {'rating': 2}
+                        with col3:
+                            if st.button("⭐⭐⭐", key=f"star3_{feedback_key}"):
+                                st.session_state.feedbacks[feedback_key] = {'rating': 3}
+                        with col4:
+                            if st.button("⭐⭐⭐⭐", key=f"star4_{feedback_key}"):
+                                st.session_state.feedbacks[feedback_key] = {'rating': 4}
+                        with col5:
+                            if st.button("⭐⭐⭐⭐⭐", key=f"star5_{feedback_key}"):
+                                st.session_state.feedbacks[feedback_key] = {'rating': 5}
+                        
+                        current_rating = st.session_state.feedbacks.get(feedback_key, {}).get('rating', 0)
+                        
+                        if current_rating > 0:
+                            st.success(f"Đã chọn: {'⭐' * current_rating} ({current_rating}/5)")
+                        
+                        feedback_text = st.text_area(
+                            "Nhận xét (tùy chọn):",
+                            key=f"feedback_text_{feedback_key}",
+                            placeholder="Chia sẻ ý kiến của bạn về câu trả lời...",
+                            height=80
                         )
                         
-                        if success:
-                            st.success("✅ Cảm ơn bạn đã đánh giá!")
-                            # Clear feedback state
-                            if feedback_key in st.session_state.feedbacks:
-                                del st.session_state.feedbacks[feedback_key]
-                            st.rerun()
-                        else:
-                            st.error("❌ Không thể lưu feedback. Vui lòng thử lại.")
+                        # Submit button
+                        if st.button("📤 Gửi đánh giá thủ công", key=f"submit_manual_{feedback_key}", type="primary"):
+                            if current_rating > 0:
+                                # Save manual feedback
+                                success = feedback_storage.save_feedback(
+                                    conversation_id=current_conversation_id,
+                                    message_index=msg_index,
+                                    rating=current_rating,
+                                    feedback_text=feedback_text,
+                                    # Preserve auto evaluation if exists
+                                    relevancy_score=existing_feedback.get('relevancy_score') if existing_feedback else None,
+                                    faithfulness_score=existing_feedback.get('faithfulness_score') if existing_feedback else None,
+                                    response_time_ms=existing_feedback.get('response_time_ms') if existing_feedback else None,
+                                    auto_evaluated=existing_feedback.get('auto_evaluated', False) if existing_feedback else False,
+                                    relevancy_reason=existing_feedback.get('relevancy_reason') if existing_feedback else None,
+                                    faithfulness_reason=existing_feedback.get('faithfulness_reason') if existing_feedback else None
+                                )
+                                
+                                if success:
+                                    st.success("✅ Cảm ơn bạn đã đánh giá!")
+                                    if feedback_key in st.session_state.feedbacks:
+                                        del st.session_state.feedbacks[feedback_key]
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Không thể lưu feedback. Vui lòng thử lại.")
+                            else:
+                                st.warning("⚠️ Vui lòng chọn số sao trước khi gửi!")
+                
+                # TAB 2: Auto Evaluation
+                with tab2:
+                    if has_auto_evaluation:
+                        st.info("✅ Câu trả lời này đã được đánh giá tự động rồi!")
                     else:
-                        st.warning("⚠️ Vui lòng chọn số sao trước khi gửi!")
+                        st.markdown("""
+                        **Hệ thống sẽ tự động đánh giá câu trả lời theo 3 tiêu chí:**
+                        - 🎯 **Độ liên quan**: Câu trả lời có liên quan đến câu hỏi không
+                        - ✅ **Độ trung thực**: Câu trả lời có trung thực với nguồn tài liệu không
+                        - ⏱️ **Thời gian phản hồi**: Tốc độ phản hồi của hệ thống
+                        """)
+                        
+                        # Check if currently evaluating
+                        is_evaluating = st.session_state.evaluating.get(feedback_key, False)
+                        
+                        if is_evaluating:
+                            st.markdown("""
+                            <div style="text-align: center; padding: 1rem;">
+                                <div class="spinner"></div>
+                                <span>Đang đánh giá tự động...</span>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        else:
+                            if st.button("🚀 Bắt đầu đánh giá tự động", key=f"eval_{feedback_key}", type="primary"):
+                                st.session_state.evaluating[feedback_key] = True
+                                
+                                try:
+                                    # Get question and answer
+                                    question = ""
+                                    answer = message['content']
+                                    
+                                    # Find corresponding user question
+                                    for i in range(msg_index - 1, -1, -1):
+                                        if st.session_state.messages[i]['role'] == 'user':
+                                            question = st.session_state.messages[i]['content']
+                                            break
+                                    
+                                    # Get context from metadata
+                                    context_text = ""
+                                    if 'retrieved_chunks' in message:
+                                        context_text = "\n\n".join([
+                                            f"[{chunk['filename']}]: {chunk['content']}"
+                                            for chunk in message['retrieved_chunks'][:3]
+                                        ])
+                                    
+                                    # Get response time from metadata
+                                    response_time_ms = message.get('metadata', {}).get('response_time_ms', 0)
+                                    
+                                    # Create evaluator
+                                    evaluator = ResponseEvaluator()
+                                    
+                                    # Run evaluation
+                                    with st.spinner("🔍 Đang đánh giá..."):
+                                        eval_result = asyncio.run(evaluator.evaluate_response(
+                                            question=question,
+                                            answer=answer,
+                                            context=context_text,
+                                            response_time_ms=response_time_ms,
+                                            llm_func=call_llm_async
+                                        ))
+                                    
+                                    # Save to database (preserve manual feedback if exists)
+                                    success = feedback_storage.save_feedback(
+                                        conversation_id=current_conversation_id,
+                                        message_index=msg_index,
+                                        rating=existing_feedback.get('rating') if existing_feedback else None,
+                                        feedback_text=existing_feedback.get('feedback_text') if existing_feedback else None,
+                                        relevancy_score=eval_result['relevancy_score'],
+                                        faithfulness_score=eval_result['faithfulness_score'],
+                                        response_time_ms=eval_result['response_time_ms'],
+                                        auto_evaluated=True,
+                                        relevancy_reason=eval_result['relevancy_reason'],
+                                        faithfulness_reason=eval_result['faithfulness_reason']
+                                    )
+                                    
+                                    if success:
+                                        st.success("✅ Đánh giá tự động hoàn tất!")
+                                        st.session_state.evaluating[feedback_key] = False
+                                        st.rerun()
+                                    else:
+                                        st.error("❌ Không thể lưu kết quả đánh giá")
+                                        st.session_state.evaluating[feedback_key] = False
+                                
+                                except Exception as e:
+                                    st.error(f"❌ Lỗi đánh giá: {e}")
+                                    st.session_state.evaluating[feedback_key] = False
 
 
 # ================= Chat Input =================
@@ -569,6 +771,9 @@ if user_query:
     
     with st.spinner("🤔 Thinking..."):
         try:
+            # Start tracking response time
+            start_time = time.time()
+            
             # Query rewriting
             original_query = user_query
             if use_history:
@@ -591,24 +796,40 @@ if user_query:
             # Build prompt
             messages_for_llm = []
             
-            system_prompt = """You are a helpful AI assistant with access to document context and knowledge graph.
+            system_prompt = """Bạn là một trợ lý AI thông minh và thân thiện, chuyên hỗ trợ người dùng tìm kiếm thông tin từ tài liệu và đồ thị tri thức.
 
-CRITICAL INSTRUCTIONS:
-1. **IDENTIFY THE MAIN ENTITY FIRST**: Carefully identify the main entity/person being asked about in the question
-2. **FOCUS ONLY ON THAT ENTITY**: Answer ONLY about that specific entity. DO NOT answer about other entities even if they appear in the context
-3. **Use Correct Context**:
-   - For relationship queries: Use LOCAL CONTEXT (Knowledge Graph) to explain relationships of the entity mentioned in the question
-   - For document queries: Use GLOBAL CONTEXT (Documents) and cite sources with [1], [2], etc.
-4. **Verify Before Answering**: Double-check that your answer is about the entity mentioned in the question, not about other entities
-5. **Be Precise**: If the question asks about "Person A", do NOT answer about "Person B" even if Person B appears in the context
+🎯 PHONG CÁCH GIAO TIẾP:
+- Trả lời tự nhiên, mượt mà như đang trò chuyện
+- Sử dụng ngôn ngữ đơn giản, dễ hiểu, tránh thuật ngữ kỹ thuật không cần thiết
+- Thể hiện sự nhiệt tình và quan tâm đến câu hỏi của người dùng
+- Có thể sử dụng emoji một cách tinh tế để tạo sự gần gũi (không lạm dụng)
 
-Example:
-- Question: "vũ hoàng hiệp có quan hệ với những ai"
-- Main entity: Vũ Hoàng Hiệp
-- Correct: Answer about Vũ Hoàng Hiệp's relationships
-- Wrong: Answer about other people's relationships
+📋 NGUYÊN TẮC TRẢ LỜI:
+1. **Xác định đúng đối tượng**: Đọc kỹ câu hỏi để xác định chính xác entity/người được hỏi
+2. **Tập trung vào entity đó**: Chỉ trả lời về entity được hỏi, không trả lời về các entity khác
+3. **Sử dụng context phù hợp**:
+   - Câu hỏi về mối quan hệ → Dùng LOCAL CONTEXT (Knowledge Graph)
+   - Câu hỏi về thông tin tài liệu → Dùng GLOBAL CONTEXT (Documents) và trích dẫn [1], [2]
+4. **Kiểm tra trước khi trả lời**: Đảm bảo câu trả lời đúng về entity được hỏi
 
-REMEMBER: Always answer about the entity mentioned in the question, not other entities in the context!"""
+💡 CẤU TRÚC CÂU TRẢ LỜI TỰ NHIÊN:
+- Bắt đầu bằng câu mở đầu ngắn gọn, thân thiện
+- Trình bày thông tin theo luồng logic, dễ theo dõi
+- Sử dụng câu chuyển tiếp mượt mà giữa các ý
+- Kết thúc bằng tóm tắt hoặc gợi ý nếu phù hợp
+
+❌ TRÁNH:
+- Liệt kê thông tin theo dạng bullet points trừ khi thực sự cần thiết
+- Sử dụng cấu trúc câu máy móc như "Theo tài liệu...", "Dựa vào context..."
+- Lặp lại câu hỏi của người dùng trong câu trả lời
+- Trả lời quá dài dòng hoặc quá ngắn gọn
+
+✅ VÍ DỤ:
+Câu hỏi: "Vũ Hoàng Hiệp có quan hệ với những ai?"
+❌ Sai: "Dựa vào knowledge graph, tôi thấy Nguyễn Văn A có các mối quan hệ sau..."
+✅ Đúng: "Vũ Hoàng Hiệp có mối quan hệ với nhiều người. Anh ấy là đồng nghiệp của Nguyễn Văn A, cùng làm việc tại công ty XYZ. Ngoài ra, anh còn có mối quan hệ hợp tác với..."
+
+Hãy nhớ: Trả lời chính xác nhưng vẫn giữ được sự tự nhiên và thân thiện!"""
 
             if use_history:
                 history_context = st.session_state.conv_manager.get_context_for_llm()
@@ -664,17 +885,24 @@ Question: {user_query}
                 st.error(f"❌ LLM call failed: {e}")
                 raise
             
+            # Calculate response time
+            end_time = time.time()
+            response_time_ms = (end_time - start_time) * 1000
             
             # Save to MongoDB
             if use_history:
                 st.session_state.conv_manager.add_message('user', original_query, save_to_db=True)
                 st.session_state.conv_manager.add_message('assistant', response, save_to_db=True)
             
+            # Add response time to metadata
+            metadata_with_time = context.metadata.copy()
+            metadata_with_time['response_time_ms'] = response_time_ms
+            
             # Save to UI with full context 
             assistant_message = {
                 'role': 'assistant',
                 'content': response,
-                'metadata': context.metadata,
+                'metadata': metadata_with_time,
                 'retrieved_chunks': [
                     {
                         'content': chunk.content,
@@ -682,7 +910,7 @@ Question: {user_query}
                         'score': chunk.score,
                         'chunk_id': chunk.chunk_id
                     }
-                    for chunk in context.global_chunks[:3]  
+                    for chunk in context.global_chunks[:top_k]  # Sử dụng giá trị từ slider
                 ],
                 'retrieved_entities': [
                     {
@@ -692,7 +920,7 @@ Question: {user_query}
                         'relationships': entity.relationships[:3],  
                         'score': entity.score
                     }
-                    for entity in context.local_entities[:3]  
+                    for entity in context.local_entities[:top_k]  
                 ]
             }
             st.session_state.messages.append(assistant_message)

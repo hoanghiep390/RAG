@@ -59,12 +59,12 @@ class QueryAnalyzer:
         self._entity_cache = None
         self._cache_loaded = False
         
-        #  OPTIMIZED: Load cache once at initialization instead of per-query
+    
         if mongo_storage:
             self._load_entity_cache()
     
     def _load_entity_cache(self):
-        """ OPTIMIZED: Load entities once at init, reduced from 500 to 300 for speed"""
+        """Tải cache entities một lần khi khởi tạo"""
         if self._cache_loaded or not self.mongo_storage:
             return
         
@@ -77,7 +77,7 @@ class QueryAnalyzer:
                 {'entity_name': 1, 'entity_type': 1}
             ).limit(max_entities)
             
-            # Build cache: {entity_name_lower: entity_name}
+            # Xây dựng cache: {entity_name_lower: entity_name}
             self._entity_cache = {}
             for e in entities:
                 entity_name = e['entity_name']
@@ -101,60 +101,55 @@ class QueryAnalyzer:
         NÂNG CAO: Trích xuất entity ngữ nghĩa sử dụng tra cứu DB
         TỐI ƯU: Cache đã tải sẵn khi init, không cần tải lại
         
-        Chiến lược khớp:
+        cách thực hiện khớp:
         1. Khớp chính xác (không phân biệt hoa thường)
-        2. Khớp mờ (similarity > 0.90, giảm từ 0.85)
         3. Regex patterns (dự phòng)
         """
         entities = []
         
-        #  OPTIMIZED: No need to load cache here, already loaded at init
+    
         if not self._entity_cache:
-            # Fallback to regex if no cache
             return self._extract_entities_regex(query)
         
         query_lower = query.lower()
         
-        # Level 1: Exact match (case-insensitive)
+        # Cấp 1: Khớp chính xác (không phân biệt hoa thường)
         for entity_lower, entity_name in self._entity_cache.items():
             if entity_lower in query_lower:
                 entities.append(entity_name)
         
-        # Level 2: Fuzzy match for multi-word entities
-        #  OPTIMIZED: Reduced from 5 to 3 words (1-3 word phrases only)
-        # Split query into n-grams (1-3 words)
+        # Cấp 2: Khớp mờ cho entities nhiều từ
         query_tokens = query.split()
         for i in range(len(query_tokens)):
-            for j in range(i+1, min(i+4, len(query_tokens)+1)):  # Up to 3-word phrases
+            for j in range(i+1, min(i+4, len(query_tokens)+1)):  # Tối đa cụm 3 từ
                 phrase = ' '.join(query_tokens[i:j]).lower()
                 
-                # Skip if already found exact match
+                # Bỏ qua nếu đã tìm thấy khớp chính xác
                 if phrase in [e.lower() for e in entities]:
                     continue
                 
-                # Fuzzy match against entity cache
+                # Khớp mờ với entity cache
                 for entity_lower, entity_name in self._entity_cache.items():
-                    # Skip short entities (risky for fuzzy match)
+                    # Bỏ qua entities ngắn (rủi ro khi khớp mờ)
                     if len(entity_lower) < 4:
                         continue
                     
-                    #  OPTIMIZED: Increased threshold from 0.85 to 0.90 for fewer comparisons
                     score = SequenceMatcher(None, phrase, entity_lower).ratio()
                     if score > 0.90:
                         entities.append(entity_name)
                         break
         
-        # Level 3: Regex fallback for entities not in DB
+        # Cấp 3: Regex dự phòng cho entities không có trong DB
         if not entities:
             entities = self._extract_entities_regex(query)
         
-        # Deduplicate
-        entities = list(dict.fromkeys(entities))  # Preserve order
-        
-        return entities[:5]  # Top 5
+        # Loại bỏ trùng lặp
+        entities = list(dict.fromkeys(entities))  
+    
+        return entities[:5]
     
     def _extract_entities_regex(self, query: str) -> List[str]:
-        """Fallback: Extract entities using regex patterns"""
+        """Dự phòng: Trích xuất entities bằng regex patterns"""
         entities = []
         
         for pattern in ENTITY_MARKERS:
@@ -167,12 +162,12 @@ class QueryAnalyzer:
         return entities[:5]
     
     def analyze(self, query: str) -> QueryAnalysis:
-        """Phân tích query với semantic entity recognition"""
+        """Phân tích query với nhận diện entity ngữ nghĩa"""
         query_lower = query.lower().strip()
     
         intent = self._detect_intent(query_lower)
         
-        #  ENHANCED: Use semantic entity extraction
+        # Sử dụng trích xuất entity ngữ nghĩa
         entities = self._extract_entities_semantic(query)
         
         keywords = self._extract_keywords(query_lower)
@@ -191,15 +186,15 @@ class QueryAnalyzer:
         )
     
     def _detect_intent(self, query: str) -> str:
-        """Detect intent bằng regex patterns"""
+        """Phát hiện intent bằng regex patterns"""
         for intent, patterns in INTENT_PATTERNS.items():
             for pattern in patterns:
                 if re.search(pattern, query, re.IGNORECASE):
                     return intent
-        return 'fact' 
+        return 'fact'  # Mặc định
     
     def _extract_keywords(self, query: str) -> List[str]:
-        """Extract keywords"""
+        """Trích xuất từ khóa"""
         tokens = re.findall(r'\b\w+\b', query)
         
         keywords = [
@@ -211,7 +206,7 @@ class QueryAnalyzer:
     def _decide_mode(self, intent: str, entities: List[str]) -> str:
         """Quyết định retrieval mode"""
         if entities:
-            return 'hybrid'  
+            return 'hybrid'  # Có entities → dùng hybrid
         
         if intent in ['reasoning', 'comparison']:
             return 'hybrid'

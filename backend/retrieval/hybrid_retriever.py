@@ -33,7 +33,6 @@ class QueryExpander:
     """Mở rộng query với từ đồng nghĩa và thuật ngữ liên quan"""
     
     def __init__(self):
-        # Common expansions (can be replaced with word2vec/bert)
         self.expansions = {
             'ai': ['artificial intelligence', 'machine learning', 'deep learning'],
             'ml': ['machine learning', 'ai', 'algorithm'],
@@ -43,7 +42,7 @@ class QueryExpander:
         }
     
     def expand(self, query: str, max_terms: int = 3) -> List[str]:
-        """Expand query with related terms"""
+        """Mở rộng query với các thuật ngữ liên quan"""
         expanded = [query]
         query_lower = query.lower()
         
@@ -124,13 +123,13 @@ def multi_hop_traversal(
     try:
         from backend.db.mongo_storage import MongoStorage
         
-        # Get graph
+
         graph_data = graph_retriever.storage.get_graph()
         
         if not graph_data or not graph_data.get('nodes'):
             return []
         
-        # Build adjacency list
+        
         adj = {}
         for link in graph_data.get('links', []):
             src, tgt = link['source'], link['target']
@@ -142,14 +141,14 @@ def multi_hop_traversal(
                 'strength': link.get('strength', 1.0)
             })
         
-        # BFS for each start entity
+        
         all_paths = []
         
         for start in start_entities:
             if start not in adj:
                 continue
             
-            # BFS
+            
             queue = [(start, [start], 0)]
             visited = {start}
             paths = []
@@ -167,7 +166,7 @@ def multi_hop_traversal(
                         visited.add(tgt)
                         new_path = path + [tgt]
                         
-                        # Save path
+                        
                         if len(new_path) >= 2:
                             paths.append({
                                 'path': new_path,
@@ -210,18 +209,18 @@ class ResultReranker:
         for chunk in chunks:
             score = chunk.score
             
-            # Boost if contains entities
+            
             entity_count = sum(1 for e in entities if e.lower() in chunk.content.lower())
             score += entity_count * 0.1
             
-            # Boost longer content (more context)
+            
             length_score = min(len(chunk.content) / 1000, 0.2)
             score += length_score
             
-            # Update score
+            
             chunk.score = min(score, 1.0)
         
-        # Sort by new score
+        
         chunks.sort(key=lambda x: x.score, reverse=True)
         
         return chunks
@@ -245,11 +244,10 @@ class ResultReranker:
         for entity in entities:
             score = entity.score
             
-            # Boost if name in query
+            
             if entity.entity_name.lower() in query_lower:
                 score += 0.3
             
-            # Boost by relationships
             rel_score = min(len(entity.relationships) / 10, 0.2)
             score += rel_score
             
@@ -290,15 +288,15 @@ class EnhancedHybridRetriever:
     """
     
     def __init__(self, vector_db, mongo_storage):
-        #  ENHANCED: Pass mongo_storage to QueryAnalyzer for semantic entity recognition
+        
         self.query_analyzer = QueryAnalyzer(mongo_storage=mongo_storage)
         self.vector_retriever = VectorRetriever(vector_db)
         self.graph_retriever = GraphRetriever(mongo_storage)
         self.query_expander = QueryExpander()
         self.reranker = ResultReranker()
         
-        #  NEW: Retrieval cache for speed
-        self.cache = RetrievalCache(max_size=100, ttl=300)  # 5 minutes TTL
+
+        self.cache = RetrievalCache(max_size=100, ttl=300)  
 
     
     def retrieve(
@@ -324,14 +322,14 @@ class EnhancedHybridRetriever:
         import time
         start = time.time()
         
-        #  NEW: Check cache first
+
         cache_mode = force_mode or 'auto'
         cached_result = self.cache.get(query, cache_mode, top_k)
         if cached_result is not None:
             logger.info(f" Cache hit! Returning cached result")
             return cached_result
         
-        # Handle force_mode for backward compatibility
+    
         if force_mode is not None and mode is None:
             if force_mode == 'vector':
                 mode = RetrievalMode(use_global=True, use_local=False, use_multi_hop=False)
@@ -456,7 +454,7 @@ class EnhancedHybridRetriever:
                 local_entities = r
                 break
         
-        # Multi-hop reasoning -  OPTIMIZED: Skip if no entities (saves time)
+    
         paths = []
         if mode.use_multi_hop and entities and len(entities) > 0:
             paths = await asyncio.to_thread(
@@ -488,7 +486,7 @@ class EnhancedHybridRetriever:
         lines.append("=" * 80)
         lines.append("")
         
-        # Global context (documents) -  OPTIMIZED: Reduced from 5 to 3 chunks, 400 to 200 chars
+        
         if global_chunks:
             from backend.config import Config
             max_chunks = Config.MAX_CONTEXT_CHUNKS
@@ -500,7 +498,7 @@ class EnhancedHybridRetriever:
                 lines.append(f"{chunk.content[:200]}...")
                 lines.append("")
         
-        # Local context (graph) -  OPTIMIZED: Reduced from 5 to 3 entities
+        # Local context (graph)
         if local_entities:
             from backend.config import Config
             max_chunks = Config.MAX_CONTEXT_CHUNKS
@@ -525,7 +523,7 @@ class EnhancedHybridRetriever:
                 
                 lines.append("")
         
-        # Multi-hop reasoning paths
+        # reasoning paths
         if paths:
             lines.append("##  REASONING PATHS (Multi-hop)")
             lines.append("")
@@ -547,7 +545,7 @@ class EnhancedHybridRetriever:
         
         return "\n".join(lines)
     
-    # Backward compatibility
+    
     def retrieve_with_rerank(
         self,
         query: str,
@@ -558,7 +556,6 @@ class EnhancedHybridRetriever:
         return self.retrieve(query, top_k=top_k, rerank=True)
 
 
-#  CONVENIENCE FUNCTIONS 
 
 def retrieve_enhanced(
     query: str,
@@ -571,7 +568,7 @@ def retrieve_enhanced(
     return retriever.retrieve(query, **kwargs)
 
 
-#  EXPORT 
+
 
 __all__ = [
     'EnhancedHybridRetriever',

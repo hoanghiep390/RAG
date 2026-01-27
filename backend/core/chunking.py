@@ -80,7 +80,7 @@ class DoclingExtractor:
             result = self.converter.convert(filepath)
             metadata = self._extract_metadata(result)
             
-            # Thử các phương thức xuất: markdown -> text -> custom
+            # Thử trích xuất: markdown -> text -> custom
             for method, func in [
                 ("markdown", lambda: result.document.export_to_markdown()),
                 ("text", lambda: result.document.export_to_text()),
@@ -108,7 +108,7 @@ class DoclingExtractor:
         try:
             doc = result.document
             
-            # Ánh xạ tên thuộc tính sang key metadata
+            # Ánh xạ tên thuộc tính sang metadata
             attr_map = {
                 'title': ['title', 'name'],
                 'author': ['author', 'authors'],
@@ -147,7 +147,7 @@ class DoclingExtractor:
         """Xuất văn bản có cấu trúc tùy chỉnh"""
         lines = []
         
-        # Element type to markdown mapping
+        # chuyển dổi thành phần văn bản sang, markdown
         element_map = {
             "title": lambda t: f"# {t}",
             "section_header": lambda t: f"## {t}",

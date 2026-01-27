@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 class RetrievalCache:
     """
-    Cache LRU cho kết quả truy xuất
+    Cache  cho kết quả truy xuất
     
     Tính năng:
     - Cache keys dựa trên hash (query + mode + top_k)
@@ -38,23 +38,23 @@ class RetrievalCache:
         logger.info(f" Khởi tạo RetrievalCache (max_size={max_size}, ttl={ttl}s)")
     
     def _generate_key(self, query: str, mode: str, top_k: int) -> str:
-        """Generate cache key from query parameters"""
+        """Tạo cache key từ tham số query"""
         key_string = f"{query}|{mode}|{top_k}"
         return hashlib.md5(key_string.encode()).hexdigest()
     
     def _is_expired(self, timestamp: float) -> bool:
-        """Check if cache entry is expired"""
+        """Kiểm tra cache entry đã hết hạn chưa"""
         return (time.time() - timestamp) > self.ttl
     
     def _evict_lru(self):
-        """Evict least recently used entry"""
+        """Loại bỏ entry ít dùng nhất (LRU)"""
         if not self.access_order:
             return
         
-        # Find LRU entry
+        # Tìm entry LRU
         lru_key = min(self.access_order, key=self.access_order.get)
         
-        # Remove from cache
+        # Xóa khỏi cache
         if lru_key in self.cache:
             del self.cache[lru_key]
         del self.access_order[lru_key]
@@ -63,33 +63,33 @@ class RetrievalCache:
     
     def get(self, query: str, mode: str, top_k: int) -> Optional[Any]:
         """
-        Get cached result
+        Lấy kết quả đã cache
         
         Args:
-            query: Search query
-            mode: Retrieval mode (vector/graph/hybrid/auto)
-            top_k: Number of results
+            query: Truy vấn tìm kiếm
+            mode: Chế độ truy xuất (vector/graph/hybrid/auto)
+            top_k: Số kết quả
         
         Returns:
-            Cached result or None if not found/expired
+            Kết quả đã cache hoặc None nếu không tìm thấy/hết hạn
         """
         cache_key = self._generate_key(query, mode, top_k)
         
-        # Check if exists
+        # Kiểm tra tồn tại
         if cache_key not in self.cache:
             logger.debug(f" Cache miss: {cache_key[:8]}...")
             return None
         
         result, timestamp = self.cache[cache_key]
         
-        # Check if expired
+        # Kiểm tra hết hạn
         if self._is_expired(timestamp):
             logger.debug(f" Cache expired: {cache_key[:8]}...")
             del self.cache[cache_key]
             del self.access_order[cache_key]
             return None
         
-        # Update access time
+        # Cập nhật thời gian truy cập
         self.access_order[cache_key] = time.time()
         
         logger.debug(f"Cache hit: {cache_key[:8]}...")
@@ -97,34 +97,34 @@ class RetrievalCache:
     
     def set(self, query: str, mode: str, top_k: int, result: Any):
         """
-        Store result in cache
+        Lưu kết quả vào cache
         
         Args:
-            query: Search query
-            mode: Retrieval mode
-            top_k: Number of results
-            result: Retrieval result to cache
+            query: Truy vấn tìm kiếm
+            mode: Chế độ truy xuất
+            top_k: Số kết quả
+            result: Kết quả truy xuất cần cache
         """
         cache_key = self._generate_key(query, mode, top_k)
         
-        # Evict if at max size
+        # Loại bỏ nếu đạt giới hạn
         if len(self.cache) >= self.max_size and cache_key not in self.cache:
             self._evict_lru()
         
-        # Store in cache
+        # Lưu vào cache
         self.cache[cache_key] = (result, time.time())
         self.access_order[cache_key] = time.time()
         
         logger.debug(f"Cached result: {cache_key[:8]}... (size: {len(self.cache)}/{self.max_size})")
     
     def clear(self):
-        """Clear all cache entries"""
+        """Xóa tất cả cache entries"""
         self.cache.clear()
         self.access_order.clear()
         logger.info(" Cache cleared")
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics"""
+        """Lấy thống kê cache"""
         return {
             'size': len(self.cache),
             'max_size': self.max_size,

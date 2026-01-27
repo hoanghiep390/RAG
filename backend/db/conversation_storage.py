@@ -38,9 +38,9 @@ class ConversationStorage:
             raise
     
     def _create_indexes(self):
-        """Create indexes for performance"""
+        """Tạo indexes cho hiệu suất"""
         try:
-            # Conversation indexes
+            # Indexes cho conversations
             self.conversations.create_index([
                 ('user_id', 1), 
                 ('conversation_id', 1)
@@ -51,7 +51,7 @@ class ConversationStorage:
                 ('updated_at', -1)
             ])
             
-            # Message indexes
+            # Indexes cho messages
             self.messages.create_index([
                 ('conversation_id', 1), 
                 ('message_id', 1)
@@ -67,7 +67,7 @@ class ConversationStorage:
             logger.warning(f" Index creation warning: {e}")
     
     # ============================================
-    # CONVERSATION CRUD
+    # QUẢN LÝ CONVERSATION
     # ============================================
     
     def create_conversation(self, title: Optional[str] = None) -> str:
@@ -198,12 +198,12 @@ class ConversationStorage:
             Dict với stats
         """
         try:
-            # Delete messages
+            # Xóa messages
             msg_result = self.messages.delete_many({
                 'conversation_id': conversation_id
             })
             
-            # Delete conversation
+            # Xóa conversation
             conv_result = self.conversations.delete_one({
                 'user_id': self.user_id,
                 'conversation_id': conversation_id
@@ -225,7 +225,7 @@ class ConversationStorage:
             return {'conversation_deleted': 0, 'messages_deleted': 0}
     
     # ============================================
-    # MESSAGE CRUD
+    # QUẢN LÝ MESSAGE
     # ============================================
     
     def add_message(
@@ -261,7 +261,7 @@ class ConversationStorage:
             
             self.messages.insert_one(message)
             
-            # Update conversation
+            # Cập nhật conversation
             self.conversations.update_one(
                 {
                     'user_id': self.user_id,
@@ -303,7 +303,7 @@ class ConversationStorage:
                 self.messages.find(
                     {'conversation_id': conversation_id}
                 )
-                .sort('created_at', 1)  # Ascending
+                .sort('created_at', 1)  # Tăng dần
                 .skip(skip)
                 .limit(limit)
             )
@@ -334,11 +334,11 @@ class ConversationStorage:
                 self.messages.find(
                     {'conversation_id': conversation_id}
                 )
-                .sort('created_at', -1)  # Descending
+                .sort('created_at', -1)  # Giảm dần
                 .limit(n)
             )
             
-            # Reverse to chronological order
+            # Đảo ngược về thứ tự thời gian
             messages.reverse()
             
             return messages
@@ -371,7 +371,7 @@ class ConversationStorage:
             return False
     
     # ============================================
-    # BULK OPERATIONS
+    # THAO TÁC HÀNG LOẠT
     # ============================================
     
     def save_conversation_bulk(
@@ -428,7 +428,7 @@ class ConversationStorage:
             return 0
     
     # ============================================
-    # STATISTICS
+    # THỐNG KÊ
     # ============================================
     
     def get_user_statistics(self) -> Dict:
@@ -455,7 +455,7 @@ class ConversationStorage:
                 }
             })
             
-            # Get most recent conversation
+            # Lấy conversation gần nhất
             recent = self.conversations.find_one(
                 {'user_id': self.user_id},
                 sort=[('updated_at', -1)]
@@ -478,7 +478,7 @@ class ConversationStorage:
             }
     
     # ============================================
-    # AUTO TITLE GENERATION
+    # TỰ ĐỘNG TẠO TIÊU ĐỀ
     # ============================================
     
     def auto_generate_title(
@@ -500,13 +500,13 @@ class ConversationStorage:
             return None
         
         try:
-            # Get first few messages
+            # Lấy vài messages đầu
             messages = self.get_messages(conversation_id, limit=4)
             
             if not messages:
                 return None
             
-            # Build context
+            # Xây dựng context
             context = "\n".join([
                 f"{m['role'].title()}: {m['content'][:100]}"
                 for m in messages[:4]
@@ -519,7 +519,7 @@ Conversation:
 
 Title (short and concise):"""
 
-            # Call LLM
+            # Gọi LLM
             import asyncio
             try:
                 title = asyncio.run(llm_func(
@@ -537,11 +537,11 @@ Title (short and concise):"""
                     max_tokens=50
                 )
             
-            # Clean title
+            # Làm sạch title
             title = title.strip().strip('"\'').strip()
             
             if title and len(title) <= 100:
-                # Update title
+                # Cập nhật title
                 self.update_conversation_title(conversation_id, title)
                 logger.info(f" Auto-generated title: {title}")
                 return title
@@ -554,7 +554,7 @@ Title (short and concise):"""
 
 
 # ============================================
-# UTILITY FUNCTIONS
+# HÀM TIỆN ÍCH
 # ============================================
 
 def create_conversation_storage(user_id: str) -> ConversationStorage:

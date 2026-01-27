@@ -31,7 +31,7 @@ class Config:
     # ========== Processing ==========
     EXTRACTION_BATCH_SIZE = int(os.getenv('EXTRACTION_BATCH_SIZE', '20'))
     EMBEDDING_BATCH_SIZE = int(os.getenv('EMBEDDING_BATCH_SIZE', '128'))
-    MAX_GLEANING = int(os.getenv('MAX_GLEANING', '1'))  # Continue extraction attempts
+    MAX_GLEANING = int(os.getenv('MAX_GLEANING', '2'))  # Continue extraction attempts (increased from 1 to 2)
     USE_LLM_ENTITY_MERGE = os.getenv('USE_LLM_ENTITY_MERGE', 'true').lower() == 'true'
     MIN_DESCRIPTIONS_FOR_LLM_MERGE = int(os.getenv('MIN_DESCRIPTIONS_FOR_LLM_MERGE', '3'))
     USE_LLM_RELATIONSHIP_MERGE = os.getenv('USE_LLM_RELATIONSHIP_MERGE', 'true').lower() == 'true'
@@ -53,7 +53,7 @@ class Config:
     
     # ========== Retrieval Performance ==========
     ENABLE_QUERY_EXPANSION = os.getenv('ENABLE_QUERY_EXPANSION', 'false').lower() == 'true'
-    MAX_CONTEXT_CHUNKS = int(os.getenv('MAX_CONTEXT_CHUNKS', '3'))
+    MAX_CONTEXT_CHUNKS = int(os.getenv('MAX_CONTEXT_CHUNKS', '7'))
     MAX_ENTITY_CACHE = int(os.getenv('MAX_ENTITY_CACHE', '300'))
     
     # ========== Storage Paths ==========

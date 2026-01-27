@@ -200,7 +200,7 @@ for idx, (key, label, color) in enumerate(entity_type_colors_display):
             unsafe_allow_html=True
         )
 
-# COLORS - Match với 12 entity types trong extraction.py
+# COLORS - Match với entity types trong extraction.py
 ENTITY_COLORS = {
     # Core types
     'PERSON': '#FF6B6B',       

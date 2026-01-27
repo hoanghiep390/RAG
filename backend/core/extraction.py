@@ -1,7 +1,7 @@
 # backend/core/extraction.py 
 """
-Trích xuất Entity & Relationship - Phong cách LightRAG
-Trích xuất đơn giản một giai đoạn theo cách tiếp cận LightRAG
+Trích xuất Entity & Relationship 
+Trích xuất đơn giản một giai đoạn
 """
 
 import asyncio
@@ -79,8 +79,9 @@ You are a Knowledge Graph Specialist responsible for extracting entities and rel
        - `entity_name`: The name of the entity. Use title case for proper nouns. Ensure **consistent naming** across the entire extraction process.
        - `entity_type`: Categorize the entity using one of the following types: {entity_types_str}. If none apply, use `other`.
        - `entity_description`: Provide a concise yet comprehensive description of the entity's attributes and activities, based *solely* on the information present in the input text.
-   - **Output Format - Entities:** Output a total of 4 fields for each entity, delimited by `{TUPLE_DELIMITER}`, on a single line. The first field *must* be the literal string `entity`.
-       - Format: `entity{TUPLE_DELIMITER}entity_name{TUPLE_DELIMITER}entity_type{TUPLE_DELIMITER}entity_description`
+       - `confidence` (optional): A score from 1-5 indicating confidence in this entity (5 = very confident, 1 = uncertain). If not provided, defaults to 3.
+   - **Output Format - Entities:** Output 4-5 fields for each entity, delimited by `{TUPLE_DELIMITER}`, on a single line. The first field *must* be the literal string `entity`.
+       - Format: `entity{TUPLE_DELIMITER}entity_name{TUPLE_DELIMITER}entity_type{TUPLE_DELIMITER}entity_description{TUPLE_DELIMITER}confidence` (confidence is optional)
 
 2. **Relationship Extraction & Output:**
    - **Identification:** Identify direct, clearly stated, and meaningful relationships between previously extracted entities.
@@ -226,19 +227,40 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             entity_type = sanitize_text(parts[2]).lower()
             entity_description = sanitize_text(parts[3])
             
+            # Parse optional confidence score (default: 3)
+            confidence = 3
+            if len(parts) >= 5:
+                try:
+                    confidence = int(sanitize_text(parts[4]))
+                    confidence = max(1, min(5, confidence))  # Clamp to 1-5
+                except (ValueError, TypeError):
+                    confidence = 3
+            
             # Xác thực
             if not entity_name or not entity_description:
-                logger.debug(f" Bỏ qua entity không hợp lệ: {parts}")
+                logger.debug(f"⚠️ Bỏ qua entity không hợp lệ: {parts}")
                 continue
             
             # Xác thực loại entity
             if entity_type not in ENTITY_TYPES:
                 entity_type = 'other'
             
+            # NEW: Xác thực chất lượng entity
+            temp_entity = {
+                'entity_name': entity_name,
+                'entity_type': entity_type,
+                'description': entity_description
+            }
+            
+            if not validate_entity_quality(temp_entity):
+                logger.debug(f"⚠️ Lọc entity chất lượng thấp: {entity_name}")
+                continue
+            
             entities[entity_name].append({
                 'entity_name': entity_name,
                 'entity_type': entity_type,
                 'description': entity_description,
+                'confidence': confidence,
                 'source_id': chunk_id,
                 'chunk_id': chunk_id
             })
@@ -266,6 +288,56 @@ def parse_extraction_result(result: str, chunk_id: str) -> Tuple[Dict, Dict]:
             })
     
     return dict(entities), dict(relationships)
+
+
+def validate_entity_quality(entity: Dict) -> bool:
+    """
+    Xác thực chất lượng entity trước khi lưu
+    
+    Args:
+        entity: Entity dict với 'entity_name' và 'description'
+    
+    Returns:
+        True nếu entity có chất lượng tốt, False nếu nên bỏ qua
+    """
+    name = entity.get('entity_name', '')
+    description = entity.get('description', '')
+    
+    # Lọc tên quá ngắn (< 2 ký tự)
+    if len(name) < 2:
+        return False
+    
+    # Lọc stop words phổ biến (tiếng Anh và tiếng Việt)
+    stop_words = {
+        # English
+        'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
+        'of', 'with', 'by', 'from', 'as', 'is', 'was', 'are', 'were', 'be',
+        'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will',
+        'would', 'should', 'could', 'may', 'might', 'must', 'can', 'this',
+        'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
+        # Vietnamese
+        'và', 'hoặc', 'nhưng', 'trong', 'trên', 'tại', 'của', 'với', 'bởi',
+        'từ', 'là', 'được', 'có', 'sẽ', 'đã', 'đang', 'này', 'đó', 'các',
+        'những', 'một', 'cho', 'về', 'theo', 'như', 'khi', 'nếu', 'thì'
+    }
+    
+    if name.lower().strip() in stop_words:
+        return False
+    
+    # Lọc tên chỉ chứa số
+    if name.strip().isdigit():
+        return False
+    
+    # Yêu cầu description có độ dài tối thiểu
+    if not description or len(description.strip()) < 10:
+        return False
+    
+    # Lọc entities có tên chỉ chứa ký tự đặc biệt
+    import re
+    if not re.search(r'[a-zA-Z0-9\u00C0-\u1EF9]', name):  # Bao gồm tiếng Việt có dấu
+        return False
+    
+    return True
 
 
 # ================= Entity Deduplication =================

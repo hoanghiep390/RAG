@@ -1,53 +1,57 @@
-
 Đồ ÁN 2/
-├── backend/                    # Backend API và xử lý logic
-│   ├── config.py              # Cấu hình tập trung (MongoDB, LLM, embeddings, performance)
-│   ├── main.py                # FastAPI entry point
+├── backend/                    # Backend xử lý logic và API
+│   ├── config.py              # Cấu hình tập trung (MongoDB, LLM, Embeddings, Performance)
+│   ├── main.py                # Entry point (hiện tại trống - dự phòng cho FastAPI)
 │   │
-│   ├── core/                  # Core processing pipeline
-│   │   ├── chunking.py        # Chia văn bản thành chunks với semantic chunking
-│   │   ├── embedding.py       # Tạo embeddings cho chunks và entities (SentenceTransformer)
-│   │   ├── extraction.py      # 🆕 Extract entities/relationships (LightRAG-style với gleaning + LLM merge)
-│   │   ├── graph_builder.py   # Xây dựng knowledge graph từ entities/relationships
-│   │   └── pipeline.py        # Orchestrate toàn bộ pipeline (chunk → extract → build graph)
+│   ├── core/                  # Core Processing Pipeline
+│   │   ├── chunking.py        # Chia văn bản thành chunks (Docling + Semantic Chunking)
+│   │   ├── embedding.py       # Tạo embeddings (SentenceTransformer)
+│   │   ├── extraction.py      # Trích xuất entities/relationships (LightRAG-style + Gleaning)
+│   │   ├── graph_builder.py   # Xây dựng Knowledge Graph (NetworkX)
+│   │   └── pipeline.py        # Orchestrate pipeline (Chunk → Extract → Graph → Embed)
 │   │
-│   ├── db/                    # Database và storage
-│   │   ├── mongo_storage.py   # MongoDB operations (graph, entities, relationships, chunks)
-│   │   ├── vector_db.py       # FAISS vector database cho similarity search
-│   │   ├── entity_linking.py  # Link entities giữa các chunks (fuzzy matching)
+│   ├── db/                    
+│   │   ├── mongo_storage.py   # MongoDB operations (documents, chunks, entities, relationships, graph)
+│   │   ├── vector_db.py       # FAISS vector database (similarity search)
+│   │   ├── entity_linking.py  # Entity linking giữa documents (fuzzy matching)
 │   │   ├── entity_validator.py # Validate entities (type, description quality)
-│   │   ├── conversation_storage.py # Lưu trữ conversation history
-│   │   └── user_manager.py    # Quản lý users và permissions
+│   │   ├── conversation_storage.py # Lưu conversation history
+│   │   ├── feedback_storage.py # Lưu user feedback (ratings, comments)
+│   │   └── user_manager.py    # Quản lý users (authentication, roles)
 │   │
-│   ├── retrieval/             # Retrieval và query processing
+│   ├── retrieval/             
 │   │   ├── query_analyzer.py  # Phân tích query (intent, entities, keywords)
 │   │   ├── vector_retriever.py # Vector search trên chunks
 │   │   ├── graph_retriever.py  # Graph traversal từ entities
-│   │   ├── hybrid_retriever.py # 🆕 Dual-level retrieval (global + local, LightRAG-inspired)
-│   │   └── conversation_manager.py # Quản lý conversation context
+│   │   ├── hybrid_retriever.py # Dual-level retrieval (Global + Local, LightRAG-inspired)
+│   │   ├── retrieval_cache.py  # Cache retrieval results (TTL-based)
+│   │   └── conversation_manager.py # Quản lý conversation context & query rewriting
 │   │
-│   ├── utils/                 # Utilities
-│   │   ├── llm_utils.py       # LLM API calls (OpenAI, Groq)
-│   │   ├── file_utils.py      # File processing (PDF, DOCX, TXT)
-│   │   └── utils.py           # General utilities
+│   ├── utils/                
+│   │   ├── llm_utils.py       # LLM API calls (OpenAI, Groq) với streaming support
+│   │   ├── file_utils.py      # File operations (save uploaded files)
+│   │   └── utils.py           # Logging và utilities chung
 │   │
-│   └── data/                  # Data storage (user uploads, vectors)
+│   └── data/                  
 │       └── {user_id}/
-│           ├── uploads/       # Uploaded files
-│           └── vectors/       # FAISS indices
+│           ├── uploads/       # Tài liệu gốc đã upload
+│           ├── vectors/       # FAISS index files
+│           └── logs/          # Application logs
 │
-├── frontend/                  # React frontend
-│   ├── public/
-│   ├── src/
-│   │   ├── components/        # React components
-│   │   ├── pages/            # Page components
-│   │   ├── services/         # API services
-│   │   └── App.js            # Main app
-│   └── package.json
+├── frontend/                 
+│   ├── login.py              #  Login/Signup page (authentication)
+│   │
+│   └── pages/                #  Application Pages
+│       ├── upload.py         # Upload documents (Admin only)
+│       ├── chat.py           # Multi-conversation chat interface
+│       ├── graph.py          # Knowledge graph visualization (Admin only)
+│       └── analytics.py      #  Analytics dashboard (Admin only)
 │
-├── lib/                       # Shared libraries
 │
-├── .env                       # Environment variables (API keys, configs)
-├── .env.example              # Example env file với documentation
+├── venv/                      #Python Virtual Environment
+│
+├── .env                      # Environment Variables (API keys, configs)
+├── .env.example              # Example env file
+├── .gitignore                # Git ignore rules
 ├── requirements.txt          # Python dependencies
 └── structure.md              # This file
