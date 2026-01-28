@@ -549,7 +549,7 @@ class EnhancedHybridRetriever:
     def retrieve_with_rerank(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: int = 10,
         rerank_method: str = 'enhanced'
     ):
         """Backward compatible method"""

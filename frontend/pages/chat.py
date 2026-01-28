@@ -418,7 +418,7 @@ with st.sidebar:
         options=['auto', 'vector', 'graph', 'hybrid']
     )
     
-    top_k = st.slider("Results", 3, 15, 5)
+    top_k = st.slider("Results", 3, 15, 10)
     temperature = st.slider("Temperature", 0.5, 1.0, 0.8, 0.1)
     
     st.markdown("---")
@@ -426,6 +426,14 @@ with st.sidebar:
     use_history = st.checkbox("Enable history", value=True)
     max_history_turns = st.slider("Max turns", 1, 10, 5)
     show_rewrite = st.checkbox("Show rewrite", value=False)
+    
+    st.markdown("---")
+    
+    # Refresh data button
+    if st.button("🔄 Refresh Data", use_container_width=True, help="Reload documents from database"):
+        st.cache_resource.clear()
+        st.success("✅ Cache cleared! Reloading...")
+        st.rerun()
     
     st.markdown("---")
     

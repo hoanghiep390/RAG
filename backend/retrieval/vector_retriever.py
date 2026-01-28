@@ -44,7 +44,7 @@ class VectorRetriever:
     def search(
         self, 
         query: str, 
-        top_k: int = 5,
+        top_k: int = 10,
         doc_ids: Optional[List[str]] = None,
         min_score: float = 0.0
     ) -> List[ScoredChunk]:
@@ -107,7 +107,7 @@ class VectorRetriever:
     def search_by_embedding(
         self,
         query_embedding: List[float],
-        top_k: int = 5,
+        top_k: int = 10,
         **kwargs
     ) -> List[ScoredChunk]:
         """
@@ -157,7 +157,7 @@ class VectorRetriever:
 def search_vectors(
     query: str,
     vector_db,
-    top_k: int = 5,
+    top_k: int = 10,
     **kwargs
 ) -> List[ScoredChunk]:
     """

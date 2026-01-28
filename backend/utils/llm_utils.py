@@ -240,6 +240,11 @@ async def call_groq_stream(
         logger.error(f" Lỗi Groq streaming: {str(e)}")
         raise
 
+def _should_enable_fallback() -> bool:
+    """Kiểm tra xem có nên bật fallback hay không"""
+    return os.getenv("ENABLE_LLM_FALLBACK", "true").lower() in ("true", "1", "yes")
+
+
 
 async def call_llm_async(
     prompt: str,
@@ -252,6 +257,7 @@ async def call_llm_async(
 ) -> str:
     """
     Gọi LLM API tổng quát - tự động chọn provider (OpenAI hoặc Groq)
+    Có cơ chế fallback tự động từ OpenAI sang Groq nếu OpenAI lỗi
     
     Args:
         prompt: Câu hỏi/yêu cầu từ người dùng
@@ -267,22 +273,40 @@ async def call_llm_async(
         
     Raises:
         ValueError: Nếu provider không được hỗ trợ hoặc thiếu cấu hình
+        Exception: Nếu cả hai provider đều thất bại
     """
-    provider = provider or os.getenv("LLM_PROVIDER", "groq")
+    provider = provider or os.getenv("LLM_PROVIDER", "openai")
     model = model or os.getenv("LLM_MODEL")
     
     if not model:
-        if provider == "groq":
-            model = "llama-3.1-70b-versatile"
-        elif provider == "openai":
+        if provider == "openai":
             model = "gpt-4o-mini"
+        elif provider == "groq":
+            model = "llama-3.1-70b-versatile"
         else:
             raise ValueError("LLM_MODEL not set in .env")
     
-    if provider == "openai":
-        return await call_openai_async(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
-    elif provider == "groq":
+    # Thử provider chính
+    if provider == "groq":
         return await call_groq_async(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
+    elif provider == "openai":
+        try:
+            return await call_openai_async(prompt, system_prompt, model, temperature, max_tokens, **kwargs)
+        except Exception as e:
+            # Fallback sang Groq nếu OpenAI lỗi và fallback được bật
+            if _should_enable_fallback():
+                logger.warning(f"⚠️ OpenAI API failed: {str(e)}. Falling back to Groq...")
+                try:
+                    fallback_model = "llama-3.3-70b-versatile"
+                    result = await call_groq_async(prompt, system_prompt, fallback_model, temperature, max_tokens, **kwargs)
+                    logger.info("✅ Fallback to Groq successful")
+                    return result
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback to Groq also failed: {str(fallback_error)}")
+                    raise Exception(f"Both OpenAI and Groq failed. OpenAI: {str(e)}, Groq: {str(fallback_error)}")
+            else:
+                logger.error(f"❌ OpenAI API failed and fallback is disabled: {str(e)}")
+                raise
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -298,6 +322,7 @@ async def call_llm_stream(
 ):
     """
     Stream phản hồi LLM tổng quát - tự động chọn provider
+    Có cơ chế fallback tự động từ OpenAI sang Groq nếu OpenAI lỗi
     
     Args:
         prompt: Câu hỏi/yêu cầu từ người dùng
@@ -311,23 +336,40 @@ async def call_llm_stream(
     Yields:
         str: Từng phần văn bản được tạo ra theo thời gian thực
     """
-    provider = provider or os.getenv("LLM_PROVIDER", "groq")
+    provider = provider or os.getenv("LLM_PROVIDER", "openai")
     model = model or os.getenv("LLM_MODEL")
     
     if not model:
-        if provider == "groq":
-            model = "llama-3.1-70b-versatile"
-        elif provider == "openai":
+        if provider == "openai":
             model = "gpt-4o-mini"
+        elif provider == "groq":
+            model = "llama-3.1-70b-versatile"
         else:
             raise ValueError("LLM_MODEL not set in .env")
     
-    if provider == "openai":
-        async for chunk in call_openai_stream(prompt, system_prompt, model, temperature, max_tokens, **kwargs):
-            yield chunk
-    elif provider == "groq":
+    # Thử provider chính
+    if provider == "groq":
         async for chunk in call_groq_stream(prompt, system_prompt, model, temperature, max_tokens, **kwargs):
             yield chunk
+    elif provider == "openai":
+        try:
+            async for chunk in call_openai_stream(prompt, system_prompt, model, temperature, max_tokens, **kwargs):
+                yield chunk
+        except Exception as e:
+            # Fallback sang Groq nếu OpenAI lỗi và fallback được bật
+            if _should_enable_fallback():
+                logger.warning(f"⚠️ OpenAI streaming failed: {str(e)}. Falling back to Groq...")
+                try:
+                    fallback_model = "llama-3.3-70b-versatile"
+                    async for chunk in call_groq_stream(prompt, system_prompt, fallback_model, temperature, max_tokens, **kwargs):
+                        yield chunk
+                    logger.info("✅ Fallback to Groq streaming successful")
+                except Exception as fallback_error:
+                    logger.error(f"❌ Fallback to Groq streaming also failed: {str(fallback_error)}")
+                    raise Exception(f"Both OpenAI and Groq streaming failed. OpenAI: {str(e)}, Groq: {str(fallback_error)}")
+            else:
+                logger.error(f"❌ OpenAI streaming failed and fallback is disabled: {str(e)}")
+                raise
     else:
         raise ValueError(f"Unsupported provider: {provider}")
 
@@ -407,6 +449,6 @@ async def call_llm_with_retry(
 # Lấy model mặc định từ biến môi trường, nếu không có thì dùng model dự phòng
 DEFAULT_MODEL = os.getenv("LLM_MODEL")
 if not DEFAULT_MODEL:
-    provider = os.getenv("LLM_PROVIDER", "groq").lower()
+    provider = os.getenv("LLM_PROVIDER", "openai").lower()
     # Chọn model dự phòng dựa trên provider
-    DEFAULT_MODEL = "llama-3.1-70b-versatile" if provider == "groq" else "gpt-4o-mini"
+    DEFAULT_MODEL = "gpt-4o-mini" if provider == "openai" else "llama-3.1-70b-versatile"

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import sys
 import os
+import logging
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 from backend.core.pipeline import DocumentPipeline
@@ -13,6 +14,8 @@ from backend.core.chunking import ChunkConfig
 from backend.db.mongo_storage import MongoStorage
 from backend.db.vector_db import VectorDatabase
 from backend.config import Config
+
+logger = logging.getLogger(__name__)
 
 # Auth check
 if not st.session_state.get('authenticated', False):
@@ -341,6 +344,10 @@ if uploaded_files:
         if success_count > 0:
             vector_stats = vector_db.get_statistics()
             
+            # ✅ AUTO-CLEAR CACHE: Chat page sẽ tự động load dữ liệu mới
+            st.cache_resource.clear()
+            logger.info("🔄 Cache cleared - Chat page will reload new data automatically")
+            
             st.markdown(f"""
             <div class="success-card">
                 <strong>🎉 Hoàn thành!</strong><br>
@@ -348,7 +355,8 @@ if uploaded_files:
                 ❌ Thất bại: {failed_count} file<br>
                 💾 MongoDB: Auto-saved (chunks, entities, graph)<br>
                 🚀 VectorDB: {vector_stats['active_vectors']} vectors ({vector_stats['index_type']})<br>
-                ⚡ Auto-save: Enabled (no manual save needed)
+                ⚡ Auto-save: Enabled (no manual save needed)<br>
+                🔄 <strong>Cache cleared - Chat có thể dùng dữ liệu mới ngay!</strong>
             </div>
             """, unsafe_allow_html=True)
             
@@ -372,6 +380,17 @@ if uploaded_files:
                     {"<br>".join(f"• {name}: {err}" for name, err in failed_files)}
                 </div>
                 """, unsafe_allow_html=True)
+            
+            # Quick action to go to chat
+            st.markdown(f"""
+            <div class="info-card">
+                💡 <strong>Dữ liệu đã sẵn sàng!</strong><br>
+                Bạn có thể vào Chat ngay để hỏi về {success_count} tài liệu vừa upload.
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if st.button("💬 Đi tới Chat ngay", type="primary", key="goto_chat_after_upload"):
+                st.switch_page("pages/chat.py")
             
             st.rerun()
 

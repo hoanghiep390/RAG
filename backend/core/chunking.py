@@ -20,7 +20,7 @@ except ImportError:
 # Config
 @dataclass
 class ChunkConfig:
-    max_tokens: int = 300
+    max_tokens: int = 500
     overlap_tokens: int = 50
     lookback_ratio: float = 0.2
     table_rows_per_chunk: int = 50
@@ -534,7 +534,7 @@ def _extract_excel(filepath: str) -> str:
             header = " | ".join(str(col) for col in df.columns)
             rows = [" | ".join(map(str, row)) for row in df.values]
             sheet_prefix = f"=== Sheet: {sheet_name} ==="
-            text_parts.extend(_split_table_text(header, rows, sheet_prefix, enc, max_tokens=300, overlap=50))
+            text_parts.extend(_split_table_text(header, rows, sheet_prefix, enc, max_tokens=500, overlap=50))
         return "\n\n".join(text_parts)
     except Exception as e:
         logger.error(f" Lỗi trích xuất Excel: {e}")
@@ -550,7 +550,7 @@ def _extract_csv(filepath: str) -> str:
         enc = tiktoken.encoding_for_model("gpt-4o-mini")
         header = " | ".join(str(col) for col in df.columns)
         rows = [" | ".join(map(str, row)) for row in df.values]
-        return "\n\n".join(_split_table_text(header, rows, "", enc, max_tokens=300, overlap=50))
+        return "\n\n".join(_split_table_text(header, rows, "", enc, max_tokens=500, overlap=50))
     except Exception as e:
         logger.error(f" Lỗi trích xuất CSV: {e}")
         return ""
@@ -605,6 +605,31 @@ def _extract_pptx(filepath: str) -> str:
         return ""
 
 
+def _extract_docx_python_docx(filepath: str) -> str:
+    """Trích xuất DOCX dự phòng bằng python-docx"""
+    try:
+        from docx import Document
+        doc = Document(filepath)
+        text_parts = []
+        
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            if text:
+                text_parts.append(text)
+        
+        # Extract text from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = " | ".join(cell.text.strip() for cell in row.cells)
+                if row_text.strip():
+                    text_parts.append(row_text)
+        
+        return "\n\n".join(text_parts)
+    except Exception as e:
+        logger.error(f" Lỗi trích xuất DOCX bằng python-docx: {e}")
+        return ""
+
+
 def extract_text_from_file(filepath: str) -> Tuple[str, dict]:
     """Trích xuất văn bản từ file với metadata
     
@@ -656,8 +681,16 @@ def extract_text_from_file(filepath: str) -> Tuple[str, dict]:
             
             raise RuntimeError(f" Tất cả phương pháp trích xuất PDF đều thất bại cho {Path(filepath).name}")
         
-        # Với DOCX/DOC, Docling là bắt buộc
-        raise RuntimeError(f" Docling là bắt buộc cho {ext} nhưng đã thất bại!")
+        # Với DOCX/DOC, thử python-docx dự phòng
+        if ext in ['.docx', '.doc']:
+            logger.info(f" Đang thử python-docx cho DOCX: {Path(filepath).name}")
+            text = _extract_docx_python_docx(filepath)
+            if text and text.strip():
+                logger.info(f" python-docx đã trích xuất {len(text)} ký tự")
+                metadata['extraction_method'] = 'python-docx'
+                return text, metadata
+        
+        raise RuntimeError(f" Tất cả phương pháp trích xuất {ext} đều thất bại cho {Path(filepath).name}")
     
     # Định dạng khác: Dùng các hàm trích xuất cũ
     extractors = {

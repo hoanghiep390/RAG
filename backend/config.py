@@ -24,21 +24,21 @@ class Config:
     EMBEDDING_DIM = int(os.getenv('EMBEDDING_DIM', '384'))
     
     # ========== LLM ==========
-    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'groq')
-    LLM_MODEL = os.getenv('LLM_MODEL', 'llama-3.1-70b-versatile')
+    LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'openai')
+    LLM_MODEL = os.getenv('LLM_MODEL', 'gpt-4o-mini')
     MAX_CONCURRENT_LLM_CALLS = int(os.getenv('MAX_CONCURRENT_LLM_CALLS', '16'))
     
     # ========== Processing ==========
     EXTRACTION_BATCH_SIZE = int(os.getenv('EXTRACTION_BATCH_SIZE', '20'))
     EMBEDDING_BATCH_SIZE = int(os.getenv('EMBEDDING_BATCH_SIZE', '128'))
-    MAX_GLEANING = int(os.getenv('MAX_GLEANING', '2'))  # Continue extraction attempts (increased from 1 to 2)
+    MAX_GLEANING = int(os.getenv('MAX_GLEANING', '2'))  
     USE_LLM_ENTITY_MERGE = os.getenv('USE_LLM_ENTITY_MERGE', 'true').lower() == 'true'
     MIN_DESCRIPTIONS_FOR_LLM_MERGE = int(os.getenv('MIN_DESCRIPTIONS_FOR_LLM_MERGE', '3'))
     USE_LLM_RELATIONSHIP_MERGE = os.getenv('USE_LLM_RELATIONSHIP_MERGE', 'true').lower() == 'true'
 
     
     # ========== Chunking ==========
-    DEFAULT_CHUNK_SIZE = int(os.getenv('DEFAULT_CHUNK_SIZE', '300'))
+    DEFAULT_CHUNK_SIZE = int(os.getenv('DEFAULT_CHUNK_SIZE', '500'))
     DEFAULT_CHUNK_OVERLAP = int(os.getenv('DEFAULT_CHUNK_OVERLAP', '50'))
     
     # ========== FAISS ==========
